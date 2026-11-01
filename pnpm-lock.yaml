@@ -136,6 +136,18 @@ importers:
         specifier: workspace:*
         version: link:../core-types
 
+  services/connector-runtime:
+    dependencies:
+      '@brain/change-cursor':
+        specifier: workspace:*
+        version: link:../../features/change-cursor
+      '@brain/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+
   tools/structure-lint: {}
 
 packages:
