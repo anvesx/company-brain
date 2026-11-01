@@ -15,6 +15,8 @@ export type BrainDeps = {
   fetchText: (pointer: Pointer) => Promise<string>;
   /** Derives the caller from transport metadata; must throw when unauthenticated. */
   principalFor: (extra: unknown) => Principal;
+  /** Secret for keyed query digests in audit rows. Never hard-code outside demo. */
+  auditKey: string | Uint8Array;
   auditDbPath: string;
   /** Checkpoint log. Keep it outside the audit database. */
   anchorPath: string;

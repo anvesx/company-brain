@@ -9,6 +9,7 @@ if (!env.demo) {
 }
 const app = await createBrainApp({
   ...demoDeps(),
+  auditKey: process.env.BRAIN_AUDIT_KEY ?? "demo-only-audit-key",
   auditDbPath: env.auditDbPath,
   anchorPath: env.anchorPath,
   transport: "http",

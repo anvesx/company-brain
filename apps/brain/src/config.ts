@@ -34,7 +34,7 @@ const demoDoc = (address: string, text: string): FakeDoc => ({
 const BEARER = /^Bearer ([^:]+):(.+)$/;
 
 /** Everything except the file paths and transport: an in-memory connector and toy embeddings. */
-export function demoDeps(): Omit<BrainDeps, "auditDbPath" | "anchorPath" | "transport" | "port"> {
+export function demoDeps(): Omit<BrainDeps, "auditKey" | "auditDbPath" | "anchorPath" | "transport" | "port"> {
   const connector = createFakeConnector("demo", [demoDoc("welcome", "Welcome to the Devx Brain demo."), demoDoc("faq", "Ask the brain a question.")]);
   return {
     connector,

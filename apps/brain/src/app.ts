@@ -27,7 +27,7 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     anchorStore: createFileAnchorStore(deps.anchorPath),
     clock: () => new Date(deps.clock()),
   });
-  const governance = createGovernance({ audit, query });
+  const governance = createGovernance({ audit, query, auditKey: deps.auditKey });
   const indexService = createIndexService({
     registry,
     index,

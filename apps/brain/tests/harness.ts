@@ -47,6 +47,7 @@ export async function start(over: Partial<BrainDeps> = {}) {
     fetchText: async (p) => (await connector.fetch(p.address, { token: "t" })).text,
     principalFor,
     auditDbPath,
+    auditKey: "test-audit-key",
     anchorPath: `${auditDbPath}.anchors`,
     transport: "http",
     port: 0,

@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { Pointer, Principal } from "@brain/core-types";
 import { createGovernance } from "../../src/index.js";
 
@@ -15,6 +16,8 @@ export const ptr = (id: string): Pointer => ({
   updatedAt: "2026-11-01T00:00:00Z",
   deletedAt: null,
 });
+
+export const auditKey = "test-master-key";
 
 export type Call = { tenantId: string; event: { actor: string; action: string; target: string; detail?: Record<string, unknown> } };
 
@@ -41,6 +44,12 @@ export function fakes(results: Pointer[] = [ptr("d1"), ptr("d2")]) {
       return results;
     },
   };
-  return { order, calls, audit, query, gov: createGovernance({ audit, query }) };
+  return { order, calls, audit, query, gov: createGovernance({ audit, query, auditKey }) };
 }
 export const req = (query = "secret roadmap", principal: Principal = alice) => ({ query, principal, embedding: [1, 0] });
+
+/** Independent re-statement of the digest: per-tenant key = HMAC(master, tenant), target = HMAC(tenant key, trimmed query). */
+export const targetFor = (tenantId: string, query: string, master = auditKey): string => {
+  const tenantKey = createHmac("sha256", master).update(`brain-audit-target-key:${tenantId}`).digest();
+  return createHmac("sha256", tenantKey).update(query.trim(), "utf8").digest("hex");
+};
