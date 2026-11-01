@@ -53,3 +53,5 @@ pnpm mutation    # Stryker, break threshold 80
 ```
 
 The property test creates a real in-memory `node:sqlite` table per run and asserts the SQL result equals `isAllowed`. Tests write nothing to disk.
+
+`@brain/hybrid-search` stores `allow_users` and `allow_groups` on its `chunks` table, so `allowClause` runs against it unchanged (see its `tests/integration/acl-wiring.test.ts`).

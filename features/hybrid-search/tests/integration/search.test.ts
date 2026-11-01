@@ -47,8 +47,8 @@ describe("SearchIndex", () => {
   it("removes every document chunk from both indexes", () => {
     const index = createSearchIndex(":memory:", 2);
     for (const chunkId of ["x", "y"]) index.add({ chunkId, docId: "d", tenantId: "t", text: "needle", embedding: [1, 0], acl });
-    expect(index.remove("d")).toBe(2);
-    expect(index.remove("d")).toBe(0);
+    expect(index.remove("d", "t")).toBe(2);
+    expect(index.remove("d", "t")).toBe(0);
     expect(index.search({ text: "needle", embedding: [1, 0], limit: 10, acl: { sql: "1", params: [] } })).toEqual([]);
   });
 });

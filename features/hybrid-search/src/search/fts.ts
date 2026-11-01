@@ -14,7 +14,7 @@ export function addFts(db: DatabaseSync, rowid: number, text: string): void {
 export function searchFts(db: DatabaseSync, text: string, limit: number, acl: AclFragment): string[] {
   const expression = escapeFts(text);
   if (expression === "") return [];
-  const sql = `SELECT chunks.chunk_id AS id FROM chunks_fts
+  const sql = `SELECT chunks.rowid AS id FROM chunks_fts
     JOIN chunks ON chunks.rowid = chunks_fts.rowid
     WHERE chunks_fts MATCH ? AND (${acl.sql})
     ORDER BY bm25(chunks_fts), chunks.chunk_id LIMIT ?`;
