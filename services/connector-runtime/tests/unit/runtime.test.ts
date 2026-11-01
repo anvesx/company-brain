@@ -42,6 +42,27 @@ describe("runOnce", () => {
     expect(() => createConnectorRuntime({ ...s, clock: () => 1, pageSize: 1001 })).toThrow(RuntimeError);
   });
 
+  it("accepts boundary option values and names the bad option in the error", () => {
+    const s = setup([]);
+    const make = (o: object) => createConnectorRuntime({ ...s, clock: () => 1, ...o });
+    for (const o of [{ pageSize: 1 }, { pageSize: 1000 }, { maxAttempts: 1 }, { maxAttempts: 20 }]) {
+      expect(() => make(o)).not.toThrow();
+    }
+    expect(() => make({ pageSize: 0 })).toThrow("pageSize must be an integer in 1-1000");
+    expect(() => make({ maxAttempts: 21 })).toThrow("maxAttempts must be an integer in 1-20");
+    expect(() => make({ maxAttempts: 1.5 })).toThrow(/maxAttempts/);
+  });
+
+  it("rejects non-string tenant ids with a message", async () => {
+    const { runtime } = setup([]);
+    for (const bad of [undefined, 5]) {
+      await expect(runtime.runOnce(bad as unknown as string)).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+        message: "tenantId must be a non-empty string",
+      });
+    }
+  });
+
   it("handles unicode addresses", async () => {
     const { runtime, events } = setup([doc("日本語/ファイル🙂.md")]);
     await runtime.runOnce("t1");
