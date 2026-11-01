@@ -10,7 +10,7 @@ under `features`, `services`, `modules`, `apps`, and `tools`, then prints determ
 - Source/test folders are limited to five implementation files; required README files are docs.
 - Each package needs `src/`, `tests/`, and `README.md`; each source folder needs `README.md`.
 - Workspace dependencies must point down: feature to core-types, service to feature, module to
-  service/feature, app to module, and tool to no product tier.
+  service/feature, app to module, and tool to feature, service or module (a tool is a leaf: nothing depends on it, and it never depends on an app).
 
 ## Run
 

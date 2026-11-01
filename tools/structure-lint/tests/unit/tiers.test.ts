@@ -24,7 +24,7 @@ describe("tier direction rule", () => {
     expect(checkTiers(root, dirs(root, entries))).toEqual([]);
   });
 
-  it("reports sideways, upward, and tool dependencies", () => {
+  it("reports sideways, upward, tool-to-app and anything-to-tool dependencies", () => {
     const entries = [
       manifest("features/core-types"),
       manifest("features/one"),
@@ -34,13 +34,13 @@ describe("tier direction rule", () => {
       manifest("modules/m", { "@brain/m2": "workspace:*" }),
       manifest("modules/m2"),
       manifest("apps/web", { "@brain/a": "workspace:*", "@brain/web2": "workspace:*" }),
-      manifest("apps/web2"),
-      manifest("tools/lint", { "@brain/one": "workspace:*" }),
+      manifest("apps/web2", { "@brain/lint": "workspace:*" }),
+      manifest("tools/lint", { "@brain/one": "workspace:*", "@brain/m": "workspace:*", "@brain/web2": "workspace:*" }),
     ];
     const root = fixture(Object.fromEntries(entries));
     const found = checkTiers(root, dirs(root, entries));
-    expect(found).toHaveLength(5);
-    expect(found.some((item) => item.file === "apps/web/package.json")).toBe(true);
+    expect(found).toHaveLength(6);
+    expect(found.filter((item) => item.message.includes("@brain/lint"))).toHaveLength(2);
     expect(found[0]?.file).toBe("features/two/package.json");
     expect(found[0]?.message).toContain("may not depend on @brain/one");
   });
