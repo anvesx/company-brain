@@ -1,7 +1,7 @@
 import { lstat, readdir } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import type { ListedDoc } from "../core/contract.js";
-import { readAcl } from "./folder-acl.js";
+import { aclVersion, readAcl } from "./folder-acl.js";
 import { safeRealpath } from "./folder-path.js";
 
 export const scan = async (root: string): Promise<ListedDoc[]> => {
@@ -18,11 +18,12 @@ export const scan = async (root: string): Promise<ListedDoc[]> => {
       if (info.isDirectory()) await visit(resolved);
       else if (info.isFile()) {
         const address = relative(root, shown).split(sep).join("/");
+        const acl = await readAcl(root, shown);
         docs.push({
           address,
           title: basename(shown),
-          version: `${info.mtimeMs}:${info.size}`,
-          acl: await readAcl(root, shown),
+          version: aclVersion(info, acl),
+          acl,
           zone: "personal",
           updatedAt: info.mtime.toISOString(),
         });

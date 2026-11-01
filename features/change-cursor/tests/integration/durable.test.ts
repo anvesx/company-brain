@@ -18,18 +18,18 @@ describe("durable state in a file database", () => {
     const path = join(dir, "cursor.db");
     const first = createCursorStore(path, () => 0, 1_000);
     first.setCursor("t1", "drive", "cur-9");
-    first.seen("evt-1");
+    first.seen("t1", "evt-1");
 
     const second = createCursorStore(path, () => 0, 1_000);
     expect(second.getCursor("t1", "drive")).toBe("cur-9");
-    expect(second.seen("evt-1")).toBe(true);
+    expect(second.seen("t1", "evt-1")).toBe(true);
   });
 
   it("applies the ttl to ids recorded before a reopen", () => {
     const path = join(dir, "cursor.db");
-    createCursorStore(path, () => 0, 1_000).seen("evt-1");
+    createCursorStore(path, () => 0, 1_000).seen("t1", "evt-1");
     const later = createCursorStore(path, () => 1_000, 1_000);
-    expect(later.seen("evt-1")).toBe(false);
+    expect(later.seen("t1", "evt-1")).toBe(false);
   });
 
   it("creates the file on first open and reuses it", () => {

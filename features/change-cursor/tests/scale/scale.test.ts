@@ -24,9 +24,9 @@ describe("scale", () => {
   it("records 100k new event ids, then sees all of them as seen", () => {
     const s = createCursorStore(":memory:", () => 0);
     let fresh = 0;
-    for (let i = 0; i < N; i++) if (!s.seen(`evt-${i}`)) fresh++;
+    for (let i = 0; i < N; i++) if (!s.seen("t1", `evt-${i}`)) fresh++;
     let repeats = 0;
-    for (let i = 0; i < N; i++) if (s.seen(`evt-${i}`)) repeats++;
+    for (let i = 0; i < N; i++) if (s.seen("t1", `evt-${i}`)) repeats++;
     expect(fresh).toBe(N);
     expect(repeats).toBe(N);
   });

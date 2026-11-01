@@ -1,19 +1,19 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { type Connector, ConnectorError, type ListedDoc } from "../core/contract.js";
-import { pageItems } from "../core/paging.js";
+import { type Connector, ConnectorError } from "../core/contract.js";
+import { pageWalk, type Walks } from "../core/walks.js";
+import { aclVersion, readAcl } from "./folder-acl.js";
 import { escapes, safeRealpath } from "./folder-path.js";
 import { scan } from "./folder-scan.js";
 
 export const createFolderConnector = (id: string, rootDir: string): Connector => {
-  // A listing without a cursor starts a walk and rescans; later pages reuse that snapshot so a
-  // full walk costs one scan, not one per page.
-  let snapshot: ListedDoc[] | undefined;
+  // A listing without a cursor starts a walk and rescans; later pages reuse that walk's own snapshot, so a
+  // full walk costs one scan and concurrent walks never disturb each other.
+  const walks: Walks = new Map();
   return {
     id,
     async list(query) {
-      if (query.cursor === undefined || snapshot === undefined) snapshot = await scan(await realpath(rootDir));
-      return pageItems(snapshot, query);
+      return pageWalk(walks, async () => scan(await realpath(rootDir)), query);
     },
     async fetch(address) {
       const root = await realpath(rootDir);
@@ -22,7 +22,7 @@ export const createFolderConnector = (id: string, rootDir: string): Connector =>
       const resolved = await safeRealpath(root, candidate);
       const info = await stat(resolved);
       if (!info.isFile()) throw new ConnectorError("NOT_FOUND", `Document not found: ${address}`);
-      return { text: await readFile(resolved, "utf8"), version: `${info.mtimeMs}:${info.size}` };
+      return { text: await readFile(resolved, "utf8"), version: aclVersion(info, await readAcl(root, candidate)) };
     },
   };
 };

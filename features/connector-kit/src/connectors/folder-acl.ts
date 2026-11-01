@@ -1,6 +1,7 @@
 import { readFile, realpath } from "node:fs/promises";
 import { type Acl, AclSchema } from "@brain/core-types";
 import { ConnectorError } from "../core/contract.js";
+import { contentHash } from "../core/hash.js";
 import { escapes } from "./folder-path.js";
 
 const denyAll = (): Acl => ({ allowUsers: [], allowGroups: [], version: 0 });
@@ -18,3 +19,7 @@ export const readAcl = async (root: string, documentPath: string): Promise<Acl> 
     throw error;
   }
 };
+
+/** Document version `<mtimeMs>:<size>:<acl fingerprint>`, so an ACL-only edit changes the version. */
+export const aclVersion = (info: { mtimeMs: number; size: number }, acl: Acl): string =>
+  `${info.mtimeMs}:${info.size}:${contentHash(JSON.stringify([acl.allowUsers, acl.allowGroups, acl.version])).slice(0, 16)}`;

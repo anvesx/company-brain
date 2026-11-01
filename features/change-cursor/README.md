@@ -5,7 +5,7 @@ Spec: [docs/specs/feature/change-cursor.md](../../docs/specs/feature/change-curs
 Company Brain syncs documents from sources such as Drive and Slack. Three problems follow from that:
 
 1. **Where did the last sync stop?** Each (tenant, source) pair keeps a cursor. A restart resumes from it.
-2. **Did we already handle this event?** Sources deliver events more than once. `seen` drops the repeats.
+2. **Did we already handle this event?** Sources deliver events more than once. `seen` drops the repeats, per tenant.
 3. **What changed since we last looked?** The reconciliation sweep compares what we know with what the
    source lists now. `diffListing` returns the created, updated and deleted addresses.
 
@@ -18,8 +18,8 @@ The package holds all three. Durable state lives in one SQLite file, opened with
 export interface CursorStore {
   getCursor(tenantId: string, source: string): string | undefined;
   setCursor(tenantId: string, source: string, cursor: string): void;
-  /** Atomically records the id. Returns true if it was already seen inside the ttl. */
-  seen(eventId: string): boolean;
+  /** Atomically records the id for this tenant. Returns true if the tenant already saw it inside the ttl. */
+  seen(tenantId: string, eventId: string): boolean;
 }
 export function createCursorStore(dbPath: string, clock: () => number, ttlMs?: number): CursorStore;
 export function diffListing(known: Map<string, string>, listed: Map<string, string>): ListingDiff;
@@ -43,10 +43,15 @@ export class CursorError extends Error {
 
 ### Seen ids
 
-- `seen(id)` is `false` on first sight and `true` after that. It stays `true` until `ttlMs` has passed,
+- `seen(tenantId, id)` is `false` on first sight and `true` after that. Ids are scoped by tenant: tenant A's
+  id never suppresses tenant B's. It stays `true` until `ttlMs` has passed,
   measured with the injected `clock`. After that, the next call returns `false` again and starts a new window.
 - The check and the insert are one SQLite statement (`INSERT ... ON CONFLICT DO UPDATE ... WHERE expired`).
   Two handles on the same file cannot both see a fresh id as new.
+- Every call first deletes expired rows (all tenants), so the table holds only ids inside the ttl.
+- **Breaking change:** `seen(eventId)` became `seen(tenantId, eventId)`. On open, a legacy `seen_events` table
+  without `tenant_id` is dropped and recreated; its rows were 24 h dedupe state, so at most one window of
+  repeats can slip through once after upgrade.
 
 ### Diff
 
@@ -88,7 +93,7 @@ Storage failures from `node:sqlite` are not wrapped. They propagate unchanged.
 
 - Cursor value: at most 4096 code points. Exactly 4096 is accepted. Emoji count as one each.
 - Event id: non-empty. No length cap, because the spec sets none.
-- Rows for event ids that never come back stay in the table. No pruning job exists yet.
+- Expired seen rows are pruned on each `seen` call; no separate job is needed.
 - `diffListing` on 100k known and 100k listed addresses: about 290 ms when timed alone in plain Node 26.
   The scale test asserts under 500 ms.
 - The file opens in WAL mode with `busy_timeout = 5000` ms and `synchronous = NORMAL`. `NORMAL` can lose the
@@ -106,14 +111,14 @@ src/
   errors.ts    CursorError and its codes
 tests/
   unit/        diff, seen with a fake clock, errors; unit/cursor/ holds the cursor rules
-  integration/ reopen survives, WAL mode, two handles racing on seen
+  integration/ reopen survives, WAL mode, tenant scoping and pruning, worker threads racing on seen
   scale/       diff of 100k addresses, seen over 100k ids
 ```
 
 ## Test
 
 ```sh
-pnpm --filter @brain/change-cursor test        # all 64 tests, including scale
+pnpm --filter @brain/change-cursor test        # all tests, including scale
 pnpm --filter @brain/change-cursor typecheck   # see the open issue below
 pnpm --filter @brain/change-cursor mutation    # Stryker, break below 80
 ```
