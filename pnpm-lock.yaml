@@ -136,6 +136,27 @@ importers:
         specifier: workspace:*
         version: link:../core-types
 
+  modules/governance:
+    dependencies:
+      '@brain/audit-chain':
+        specifier: workspace:*
+        version: link:../../features/audit-chain
+      '@brain/audit-service':
+        specifier: workspace:*
+        version: link:../../services/audit-service
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+      '@brain/hybrid-search':
+        specifier: workspace:*
+        version: link:../../features/hybrid-search
+      '@brain/pointer-registry':
+        specifier: workspace:*
+        version: link:../../features/pointer-registry
+      '@brain/query-service':
+        specifier: workspace:*
+        version: link:../../services/query-service
+
   modules/retrieval:
     dependencies:
       '@brain/core-types':
