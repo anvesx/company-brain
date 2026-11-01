@@ -12,6 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
+    "deps": "depcruise features services modules apps --config .dependency-cruiser.cjs",
     "mutation": "turbo run mutation",
     "changeset": "changeset",
     "release": "changeset publish"

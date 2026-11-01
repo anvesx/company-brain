@@ -16,6 +16,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm structure
       - run: pnpm exec biome check .
+      - run: pnpm deps
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm mutation

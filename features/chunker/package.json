@@ -20,5 +20,15 @@
   },
   "devDependencies": {
     "fast-check": "4.10.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "features/chunker"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "license": "UNLICENSED"
 }

@@ -16,5 +16,15 @@
   "dependencies": {
     "@brain/core-types": "workspace:*",
     "sqlite-vec": "0.1.9"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "features/hybrid-search"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "license": "UNLICENSED"
 }

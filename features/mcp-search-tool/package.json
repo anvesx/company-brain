@@ -17,5 +17,15 @@
     "@brain/core-types": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "^4.6.7"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "features/mcp-search-tool"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "license": "UNLICENSED"
 }
