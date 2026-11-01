@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createBrainApp } from "./app.js";
-import { demoDeps, readEnv } from "./config.js";
+import { DEMO_TENANT, demoDeps, readEnv } from "./config.js";
 
 const env = readEnv(process.env);
 if (!env.demo) {
@@ -15,7 +15,12 @@ const app = await createBrainApp({
   transport: "http",
   port: env.port,
 });
-for (const tenant of ["acme"]) await app.ingest(tenant);
+for (const tenant of [DEMO_TENANT]) {
+  const { indexed, failures, quarantined } = await app.ingest(tenant);
+  console.log(`brain: ingested tenant ${tenant}: ${indexed} indexed, ${failures.length} failed, ${quarantined.length} quarantined`);
+  for (const f of failures) console.error(`brain: ingest failed for ${tenant} ${f.address}: ${f.error}`);
+  for (const f of quarantined) console.error(`brain: quarantined for ${tenant} ${f.address}: ${f.error}`);
+}
 console.log(`brain listening on http://127.0.0.1:${app.port}/mcp (demo tenant: acme, token alice:acme)`);
 const stop = () => void app.close().then(() => process.exit(0));
 process.on("SIGINT", stop);

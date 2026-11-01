@@ -16,8 +16,8 @@ describe("ingestion errors", () => {
     await s.ingestion.runOnce("acme");
     s.set([doc("a")]);
     failDelete = true;
-    expect(await s.ingestion.runOnce("acme")).toEqual({ emitted: 1, indexed: 0, failed: 1 });
+    expect(await s.ingestion.runOnce("acme")).toEqual({ emitted: 1, indexed: 0, failed: 1, failures: [{ address: "b", error: "x" }], quarantined: [] });
     failDelete = false;
-    expect(await s.ingestion.runOnce("acme")).toEqual({ emitted: 1, indexed: 1, failed: 0 });
+    expect(await s.ingestion.runOnce("acme")).toEqual({ emitted: 1, indexed: 1, failed: 0, failures: [], quarantined: [] });
   });
 });

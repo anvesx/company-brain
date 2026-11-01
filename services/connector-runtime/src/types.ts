@@ -1,7 +1,7 @@
 import type { CursorStore } from "@brain/change-cursor";
 import type { Connector } from "@brain/connector-kit";
 
-/** One document at one version, delivered to the sink at most once per tenant. */
+/** One document at one version and ACL, delivered to the sink at most once per tenant. */
 export interface ChangeEvent {
   tenantId: string;
   connectorId: string;
@@ -21,6 +21,14 @@ export interface RuntimeDeps {
   clock: () => number;
   /** Items per list call, integer 1-1000. Default 100. */
   pageSize?: number;
+  /** Failed deliveries of one event before it is quarantined, integer 1-20. Default 3. */
+  maxAttempts?: number;
+}
+
+/** One document the sink rejected. `error` is the sink error's message. */
+export interface Failure {
+  address: string;
+  error: string;
 }
 
 export interface RunResult {
@@ -28,6 +36,10 @@ export interface RunResult {
   skipped: number;
   /** True when a BAD_CURSOR forced a full rescan. */
   restarted: boolean;
+  /** Deliveries the sink rejected in this run, including the one that triggered quarantine. */
+  failures: Failure[];
+  /** Every document currently quarantined for the tenant (retries exhausted, until a new version or ACL). */
+  quarantined: Failure[];
 }
 
 export interface ConnectorRuntime {

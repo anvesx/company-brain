@@ -1,57 +1,49 @@
 import { contentHash } from "@brain/connector-kit";
-import { type ChangeEvent, createConnectorRuntime, RuntimeError } from "@brain/connector-runtime";
-import { watchListing } from "./listing.js";
-import { toPointer } from "./pointer.js";
+import { type ChangeEvent, createConnectorRuntime, createKeyedLock } from "@brain/connector-runtime";
+import { IngestionError } from "./errors.js";
+import { watchListing } from "./pipeline/listing.js";
+import { toPointer } from "./pipeline/pointer.js";
+import { reap } from "./pipeline/reap.js";
 import type { Ingestion, IngestionCounts, IngestionDeps } from "./types.js";
 
-export function createIngestion({ runtime, indexService }: IngestionDeps): Ingestion {
-  const { connector } = runtime;
+export function createIngestion({ runtime, indexService, connectorFor, tokenFor }: IngestionDeps): Ingestion {
   /** tenant -> (pointer id -> address) of documents this process indexed and has not deleted. */
   const known = new Map<string, Map<string, string>>();
   const knownFor = (tenantId: string) => known.get(tenantId) ?? known.set(tenantId, new Map()).get(tenantId)!;
+  const lock = createKeyedLock();
 
-  async function reap(tenantId: string, listed: Map<string, unknown>, counts: IngestionCounts) {
-    const mine = knownFor(tenantId);
-    for (const [id, address] of [...mine]) {
-      if (listed.has(address)) continue;
+  async function run(tenantId: string, connector: NonNullable<ReturnType<typeof connectorFor>>, token: string) {
+    const counts: IngestionCounts = { emitted: 0, indexed: 0, failed: 0, failures: [], quarantined: [] };
+    const { watched, listed, sawEverything } = watchListing(connector);
+    const sink = async (event: ChangeEvent) => {
       counts.emitted++;
       try {
-        await indexService.apply({ type: "delete", tenantId, id, at: new Date(runtime.clock()).toISOString() });
-        mine.delete(id);
-        counts.indexed++;
-      } catch {
+        const meta = listed.get(event.address);
+        if (!meta) throw new Error(`no listing for ${event.address}`);
+        const { text } = await connector.fetch(event.address, { token });
+        const pointer = toPointer(event, meta, contentHash(text));
+        const result = await indexService.apply({ type: "upsert", pointer });
+        knownFor(tenantId).set(pointer.id, event.address);
+        if (result.outcome !== "unchanged") counts.indexed++;
+      } catch (error) {
         counts.failed++;
+        throw error;
       }
-    }
+    };
+    const result = await createConnectorRuntime({ ...runtime, connector: watched, sink }).runOnce(tenantId);
+    counts.failures.push(...result.failures);
+    counts.quarantined = result.quarantined;
+    // Failed documents do not stop a full listing, so deletes are still detected.
+    if (sawEverything()) await reap(indexService, tenantId, new Date(runtime.clock()).toISOString(), knownFor(tenantId), listed, counts);
+    return counts;
   }
 
   return {
     async runOnce(tenantId) {
-      const counts: IngestionCounts = { emitted: 0, indexed: 0, failed: 0 };
-      const { watched, listed, sawEverything } = watchListing(connector);
-      const sink = async (event: ChangeEvent) => {
-        counts.emitted++;
-        try {
-          const meta = listed.get(event.address);
-          if (!meta) throw new Error(`no listing for ${event.address}`);
-          const { text } = await connector.fetch(event.address, { token: "ingestion" });
-          const pointer = toPointer(event, meta, contentHash(text));
-          const result = await indexService.apply({ type: "upsert", pointer });
-          knownFor(tenantId).set(pointer.id, event.address);
-          if (result.outcome !== "unchanged") counts.indexed++;
-        } catch (error) {
-          counts.failed++;
-          throw error;
-        }
-      };
-      try {
-        await createConnectorRuntime({ ...runtime, connector: watched, sink }).runOnce(tenantId);
-      } catch (error) {
-        if (error instanceof RuntimeError && error.code === "SINK_FAILED") return counts;
-        throw error;
-      }
-      if (sawEverything()) await reap(tenantId, listed, counts);
-      return counts;
+      const connector = connectorFor(tenantId);
+      const token = tokenFor(tenantId);
+      if (!connector || token === undefined) throw new IngestionError("UNKNOWN_TENANT", `no connector or credential bound to tenant ${tenantId}`);
+      return lock(tenantId, () => run(tenantId, connector, token));
     },
   };
 }

@@ -19,11 +19,38 @@ describe("brain app over MCP HTTP", () => {
     await app.ingest("t1");
     await app.ingest("t2");
     const client = await connect(app.port, "alice:t2");
-    expect(idsOf(await call(client))).toEqual(["a", "b"]);
+    expect(idsOf(await call(client))).toEqual(["x", "y"]);
+    const t1 = await connect(app.port, "alice:t1");
+    expect(idsOf(await call(t1))).toEqual(["a", "b"]);
+    await t1.close();
     const stranger = await connect(app.port, "alice:t3");
     expect(idsOf(await call(stranger))).toEqual([]);
     await client.close();
     await stranger.close();
+    await app.close();
+  });
+
+  it("refuses to ingest a tenant that has no connector of its own", async () => {
+    const { app } = await start();
+    await expect(app.ingest("t3")).rejects.toMatchObject({ name: "IngestionError", code: "UNKNOWN_TENANT" });
+    const stranger = await connect(app.port, "alice:t3");
+    expect(idsOf(await call(stranger))).toEqual([]);
+    await stranger.close();
+    await app.close();
+  });
+
+  it("ingest reports per-document failures instead of succeeding silently", async () => {
+    const { app } = await start({
+      embed: async (ts) => {
+        if (ts.some((t) => t.includes("boom"))) throw new Error("embed down");
+        return ts.map(() => [1, 0]);
+      },
+      fetchText: async (p) => (p.address === "b" ? "boom" : "needle"),
+    });
+    const result = await app.ingest("t1");
+    expect(result).toMatchObject({ indexed: 2, failed: 1 });
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.address).toBe("b");
     await app.close();
   });
 

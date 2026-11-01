@@ -27,7 +27,9 @@ describe("readEnv", () => {
 describe("demoDeps", () => {
   it("serves two in-memory documents with fetchable text", async () => {
     const d = demoDeps();
-    const { items } = await d.connector.list({ limit: 10 });
+    expect(d.connectorFor("globex")).toBeUndefined();
+    expect(d.tokenFor("globex")).toBeUndefined();
+    const { items } = await d.connectorFor("acme")!.list({ limit: 10 });
     expect(items.map((i) => [i.address, i.title, i.acl.allowUsers, i.zone])).toEqual([
       ["welcome", "welcome", ["alice"], "team"],
       ["faq", "faq", ["alice"], "team"],

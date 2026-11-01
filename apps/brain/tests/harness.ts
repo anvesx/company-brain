@@ -3,26 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createCursorStore } from "@brain/change-cursor";
-import { createFakeConnector, type FakeDoc } from "@brain/connector-kit";
+import { type Connector, createFakeConnector } from "@brain/connector-kit";
 import type { Principal } from "@brain/core-types";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterAll } from "vitest";
 import { type BrainApp, type BrainDeps, createBrainApp } from "../src/index.js";
+import { doc, docs, docs2 } from "./fixtures.js";
+
+export { doc, docs, docs2 };
 
 const dir = mkdtempSync(join(tmpdir(), "brain-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
-
-export const doc = (address: string, users: string[], text = "needle"): FakeDoc => ({
-  address,
-  title: address,
-  version: "v1",
-  acl: { allowUsers: users, allowGroups: [], version: 1 },
-  zone: "team",
-  updatedAt: "2026-11-01T00:00:00.000Z",
-  text,
-});
 
 /** Bearer token "user:tenant". A missing header is unauthenticated. */
 export function principalFor(extra: unknown): Principal {
@@ -33,18 +26,21 @@ export function principalFor(extra: unknown): Principal {
   return { id, tenantId, groups: [] };
 }
 
-export const docs = () => [doc("a", ["alice"]), doc("b", ["alice"]), doc("hidden", ["bob"])];
-
 export async function start(over: Partial<BrainDeps> = {}) {
-  const connector = createFakeConnector("fake", docs());
+  const connectors: Record<string, Connector | undefined> = {
+    t1: createFakeConnector("fake", docs()),
+    t2: createFakeConnector("fake", docs2()),
+  };
+  const tokenFor = (tenantId: string) => (connectors[tenantId] ? `token-${tenantId}` : undefined);
   const auditDbPath = join(dir, `${n++}.db`);
   const app: BrainApp = await createBrainApp({
-    connector,
+    connectorFor: (tenantId) => connectors[tenantId],
+    tokenFor,
     cursors: createCursorStore(":memory:", () => 1000),
     clock: () => 1000,
     embed: async (ts) => ts.map(() => [1, 0]),
     embedQuery: async () => [1, 0],
-    fetchText: async (p) => (await connector.fetch(p.address, { token: "t" })).text,
+    fetchText: async (p) => (await connectors[p.tenantId]!.fetch(p.address, { token: tokenFor(p.tenantId)! })).text,
     principalFor,
     auditDbPath,
     auditKey: "test-audit-key",

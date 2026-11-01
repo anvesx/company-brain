@@ -1,4 +1,4 @@
-export type RuntimeErrorCode = "INVALID_INPUT" | "SINK_FAILED" | "BAD_CURSOR_LOOP";
+export type RuntimeErrorCode = "INVALID_INPUT" | "BAD_CURSOR_LOOP";
 
 /** Typed error for every failure this runtime raises itself. Connector and store errors pass through. */
 export class RuntimeError extends Error {
