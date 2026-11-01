@@ -48,4 +48,21 @@ describe("partial failure keeps old chunks", () => {
     expect((await ok.svc.apply({ type: "upsert", pointer: pointer() })).outcome).toBe("updated");
     expect(env.has("acme", "d1", A)).toBe(true);
   });
+
+  it("fetch failure on a narrowing ACL change keeps the new ACL applied: no resurrection", async () => {
+    const env = await seeded({ fetchText: boom });
+    const narrow = pointer({ ...v2, acl: { allowUsers: [], allowGroups: [], version: 2 } });
+    await expect(env.svc.apply({ type: "upsert", pointer: narrow })).rejects.toMatchObject({ code: "FETCH_FAILED" });
+    expect(env.has("acme", "d1", A, "u1")).toBe(false);
+    expect(env.registry.get("acme", "d1")?.acl.allowUsers).toEqual([]);
+  });
+
+  it("a failed update never widens access: the stale chunks keep the intersection of old and new ACL", async () => {
+    const env = await seeded({ fetchText: boom });
+    const wide = pointer({ ...v2, acl: { allowUsers: ["u1", "u2"], allowGroups: ["g"], version: 2 } });
+    await expect(env.svc.apply({ type: "upsert", pointer: wide })).rejects.toMatchObject({ code: "FETCH_FAILED" });
+    expect(env.has("acme", "d1", A, "u1")).toBe(true);
+    expect(env.has("acme", "d1", A, "u2")).toBe(false);
+    expect(env.registry.get("acme", "d1")?.acl).toMatchObject({ allowUsers: ["u1"], allowGroups: [] });
+  });
 });

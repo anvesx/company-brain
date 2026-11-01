@@ -33,6 +33,20 @@ describe("index and event failures", () => {
     expect(env.has("acme", "d1", B)).toBe(true);
   });
 
+  it("add failure plus failed cleanup throws CLEANUP_FAILED carrying both errors", async () => {
+    const env = await seeded({});
+    let n = 0;
+    const fail = (m: string) => () => {
+      throw new Error(m);
+    };
+    const remove = () => (++n > 1 ? fail("cleanup")() : 0);
+    const svc = setup(T, { registry: env.registry, index: { ...env.index, remove, add: fail("add") } }).svc;
+    const err = await svc.apply({ type: "upsert", pointer: v2 }).catch((e) => e);
+    expect(err).toMatchObject({ name: "IndexServiceError", code: "CLEANUP_FAILED" });
+    expect(err.cause).toBeInstanceOf(AggregateError);
+    expect(err.cause.errors.map((e: Error) => e.message)).toEqual(["add", "cleanup"]);
+  });
+
   it("failed rollback is reported as ROLLBACK_FAILED", async () => {
     const env = await seeded({});
     let n = 0;

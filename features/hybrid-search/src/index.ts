@@ -6,6 +6,7 @@ export type AddChunk = {
   chunkId: string;
   docId: string;
   tenantId: string;
+  /** Tokenised for keyword search, never stored. */
   text: string;
   embedding: number[];
   acl: Acl;
@@ -20,6 +21,8 @@ export interface SearchIndex {
   add(chunk: AddChunk): void;
   search(query: SearchQuery): Hit[];
   remove(docId: string, tenantId: string): number;
+  /** Overwrite the ACL copy on every chunk of one doc; returns chunks updated. */
+  updateAcl(docId: string, tenantId: string, acl: Acl): number;
 }
 
 export { SearchError } from "./errors.js";

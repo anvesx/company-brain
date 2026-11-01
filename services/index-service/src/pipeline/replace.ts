@@ -1,4 +1,4 @@
-import type { Pointer } from "@brain/core-types";
+import type { Acl, Pointer } from "@brain/core-types";
 import type { SearchIndex } from "@brain/hybrid-search";
 import type { Registry } from "@brain/pointer-registry";
 import { IndexServiceError } from "../types.js";
@@ -6,11 +6,26 @@ import type { Row } from "./prepare.js";
 
 type Stores = { registry: Registry; index: SearchIndex };
 
-/** Put the registry back to what it was before this event. */
-export function restore({ registry }: Stores, prior: Pointer | undefined, p: Pointer): void {
+/** Access never widens on a failed update: keep only what both the old and the incoming ACL allow. */
+function narrow(prior: Acl, next: Acl): Acl {
+  const both = (a: string[], b: string[]) => a.filter((x) => b.includes(x));
+  return {
+    allowUsers: both(prior.allowUsers, next.allowUsers),
+    allowGroups: both(prior.allowGroups, next.allowGroups),
+    version: Math.max(prior.version, next.version),
+  };
+}
+
+/**
+ * Undo a failed event. The prior pointer comes back (so a replay retries), but with the narrowed ACL, in the
+ * registry and in the index's own ACL copy, so a revocation is never undone. A brand new doc is tombstoned.
+ */
+export function restore({ registry, index }: Stores, prior: Pointer | undefined, p: Pointer): void {
   try {
-    if (prior) registry.upsert(prior);
-    else registry.tombstone(p.tenantId, p.id, p.updatedAt);
+    if (!prior) return void registry.tombstone(p.tenantId, p.id, p.updatedAt);
+    const acl = narrow(prior.acl, p.acl);
+    index.updateAcl(p.id, p.tenantId, acl);
+    registry.upsert({ ...prior, acl });
   } catch (error) {
     throw new IndexServiceError("ROLLBACK_FAILED", error);
   }
@@ -41,10 +56,14 @@ export function replace(s: Stores, p: Pointer, rows: Row[], prior: Pointer | und
       index.add({ chunkId, docId: p.id, tenantId: p.tenantId, text, embedding, acl: p.acl });
     }
   } catch (error) {
+    let cleanup: { error: unknown } | undefined;
     try {
       index.remove(p.id, p.tenantId);
-    } catch {}
+    } catch (e) {
+      cleanup = { error: e };
+    }
     restore(s, undefined, p);
-    throw new IndexServiceError("INDEX_FAILED", error);
+    if (!cleanup) throw new IndexServiceError("INDEX_FAILED", error);
+    throw new IndexServiceError("CLEANUP_FAILED", new AggregateError([error, cleanup.error], "index add failed and cleanup failed"));
   }
 }

@@ -1,3 +1,7 @@
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { Acl } from "@brain/core-types";
 import { describe, expect, it } from "vitest";
 import { createSearchIndex, SearchError } from "../../src/index.js";
@@ -50,5 +54,22 @@ describe("SearchIndex", () => {
     expect(index.remove("d", "t")).toBe(2);
     expect(index.remove("d", "t")).toBe(0);
     expect(index.search({ text: "needle", embedding: [1, 0], limit: 10, acl: { sql: "1", params: [] } })).toEqual([]);
+  });
+
+  it("keeps no body text: chunks has no text column and the db file never contains the phrase", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "hs-")), "i.db");
+    const index = createSearchIndex(path, 2);
+    const phrase = "zebra quartz marmalade";
+    index.add({ chunkId: "c", docId: "d", tenantId: "t", text: phrase, embedding: [1, 0], acl });
+    const raw = new DatabaseSync(path);
+    raw.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    expect(Object.keys(raw.prepare("SELECT * FROM chunks").get() as object)).not.toContain("text");
+    raw.close();
+    const bytes = readdirSync(join(path, "..")).map((f) => readFileSync(join(path, "..", f)).toString("latin1"));
+    for (const b of bytes) expect(b).not.toContain(phrase);
+    const hits = index.search({ text: "marmalade", embedding: [0, 1], limit: 5, acl: { sql: "1", params: [] } });
+    expect(hits).toEqual([{ chunkId: "c", docId: "d", score: expect.any(Number) }]);
+    expect(index.remove("d", "t")).toBe(1);
+    expect(index.search({ text: "marmalade", embedding: [0, 1], limit: 5, acl: { sql: "1", params: [] } })).toEqual([]);
   });
 });

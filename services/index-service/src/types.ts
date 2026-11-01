@@ -22,7 +22,15 @@ export interface IndexService {
   apply(event: ChangeEvent): Promise<ApplyResult>;
 }
 
-export type IndexErrorCode = "INVALID_EVENT" | "FETCH_FAILED" | "CHUNK_FAILED" | "EMBED_FAILED" | "EMBED_INVALID" | "INDEX_FAILED" | "ROLLBACK_FAILED";
+export type IndexErrorCode =
+  | "INVALID_EVENT"
+  | "FETCH_FAILED"
+  | "CHUNK_FAILED"
+  | "EMBED_FAILED"
+  | "EMBED_INVALID"
+  | "INDEX_FAILED"
+  | "CLEANUP_FAILED"
+  | "ROLLBACK_FAILED";
 
 export class IndexServiceError extends Error {
   readonly code: IndexErrorCode;

@@ -28,7 +28,11 @@ are injected, so the service does no network I/O of its own.
 ## Failure model
 
 The pointer is written before the slow work, so every failure before the chunk swap restores the
-previous registry row (or tombstones a brand new one). Old chunks are never touched. Fetch, chunk and
+previous registry row (or tombstones a brand new one). Old chunks are never touched.
+
+Permission revocation survives failure: the restored row carries the intersection of the old and incoming
+ACL, written to the registry and to the index ACL copy (`index.updateAcl`). A failed fetch can narrow
+access to stale chunks but never widen it, and the replay still sees the doc as changed. Fetch, chunk and
 embed failures, wrong vector count, ragged or non-finite vectors, and a vector dimension the index
 rejects (probed with a read-only search) all end this way. Replaying the same event then retries.
 
@@ -37,13 +41,16 @@ chunks cannot be recovered because the index has no read-back. The service remov
 tombstones the pointer, so the registry and index agree that the doc is not indexed, and a replay
 rebuilds it. `hybrid-search` has no transaction spanning remove and add.
 
+If that cleanup removal also fails, the error is `CLEANUP_FAILED` and `cause` is an `AggregateError` of
+`[addError, cleanupError]`.
+
 Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `FETCH_FAILED`, `CHUNK_FAILED`,
-`EMBED_FAILED`, `EMBED_INVALID`, `INDEX_FAILED`, `ROLLBACK_FAILED`. The original error is in `cause`.
+`EMBED_FAILED`, `EMBED_INVALID`, `INDEX_FAILED`, `CLEANUP_FAILED`, `ROLLBACK_FAILED`. The original error is in `cause`.
 
 ## Limits
 
 - Serialisation is in-process. Two processes writing the same database file can interleave.
-- The registry stores pointers only; the chunk text is in the index.
+- The registry stores pointers only; the index keeps tokens and ACLs only (no body text), so text is re-fetched from the source.
 
 ## Test
 
