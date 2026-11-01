@@ -12,7 +12,9 @@ const app = await createBrainApp({
   clock,
   embed,
   embedQuery,
-  fetchText,
+  fetchText, // optional: default reads through the tenant's connector with the tenant credential
+  userTokenFor, // optional: turns on the live ACL (see below)
+  liveAclTimeoutMs, // optional: how long the live check may take; default 2000 (query-service)
   principalFor,
   auditDbPath,
   anchorPath,
@@ -34,6 +36,12 @@ await app.close(); // idempotent, frees the port
 - MCP search failures are logged through `logger` (cause name and message only, never query text, principal or token); the client still sees only `Search failed`.
 - Vector size is measured by embedding one probe text at startup unless `dimension` is given.
 
+## Live ACL
+
+Set `userTokenFor(principal)` (the user's own credential at the source) and every search re-checks each hit at the source: the connector fetches the document with the user's token (`createConnectorLiveAcl` from `@brain/retrieval`). A read that succeeds keeps the hit; `NOT_FOUND` drops it; any other error, a missing token, an unknown tenant or a timeout fails closed. If nothing can be verified, `app.search` rejects with `RetrievalError` code `LIVE_ACL` and MCP clients see `Search failed`; no audit row is written. Successful live searches write the same audit rows as governed ones, built through `@brain/retrieval`. Without `userTokenFor`, search uses the cached ACL and governance as before.
+
+Cost: the check fetches the full document for each hit. Fine for a handful of hits per search, expensive for large documents.
+
 ## Run
 
 `BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`, `BRAIN_DATA_DIR`, `BRAIN_AUTH_SECRET`.
@@ -44,7 +52,9 @@ Bearer token: `<user>:<tenant>:<hmac-sha256-hex(secret, "user:tenant")>`, checke
 
 ## Limits
 
-- `@brain/retrieval` cannot take an injected search function (it builds its own query service from `index` and `registry`), so the app starts `@brain/mcp-service` directly with a governance-backed search. Retrieval is not used.
+- `@brain/retrieval` cannot take an injected search function, so the app starts `@brain/mcp-service` directly. Governed search (no live ACL) uses governance, whose sync query path cannot run a live verifier; live search composes retrieval's `toOutcomeFn`, `auditedOutcome` and `toSearchFn` instead.
+- `truncated` (candidate cap hit) is not exposed by `app.search`, which returns pointers only.
+- `bin.ts` does not configure `userTokenFor`; the live ACL is a library option.
 - After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers (`runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing.
 - `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
 

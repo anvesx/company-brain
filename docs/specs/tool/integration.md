@@ -33,6 +33,7 @@ These are test fixtures, not a contract for other packages.
 - search: ACL tightened at the source is reflected after re-ingest, and widened ACL too.
 - lifecycle: a doc deleted at the source is tombstoned and leaves search.
 - lifecycle: the audit chain verifies after N searches, detects an edited row, and detects truncation after a checkpoint.
+- live: real stack with connector live ACL (retrieval's createConnectorLiveAcl) (allow, deny, source error, timeout fails closed with LIVE_ACL, revocation without re-ingest).
 - lifecycle: retrieval over MCP writes one verifiable audit row per search.
 - lifecycle: a reopened `dir` keeps the index and the cursor; nothing is re-emitted; deletes made while down are tombstoned.
 - lifecycle: a doc whose fetch fails is reported and quarantined without blocking others, and recovers when it heals.

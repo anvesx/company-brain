@@ -11,9 +11,10 @@ import { createIndexService } from "@brain/index-service";
 import { createIngestion, type IngestionCounts } from "@brain/ingestion";
 import { createRegistry } from "@brain/pointer-registry";
 import { createQueryService } from "@brain/query-service";
+import { type LiveOptions, liveSearch } from "./live.js";
 import type { Source } from "./source.js";
 
-export type StackOptions = { clock?: () => number; maxAttempts?: number; auditKey?: string };
+export type StackOptions = LiveOptions & { clock?: () => number; maxAttempts?: number; auditKey?: string };
 
 const EMBEDDING = [1, 0];
 
@@ -31,7 +32,9 @@ export function openStack(dir: string, sources: Record<string, Source>, opts: St
     clock: () => new Date(clock()),
   });
   const query = createQueryService({ index, registry });
-  const governance = createGovernance({ audit, query, auditKey: opts.auditKey ?? "integration-audit-key" });
+  const auditKey = opts.auditKey ?? "integration-audit-key";
+  const governance = createGovernance({ audit, query, auditKey });
+  const searchLive = liveSearch({ index, registry, audit, auditKey, sources, embedding: EMBEDDING }, opts);
   const fetchText = async (p: Pointer) => (await sources[p.tenantId]!.fetch(p.address, { token: "t" })).text;
   const indexService = createIndexService({
     registry,
@@ -60,6 +63,7 @@ export function openStack(dir: string, sources: Record<string, Source>, opts: St
     ingest: (tenantId: string): Promise<IngestionCounts> => ingestion.runOnce(tenantId),
     search: (who: Principal, text: string, limit?: number): Promise<Pointer[]> =>
       governance.search({ query: text, principal: who, embedding: EMBEDDING, ...(limit !== undefined && { limit }) }),
+    searchLive,
     verify: governance.verify,
     checkpoint: governance.checkpoint,
     close: () => registry.close(),

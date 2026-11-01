@@ -26,7 +26,15 @@ export type BrainDeps = {
   clock: () => number;
   embed: (texts: string[]) => Promise<number[][]>;
   embedQuery: (text: string) => Promise<number[]>;
-  fetchText: (pointer: Pointer) => Promise<string>;
+  /** Reads a pointer's text for indexing. Omitted: the tenant's connector fetches it with the tenant credential. */
+  fetchText?: ((pointer: Pointer) => Promise<string>) | undefined;
+  /**
+   * The user's own credential at the source. When set, every search re-checks each hit at the source with that
+   * token (live ACL) and fails closed on denial, error or timeout. Omitted: cached ACLs only.
+   */
+  userTokenFor?: ((principal: Principal) => string | undefined) | undefined;
+  /** Milliseconds the live check may take before the search fails closed. Default: query-service's. */
+  liveAclTimeoutMs?: number | undefined;
   /** Derives the caller from transport metadata; must throw when unauthenticated. */
   principalFor: (extra: unknown) => Principal;
   /** Secret for keyed query digests in audit rows. Never hard-code outside demo. */
