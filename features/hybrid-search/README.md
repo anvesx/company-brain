@@ -35,6 +35,8 @@ const hits = index.search({
 ## Guarantees and limits
 
 - Embeddings must match the fixed dimension; limits are integers from 1 to 100.
+- `offset` (optional integer >= 0, default 0) skips that many hits of the fused RRF ranking. `offset + limit` must be <= `MAX_WINDOW` (1000), else `SearchError("OFFSET")`; an invalid offset is also `OFFSET`. An offset past the last hit returns `[]`.
+- Every search fuses the same top `MAX_WINDOW` (1000) rows of each list (FTS and vec), then slices `[offset, offset + limit)`. Pages therefore share one ranking: they never overlap or skip, and a page equals the same slice of a longer page. Fusing only `offset + limit` rows per list would change scores between pages. Cost: up to 1000 rows per list per call, whatever `limit` is. Hits ranked below `MAX_WINDOW` in both lists are unreachable.
 - FTS quotes, `*`, and `NEAR` are quoted as literals, never query operators.
 - Chunk ids are unique per tenant; removal is scoped to one tenant. SQL errors surface as `SearchError("DB")`.
 - `updateAcl` rewrites `allow_users` and `allow_groups` on every chunk of one doc in one transaction.

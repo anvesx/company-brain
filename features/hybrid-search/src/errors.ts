@@ -1,4 +1,4 @@
-export type SearchErrorCode = "ACL" | "DB" | "DIM" | "DUPLICATE" | "INPUT" | "LIMIT";
+export type SearchErrorCode = "ACL" | "DB" | "DIM" | "DUPLICATE" | "INPUT" | "LIMIT" | "OFFSET";
 
 export class SearchError extends Error {
   readonly code: SearchErrorCode;
