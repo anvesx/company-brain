@@ -1,3 +1,62 @@
 # @brain/connector-kit
 
-Spec: docs/specs/feature/connector-kit.md. README to be written by the builder.
+The connector contract for Company Brain sources. It exposes metadata for indexing while fetching
+document text live, so callers do not need to persist source content. The package also provides a
+registry, SHA-256 hashing, an in-memory fake, and a local-folder adapter.
+
+## Interface
+
+- `Connector.list({ cursor, limit })` returns stable metadata pages; limits are integers from 1–1000.
+- `Connector.fetch(address, { token })` returns current UTF-8 text and its source version.
+- `createConnectorRegistry()` rejects duplicate ids and unknown lookups with typed errors.
+- `createFakeConnector(id, docs)` snapshots fixtures for deterministic tests and demos.
+- `createFolderConnector(id, rootDir)` recursively reads a local folder without storing content.
+- `contentHash(text)` returns a lowercase SHA-256 hex digest.
+
+`ListedDoc` contains address, title, version, ACL, trust zone, and ISO update time. `FakeDoc` adds
+the text returned by `fetch`. `ConnectorError.code` is `NOT_FOUND`, `DUPLICATE`, `PATH_ESCAPE`, or
+`BAD_CURSOR`.
+
+## Usage
+
+```ts
+import { createFolderConnector, contentHash } from "@brain/connector-kit";
+
+const connector = createFolderConnector("handbook", "/srv/handbook");
+const { items, nextCursor } = await connector.list({ limit: 100 });
+const live = await connector.fetch(items[0]!.address, { token: "request-token" });
+console.log(contentHash(live.text), nextCursor);
+```
+
+## Folder convention
+
+A document at `policies/leave.md` may have `policies/leave.md.acl.json` containing an `Acl` object:
+
+```json
+{ "allowUsers": ["u1"], "allowGroups": ["hr"], "version": 3 }
+```
+
+Missing sidecars become `{ allowUsers: [], allowGroups: [], version: 0 }` (deny by default).
+Folder documents use the `personal` zone. Versions are `<mtimeMs>:<size>`. Traversal and any file
+or ACL symlink resolving outside the configured root throw `PATH_ESCAPE`.
+
+## Limits and operation
+
+Folder pages rescan the tree, so callers should restart paging after concurrent filesystem changes.
+The adapter follows internal symlinks once and suppresses directory cycles. Files must be UTF-8;
+malformed ACL JSON or ACL schema failures are surfaced unchanged. OAuth, networks, and webhooks are
+outside this package. The `token` argument exists for production adapters; the fake and folder
+adapters do not authenticate it.
+
+## Verify
+
+Run from this folder:
+
+```sh
+pnpm test
+pnpm typecheck
+pnpm mutation
+```
+
+Tests cover registry errors, property-based paging, live edits, Unicode, deny-by-default ACLs,
+path and symlink escapes, empty folders, and paging 50,000 fake documents under two seconds.
