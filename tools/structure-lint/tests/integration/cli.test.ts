@@ -45,7 +45,7 @@ describe("structure-lint CLI", () => {
     const outputs = await Promise.all([root, root].map((path) => runAsync(process.execPath, [cli, "--root", path], { encoding: "utf8" })));
     expect(outputs.every(({ stdout }) => stdout.includes("checked 1 packages"))).toBe(true);
     const real = run(resolve("../.."));
-    expect(real.status).not.toBe(2);
+    expect(real.status).toBe(0);
     expect(real.stdout).toMatch(/checked \d+ packages, \d+ files/);
   });
 });
