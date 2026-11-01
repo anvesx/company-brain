@@ -19,5 +19,9 @@
     "@brain/hybrid-search": "workspace:*",
     "@brain/pointer-registry": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   }
 }

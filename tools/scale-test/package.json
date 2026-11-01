@@ -1,0 +1,11 @@
+{
+  "name": "@brain/scale-test",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "scale": "k6 run src/search.js"
+  }
+}

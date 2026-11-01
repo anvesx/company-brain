@@ -17,5 +17,9 @@
     "@brain/change-cursor": "workspace:*",
     "@brain/connector-kit": "workspace:*",
     "@brain/core-types": "workspace:*"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   }
 }

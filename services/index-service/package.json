@@ -18,5 +18,9 @@
     "@brain/core-types": "workspace:*",
     "@brain/hybrid-search": "workspace:*",
     "@brain/pointer-registry": "workspace:*"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   }
 }
