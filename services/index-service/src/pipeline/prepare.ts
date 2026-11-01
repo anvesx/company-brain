@@ -24,10 +24,12 @@ function checkEmbeddings(vectors: unknown, count: number): number[][] {
 
 /** Chunk and embed one document, fetching its text unless the caller already has it. Touches no stored state. */
 export async function prepare(deps: Deps, pointer: Pointer, prefetched?: string): Promise<Row[]> {
+  const { fetchText } = deps;
+  if (prefetched === undefined && !fetchText) throw new IndexServiceError("INVALID_EVENT");
   const text =
     prefetched ??
     (await step("FETCH_FAILED", async () => {
-      const t = await deps.fetchText(pointer);
+      const t = await (fetchText as NonNullable<typeof fetchText>)(pointer);
       if (typeof t !== "string") throw new TypeError("fetchText must return a string");
       return t;
     }));

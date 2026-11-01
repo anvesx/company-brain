@@ -35,7 +35,7 @@ export interface LiveQueryService extends QueryService {
 export function validate(request: SearchRequest): { limit: number; principal: Principal; text: string } {
   const limit = request?.limit ?? DEFAULT_LIMIT;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new QueryError("LIMIT");
-  const parsed = PrincipalSchema.safeParse(request.principal);
+  const parsed = PrincipalSchema.safeParse(request?.principal);
   if (!parsed.success) throw new QueryError("PRINCIPAL");
   const text = typeof request.query === "string" ? request.query.trim() : "";
   if (text === "") throw new QueryError("EMPTY_QUERY");

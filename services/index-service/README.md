@@ -5,7 +5,7 @@ Applies change events to the search index. Spec: `docs/specs/service/index-servi
 ```ts
 import { createIndexService } from "@brain/index-service";
 
-const svc = createIndexService({ registry, index, chunk, embed, fetchText });
+const svc = createIndexService({ registry, index, chunk, embed, fetchText }); // fetchText is optional
 await svc.apply({ type: "upsert", pointer }); // { outcome: "created" | "updated" | "unchanged", chunks }
 await svc.apply({ type: "upsert", pointer, content: { text, contentHash } }); // text already fetched: no fetchText call
 await svc.apply({ type: "delete", tenantId, id, at }); // { outcome: "deleted" | "absent", chunks: 0 }
@@ -13,7 +13,9 @@ await svc.apply({ type: "delete", tenantId, id, at }); // { outcome: "deleted" |
 
 `registry` is `@brain/pointer-registry`, `index` is `@brain/hybrid-search`, `chunk(docId, text)` is
 `chunkText` from `@brain/chunker` (or a wrapper with options). `embed(texts)` and `fetchText(pointer)`
-are injected, so the service does no network I/O of its own.
+are injected, so the service does no network I/O of its own. `fetchText` is optional: without it, every
+upsert that needs indexing must carry `content`, else `INVALID_EVENT` (the registry row is restored, so a replay
+with content succeeds). `unchanged` upserts and deletes never need it.
 
 ## Behaviour
 
@@ -27,7 +29,8 @@ are injected, so the service does no network I/O of its own.
 - Delete: chunks are removed first, then the pointer is tombstoned. Deleting an unknown or already
   deleted doc returns `absent` and still removes any stray chunks, so replay is safe.
 - Everything is keyed by `(tenantId, id)`. The same `id` in two tenants never mixes.
-- Events for one `(tenantId, id)` run one at a time in arrival order; others run in parallel.
+- Events for one `(tenantId, id)` run one at a time in arrival order; others run in parallel. The lock has no
+  timeout (a hung task blocks its own key only) and releases its key map entry when idle (`pending()` is 0).
 - Replaying any event stream converges to the same state.
 
 ## Failure model

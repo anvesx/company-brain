@@ -26,7 +26,7 @@ export const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
 export const embedText = (t: string) => [t.length % 7, 1, t.charCodeAt(0) % 5];
 
-export function setup(texts: Record<string, string>, over: Partial<IndexDeps> = {}) {
+export function setup(texts: Record<string, string>, over: { [K in keyof IndexDeps]?: IndexDeps[K] | undefined } = {}) {
   const registry = createRegistry(":memory:");
   const index = createSearchIndex(":memory:", 3);
   const calls = { fetch: 0, embed: 0 };
@@ -43,7 +43,9 @@ export function setup(texts: Record<string, string>, over: Partial<IndexDeps> = 
       return ts.map(embedText);
     },
     ...over,
-  };
+  } as IndexDeps;
+  // An explicit `fetchText: undefined` means the dependency is absent, not present-but-undefined.
+  if (over.fetchText === undefined && "fetchText" in over) delete deps.fetchText;
   const search = (tenantId: string, text: string, user = "u1") =>
     index.search({
       text,

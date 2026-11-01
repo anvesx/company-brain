@@ -20,7 +20,7 @@ class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "
 
 ## Behaviour
 
-1. The query is trimmed; blank or non-string is `EMPTY_QUERY`. `limit` is an integer 1 to 100, default 10, else `LIMIT`. A principal that fails `PrincipalSchema` is `PRINCIPAL`.
+1. The query is trimmed; blank or non-string is `EMPTY_QUERY`. `limit` is an integer 1 to 100, default 10, else `LIMIT`. A principal that fails `PrincipalSchema`, or a missing request, is `PRINCIPAL`.
 2. The index runs with `allowClause(principal)`, so tenant and ACL filter inside both retrieval lists. The service pages through it (`offset`, `limit` up to 100 per page) until `limit` visible hits are collected, the index is exhausted (short page, or a page with no new chunk), or `maxCandidates` (default 1000) hits were examined. Then `truncated` is `true`. It is conservative: an index with exactly `maxCandidates` hits also reports `true`.
 3. Each hit's document is looked up in the registry under the principal's tenant. Missing, tombstoned, cross-tenant pointers are dropped.
 4. The pointer's current ACL is re-checked with `isAllowed`. The index copy of the ACL can be stale: a revocation in the registry hides the document even before re-indexing.
@@ -37,6 +37,14 @@ class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "
 - Zones are not an access rule here; visibility comes from the ACL only.
 - Embeddings are supplied by the caller. No embedding model runs here.
 - Up to `maxCandidates` registry lookups per call, plus one live call per page.
+
+## Equivalent mutants
+
+Mutation score is 98.4. The three survivors cannot change behaviour:
+
+- `service.ts` tenant clause (`pointer.tenantId !== principal.tenantId`): redundant by design. `isAllowed(principal, acl, pointer.tenantId)` rejects a cross-tenant pointer on the next line, so removing the clause changes nothing observable. It stays as defence in depth.
+- `paging/live.ts` timeout message (`"live acl timeout"`): the rejection is swallowed and only triggers fail-closed; the text is never read.
+- `paging/live.ts` empty `catch {}`: `verdicts` is already `undefined` when the verifier throws or times out, so the catch body has no effect.
 
 ## Test
 
