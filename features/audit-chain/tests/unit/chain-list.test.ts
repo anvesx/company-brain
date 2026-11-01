@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { GENESIS, hashEvent } from "../../src/canonical.js";
 import { AuditError, type AuditEvent, createAuditChain } from "../../src/chain.js";
 
 const dir = mkdtempSync(join(tmpdir(), "audit-unit-"));

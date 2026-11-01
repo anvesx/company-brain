@@ -13,3 +13,4 @@ reports/
 /devx-brain.html
 docs/html/devx-os-*
 docs/html/*.pdf
+.claude/worktrees/

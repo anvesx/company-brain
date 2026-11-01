@@ -42,7 +42,7 @@ describe("raw-SQL tamper is detected at the first bad seq", () => {
     expect(verify()).toEqual({ ok: false, brokenAt: 1 });
   });
   it("edited stored hash", () => {
-    run("UPDATE audit SET hash = '" + "f".repeat(64) + "' WHERE seq = 5");
+    run(`UPDATE audit SET hash = '${"f".repeat(64)}' WHERE seq = 5`);
     expect(verify()).toEqual({ ok: false, brokenAt: 5 });
   });
   it("deleted middle row", () => {
