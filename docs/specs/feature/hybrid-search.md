@@ -15,6 +15,7 @@ export interface SearchIndex {
   add(c: { chunkId: string; docId: string; tenantId: string; text: string; embedding: number[]; acl: Acl }): void;
   search(q: { text: string; embedding: number[]; limit: number; acl: AclFragment }): Hit[];
   remove(docId: string, tenantId: string): number; // chunks removed, scoped to one tenant
+  updateAcl(docId: string, tenantId: string, acl: Acl): number; // chunks updated, scoped to one doc in one tenant
 }
 export function createSearchIndex(dbPath: string, dim: number): SearchIndex;
 export function rrf(lists: string[][], k?: number): { id: string; score: number }[]; // k default 60
@@ -28,6 +29,8 @@ export function rrf(lists: string[][], k?: number): { id: string; score: number 
 6. `chunk_id` is unique per `(tenant_id, chunk_id)`, not globally. A duplicate inside one tenant throws `SearchError("DUPLICATE")`.
 7. Any SQL failure in `search`, `add` or `remove` surfaces as `SearchError("DB")`.
 8. `add` stores `acl.allowUsers` and `acl.allowGroups` as JSON text columns `allow_users` and `allow_groups`, so `allowClause` from acl-filter runs unchanged.
+9. Pointer-only: the index never stores body text. `chunks` has no `text` column and `chunks_fts` is contentless (`content=''`); `add` tokenises `text` and discards it. A raw scan of the db file after checkpoint contains no body phrase. Hits carry `chunkId`/`docId`, never text.
+10. `updateAcl` overwrites `allow_users`/`allow_groups` on all chunks of one `(docId, tenantId)` in one transaction.
 ## Acceptance tests (first)
 unit (rrf worked examples, tie order, escape), integration (3 docs, one forbidden by fragment, assert it never returns), mutation >= 80, scale (100k chunks, query under 150 ms, record in README).
 ## Layout
