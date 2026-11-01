@@ -28,6 +28,12 @@ await retrieval.close();
 6. Missing `audit` or empty `auditKey` throws `RetrievalError` `CONFIG` at construction (`createRetrieval` rejects). Nothing is served unaudited.
 7. An `embedQuery` failure, a wrong-dimension vector, any query-service error, or an audit failure becomes the MCP error `Search failed`. The cause goes only to the optional `logger`. Failed searches leave no row.
 
+8. Search runs through the query service's `searchLive`, which pages the index with `offset` (up to `maxCandidates`, default 1000) and applies the optional `liveAcl` verifier (options `liveAcl`, `liveAclTimeoutMs`, `timer`, `maxCandidates` pass straight to the query service).
+9. `retrieval.search(request)` is the audited typed path the MCP tool uses. It resolves `{ ok: true, pointers, truncated, scanned, liveDenied, liveUnverified }`, or `{ ok: false, code: "LIVE_ACL" }` when the verifier errored, timed out or could not vouch for any hit. `truncated` means the scan hit its candidate cap, so more matches may exist.
+10. Fail closed: a `LIVE_ACL` outcome returns no pointers, writes no audit row, and reaches MCP clients as `Search failed`. Over MCP, `truncated` is not exposed (the tool returns pointers only); read it from `retrieval.search`.
+
+11. `createConnectorLiveAcl({ connectorFor, userTokenFor, pointerFor })` is a ready `liveAcl` for step 8: it fetches each hit through the tenant's connector with the user's own token (success `allow`, `NOT_FOUND` `deny`, anything else `unknown`, never throws). Pass it as the `liveAcl` option.
+
 `@brain/governance` cannot be imported here (modules do not depend on modules), so the audit wrapper in `src/audit.ts` is a small deliberate copy of its logic.
 
 ## Limits

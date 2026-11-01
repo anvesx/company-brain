@@ -1,30 +1,39 @@
 import { createHmac } from "node:crypto";
 import type { AuditService } from "@brain/audit-service";
-import type { SearchFn } from "./adapter.js";
+import type { Outcome, OutcomeFn, SearchFn, SearchRequest } from "./adapter.js";
 import { RetrievalError } from "./errors.js";
 
 export type AuditKey = string | Uint8Array;
 
 /**
  * Wraps a search so results are returned only after one audit row is written; a failed write rejects.
+ * `count` is the row's result count, or undefined for a result that must leave no row.
  * Mirrors @brain/governance (a module cannot import another module, so this is a deliberate small duplicate).
  * Target = HMAC(HMAC(master, tenant), trimmed query): keyed, per tenant, no raw query stored.
  */
-export function auditedSearch(search: SearchFn, audit: AuditService, auditKey: AuditKey): SearchFn {
+function audited<T>(search: (q: SearchRequest) => Promise<T>, audit: AuditService, auditKey: AuditKey, count: (result: T) => number | undefined) {
   if (!audit) throw new RetrievalError("CONFIG", "audit is required");
   if (!auditKey || auditKey.length === 0) throw new RetrievalError("CONFIG", "auditKey is required");
   const digest = (tenantId: string, query: string): string => {
     const tenantKey = createHmac("sha256", auditKey).update(`brain-audit-target-key:${tenantId}`).digest();
     return createHmac("sha256", tenantKey).update(query.trim(), "utf8").digest("hex");
   };
-  return async (request) => {
+  return async (request: SearchRequest): Promise<T> => {
     const results = await search(request);
+    const rows = count(results);
+    if (rows === undefined) return results;
     const { id, tenantId } = request.principal;
     try {
-      await audit.record(tenantId, { actor: id, action: "search", target: digest(tenantId, request.query), detail: { count: results.length } });
+      await audit.record(tenantId, { actor: id, action: "search", target: digest(tenantId, request.query), detail: { count: rows } });
     } catch (cause) {
       throw new RetrievalError("AUDIT", "audit record failed", { cause });
     }
     return results;
   };
 }
+
+export const auditedSearch = (search: SearchFn, audit: AuditService, auditKey: AuditKey): SearchFn => audited(search, audit, auditKey, (r) => r.length);
+
+/** Same audit rule for typed outcomes: ok results write a row; a LIVE_ACL failure returns nothing and leaves no row. */
+export const auditedOutcome = (outcome: OutcomeFn, audit: AuditService, auditKey: AuditKey): OutcomeFn =>
+  audited(outcome, audit, auditKey, (r: Outcome) => (r.ok ? r.pointers.length : undefined));

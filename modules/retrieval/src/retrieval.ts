@@ -2,8 +2,8 @@ import type { AuditService } from "@brain/audit-service";
 import type { Principal } from "@brain/core-types";
 import { type McpServiceOptions, startMcpServer } from "@brain/mcp-service";
 import { createQueryService, type QueryDeps } from "@brain/query-service";
-import { type EmbedQuery, toSearchFn } from "./adapter.js";
-import { type AuditKey, auditedSearch } from "./audit.js";
+import { type EmbedQuery, type OutcomeFn, toOutcomeFn, toSearchFn } from "./adapter.js";
+import { type AuditKey, auditedOutcome } from "./audit.js";
 
 export type RetrievalOptions = QueryDeps &
   Pick<McpServiceOptions, "transport" | "port" | "host" | "stdin" | "stdout" | "logger"> & {
@@ -17,13 +17,21 @@ export type RetrievalOptions = QueryDeps &
     auditKey: AuditKey;
   };
 
-export type RetrievalHandle = { close(): Promise<void>; port: number | undefined };
+/** `search` is the audited typed path the MCP tool uses: `{ ok: true, pointers, truncated, ... }` or `{ ok: false, code: "LIVE_ACL" }`. */
+export type RetrievalHandle = { close(): Promise<void>; port: number | undefined; search: OutcomeFn };
 
-/** Wires query-service into mcp-service, with every search audited fail-closed. No retrieval logic lives here. */
+/** Wires query-service (`searchLive`, with paging and the optional live ACL) into mcp-service, every search audited fail-closed. */
 export async function createRetrieval(options: RetrievalOptions): Promise<RetrievalHandle> {
-  const { index, registry, embedQuery, audit, auditKey, ...server } = options;
-  const plain = toSearchFn(createQueryService({ index, registry }), embedQuery);
-  const search = auditedSearch(plain, audit, auditKey);
-  const running = await startMcpServer({ ...server, search });
-  return { close: running.close, port: running.port };
+  const { embedQuery, audit, auditKey, index, registry, liveAcl, liveAclTimeoutMs, timer, maxCandidates, ...server } = options;
+  const queryDeps: QueryDeps = {
+    index,
+    registry,
+    ...(liveAcl && { liveAcl }),
+    ...(liveAclTimeoutMs !== undefined && { liveAclTimeoutMs }),
+    ...(timer && { timer }),
+    ...(maxCandidates !== undefined && { maxCandidates }),
+  };
+  const search = auditedOutcome(toOutcomeFn(createQueryService(queryDeps), embedQuery), audit, auditKey);
+  const running = await startMcpServer({ ...server, search: toSearchFn(search) });
+  return { close: running.close, port: running.port, search };
 }
