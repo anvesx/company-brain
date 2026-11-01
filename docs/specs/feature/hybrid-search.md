@@ -15,6 +15,7 @@ export interface SearchIndex {
   add(c: { chunkId: string; docId: string; tenantId: string; text: string; embedding: number[]; acl: Acl }): void;
   search(q: { text: string; embedding: number[]; limit: number; offset?: number; acl: AclFragment }): Hit[];
   remove(docId: string, tenantId: string): number; // chunks removed, scoped to one tenant
+  replace(docId: string, tenantId: string, chunks: AddChunk[]): void; // atomic remove + add in one transaction; on any failure the old chunks stay. Chunks must carry this docId and tenantId
   updateAcl(docId: string, tenantId: string, acl: Acl): number; // chunks updated, scoped to one doc in one tenant
 }
 export const MAX_WINDOW = 1000; // per-list fetch depth and the bound on offset + limit

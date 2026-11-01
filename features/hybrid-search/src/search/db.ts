@@ -1,8 +1,10 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { Acl } from "@brain/core-types";
 import { SearchError } from "../errors.js";
-import type { Hit } from "../index.js";
+import type { AddChunk, Hit } from "../index.js";
 import type { RankedId } from "../rrf.js";
+import { addFts } from "./fts.js";
+import { addVec } from "./vec.js";
 
 export function sqlParams(values: unknown[]): SQLInputValue[] {
   if (!Array.isArray(values)) throw new SearchError("ACL");
@@ -46,4 +48,13 @@ export function setAcl(db: DatabaseSync, docId: string, tenantId: string, acl: A
     .prepare("UPDATE chunks SET allow_users=?, allow_groups=? WHERE doc_id=? AND tenant_id=?")
     .run(JSON.stringify(acl.allowUsers), JSON.stringify(acl.allowGroups), docId, tenantId);
   return Number(r.changes);
+}
+
+/** Insert one chunk into all three tables. The caller owns the transaction. */
+export function insertChunk(db: DatabaseSync, chunk: AddChunk): void {
+  const row = db
+    .prepare("INSERT INTO chunks(chunk_id,doc_id,tenant_id,allow_users,allow_groups) VALUES(?,?,?,?,?)")
+    .run(chunk.chunkId, chunk.docId, chunk.tenantId, JSON.stringify(chunk.acl.allowUsers), JSON.stringify(chunk.acl.allowGroups));
+  addFts(db, Number(row.lastInsertRowid), chunk.text);
+  addVec(db, Number(row.lastInsertRowid), chunk.embedding);
 }

@@ -21,6 +21,8 @@ export type SearchQuery = {
 };
 export interface SearchIndex {
   add(chunk: AddChunk): void;
+  /** Atomically swap one doc's chunks: remove then add in one transaction. On any failure the old chunks stay. Every chunk must carry this docId and tenantId. */
+  replace(docId: string, tenantId: string, chunks: AddChunk[]): void;
   search(query: SearchQuery): Hit[];
   remove(docId: string, tenantId: string): number;
   /** Overwrite the ACL copy on every chunk of one doc; returns chunks updated. */

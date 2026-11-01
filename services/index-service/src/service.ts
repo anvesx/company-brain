@@ -6,7 +6,7 @@ import { probe, replace, restore } from "./pipeline/replace.js";
 import { type ApplyResult, type ChangeEvent, type Content, type IndexDeps, type IndexService, IndexServiceError } from "./types.js";
 
 const text = (v: unknown): v is string => typeof v === "string" && v !== "";
-const PASS = new Set(["INDEX_FAILED", "CLEANUP_FAILED", "ROLLBACK_FAILED"]);
+const PASS = new Set(["INDEX_FAILED", "ROLLBACK_FAILED"]);
 
 function keyOf(e: ChangeEvent): string {
   const [t, id] = e?.type === "upsert" ? [e.pointer?.tenantId, e.pointer?.id] : e?.type === "delete" ? [e.tenantId, e.id] : [];

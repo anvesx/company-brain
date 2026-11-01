@@ -4,10 +4,10 @@ import * as sqliteVec from "sqlite-vec";
 import { SearchError } from "../errors.js";
 import type { AddChunk, Hit, SearchIndex, SearchQuery } from "../index.js";
 import { rrf } from "../rrf.js";
-import { createChunks, hydrate, removeDoc, setAcl } from "./db.js";
-import { addFts, createFts, searchFts } from "./fts.js";
-import { MAX_WINDOW, validateEmbedding, validateWindow, validText } from "./validate.js";
-import { addVec, createVec, searchVec } from "./vec.js";
+import { createChunks, hydrate, insertChunk, removeDoc, setAcl } from "./db.js";
+import { createFts, searchFts } from "./fts.js";
+import { MAX_WINDOW, validateChunk, validateEmbedding, validateWindow, validText } from "./validate.js";
+import { createVec, searchVec } from "./vec.js";
 
 function initialize(path: string, dim: number): DatabaseSync {
   if (!Number.isInteger(dim) || dim < 1 || dim > 4096) throw new SearchError("DIM");
@@ -35,14 +35,19 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
   };
   return {
     add(chunk: AddChunk): void {
-      validateEmbedding(chunk?.embedding, dim);
-      if (!validText(chunk?.chunkId) || !validText(chunk?.docId) || !validText(chunk?.tenantId) || typeof chunk?.text !== "string")
-        throw new SearchError("INPUT");
+      validateChunk(chunk, dim);
+      tx(() => insertChunk(db, chunk));
+    },
+    replace(docId: string, tenantId: string, chunks: AddChunk[]): void {
+      if (!validText(docId) || !validText(tenantId) || !Array.isArray(chunks)) throw new SearchError("INPUT");
+      for (const chunk of chunks) {
+        validateChunk(chunk, dim);
+        if (chunk.docId !== docId || chunk.tenantId !== tenantId) throw new SearchError("INPUT");
+      }
+      // One transaction: any failure rolls back the remove too, so the old chunks stay searchable.
       tx(() => {
-        const insert = db.prepare("INSERT INTO chunks(chunk_id,doc_id,tenant_id,allow_users,allow_groups) VALUES(?,?,?,?,?)");
-        const row = insert.run(chunk.chunkId, chunk.docId, chunk.tenantId, JSON.stringify(chunk.acl.allowUsers), JSON.stringify(chunk.acl.allowGroups));
-        addFts(db, Number(row.lastInsertRowid), chunk.text);
-        addVec(db, Number(row.lastInsertRowid), chunk.embedding);
+        removeDoc(db, docId, tenantId);
+        for (const chunk of chunks) insertChunk(db, chunk);
       });
     },
     search(query: SearchQuery): Hit[] {

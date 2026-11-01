@@ -34,7 +34,6 @@ export type IndexErrorCode =
   | "EMBED_FAILED"
   | "EMBED_INVALID"
   | "INDEX_FAILED"
-  | "CLEANUP_FAILED"
   | "ROLLBACK_FAILED";
 
 export class IndexServiceError extends Error {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { pointer, setup } from "../support/harness.js";
+import { HB, pointer, setup } from "../support/harness.js";
 
 const A = "alpha beta gamma";
 const B = "delta epsilon zeta";
 const T = { "acme/d1@v1": A, "acme/d1@v2": B };
-const v2 = () => pointer({ version: "v2", contentHash: "b".repeat(64) });
+const v2 = () => pointer({ version: "v2", contentHash: HB });
 const del = { type: "delete", tenantId: "acme", id: "d1", at: "2026-02-01T00:00:00.000Z" } as const;
 
 describe("apply lifecycle", () => {

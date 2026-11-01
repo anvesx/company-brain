@@ -1,6 +1,7 @@
 import type { Chunk } from "@brain/chunker";
 import type { Pointer } from "@brain/core-types";
 import { type IndexDeps, type IndexErrorCode, IndexServiceError } from "../types.js";
+import { verifyFetched } from "./content.js";
 
 export type Row = { chunk: Chunk; embedding: number[] };
 type Deps = Pick<IndexDeps, "chunk" | "embed" | "fetchText">;
@@ -33,6 +34,8 @@ export async function prepare(deps: Deps, pointer: Pointer, prefetched?: string)
       if (typeof t !== "string") throw new TypeError("fetchText must return a string");
       return t;
     }));
+  // Prefetched text was verified by the service before any state change; fetched text is verified here.
+  if (prefetched === undefined) verifyFetched(pointer, text);
   const chunks = await step("CHUNK_FAILED", () => deps.chunk(pointer.id, text));
   if (chunks.length === 0) return [];
   const raw = await step("EMBED_FAILED", () => deps.embed(chunks.map((c) => c.text)));
