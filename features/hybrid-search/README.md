@@ -8,7 +8,7 @@ document body.
 ## Interface
 
 `createSearchIndex(dbPath, dim)` returns synchronous `add`, `search`, and
-`remove` operations. `search` accepts an opaque parameterized SQL predicate over
+`remove(docId, tenantId)` operations. `chunks` stores `tenant_id`, `allow_users`, and `allow_groups` (JSON text), so the `allowClause` output of `@brain/acl-filter` runs against it unchanged. `search` accepts an opaque parameterized SQL predicate over
 `chunks`. The predicate executes inside both retrieval statements, so excluded
 chunks cannot enter either list. `rrf(lists, k = 60)` is also public.
 
@@ -36,6 +36,7 @@ const hits = index.search({
 
 - Embeddings must match the fixed dimension; limits are integers from 1 to 100.
 - FTS quotes, `*`, and `NEAR` are quoted as literals, never query operators.
+- Chunk ids are unique per tenant; removal is scoped to one tenant. SQL errors surface as `SearchError("DB")`.
 - Removal updates chunks, FTS5, and sqlite-vec in one `BEGIN IMMEDIATE` transaction.
 - One instance is synchronous. Separate writers wait up to 5 seconds via SQLite.
 - ACL SQL is trusted compiler output; values belong in `params`, not the SQL string.

@@ -13,7 +13,7 @@ export function addVec(db: DatabaseSync, rowid: number, embedding: number[]): vo
 }
 
 export function searchVec(db: DatabaseSync, embedding: number[], limit: number, acl: AclFragment): string[] {
-  const sql = `SELECT chunks.chunk_id AS id FROM chunks_vec
+  const sql = `SELECT chunks.rowid AS id FROM chunks_vec
     JOIN chunks ON chunks.rowid = chunks_vec.rowid
     WHERE chunks_vec.embedding MATCH ? AND k = ? AND (${acl.sql})
     ORDER BY chunks_vec.distance, chunks.chunk_id LIMIT ?`;
@@ -40,7 +40,7 @@ function count(db: DatabaseSync, where: string, params: SQLInputValue[]): number
 
 // vec0 caps knn at 4096; selective ACLs fall back to a scan over allowed rows.
 function exactScan(db: DatabaseSync, embedding: number[], limit: number, acl: AclFragment): string[] {
-  const sql = `SELECT chunks.chunk_id AS id FROM chunks
+  const sql = `SELECT chunks.rowid AS id FROM chunks
     JOIN chunks_vec ON chunks_vec.rowid = chunks.rowid
     WHERE (${acl.sql})
     ORDER BY vec_distance_l2(chunks_vec.embedding, ?), chunks.chunk_id LIMIT ?`;

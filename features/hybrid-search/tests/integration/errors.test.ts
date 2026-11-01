@@ -19,7 +19,7 @@ describe("SearchIndex validation", () => {
     const index = createSearchIndex(":memory:", 2);
     index.add(chunk("a"));
     expect(() => index.add(chunk("a", "other"))).toThrowError(new SearchError("DUPLICATE"));
-    expect(index.remove("other")).toBe(0);
+    expect(index.remove("other", "t")).toBe(0);
     expect(index.search({ text: "needle", embedding: [1, 0], limit: 10, acl: all })).toHaveLength(1);
   });
 
@@ -30,8 +30,17 @@ describe("SearchIndex validation", () => {
     expect(() => index.search({ ...q, acl: { sql: "tenant_id = ?", params: [{}] } })).toThrowError(new SearchError("ACL"));
     expect(() => index.search({ ...q, acl: { sql: " ", params: [] } })).toThrowError(new SearchError("INPUT"));
     expect(() => index.add(chunk(""))).toThrowError(new SearchError("INPUT"));
-    expect(() => index.remove("")).toThrowError(new SearchError("INPUT"));
+    expect(() => index.remove("", "t")).toThrowError(new SearchError("INPUT"));
     expect(() => index.add({ ...chunk("b"), embedding: [Number.NaN, 0] })).toThrowError(new SearchError("DIM"));
+  });
+
+  it("surfaces SQL errors in search as SearchError DB", () => {
+    const index = createSearchIndex(":memory:", 2);
+    index.add(chunk("a"));
+    const q = { text: "needle", embedding: [1, 0], limit: 1, acl: { sql: "no_such_column = ?", params: [1] } };
+    expect(() => index.search(q)).toThrowError(new SearchError("DB"));
+    expect(() => index.search({ ...q, text: "" })).toThrowError(new SearchError("DB"));
+    expect(() => index.remove("d", "")).toThrowError(new SearchError("INPUT"));
   });
 
   it("rejects bad dimensions at construction", () => {
@@ -53,7 +62,7 @@ describe("SearchIndex behaviour", () => {
     const index = createSearchIndex(":memory:", 2);
     index.add(chunk("a", "d1"));
     index.add(chunk("b", "d2"));
-    expect(index.remove("d1")).toBe(1);
+    expect(index.remove("d1", "t")).toBe(1);
     const hits = index.search({ text: "needle", embedding: [1, 0], limit: 5, acl: all });
     expect(hits.map((h) => h.chunkId)).toEqual(["b"]);
   });

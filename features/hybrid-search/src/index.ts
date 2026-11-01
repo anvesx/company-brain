@@ -19,7 +19,7 @@ export type SearchQuery = {
 export interface SearchIndex {
   add(chunk: AddChunk): void;
   search(query: SearchQuery): Hit[];
-  remove(docId: string): number;
+  remove(docId: string, tenantId: string): number;
 }
 
 export { SearchError } from "./errors.js";

@@ -1,9 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
-import type { Acl } from "@brain/core-types";
 import * as sqliteVec from "sqlite-vec";
 import { SearchError } from "../errors.js";
 import type { AddChunk, Hit, SearchIndex, SearchQuery } from "../index.js";
 import { rrf } from "../rrf.js";
+import { hydrate } from "./db.js";
 import { addFts, createFts, searchFts } from "./fts.js";
 import { validateEmbedding, validText } from "./validate.js";
 import { addVec, createVec, searchVec } from "./vec.js";
@@ -14,7 +14,7 @@ function initialize(path: string, dim: number): DatabaseSync {
   sqliteVec.load(db);
   db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");
   db.exec(
-    "CREATE TABLE IF NOT EXISTS chunks (chunk_id TEXT UNIQUE NOT NULL, doc_id TEXT NOT NULL, tenant_id TEXT NOT NULL, text TEXT NOT NULL, acl TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS chunks (chunk_id TEXT NOT NULL, doc_id TEXT NOT NULL, tenant_id TEXT NOT NULL, text TEXT NOT NULL, allow_users TEXT NOT NULL, allow_groups TEXT NOT NULL, UNIQUE(tenant_id, chunk_id))",
   );
   db.exec("CREATE INDEX IF NOT EXISTS chunks_tenant ON chunks(tenant_id)");
   createFts(db);
@@ -33,8 +33,9 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
       try {
         const rowid = Number(
           db
-            .prepare("INSERT INTO chunks(chunk_id,doc_id,tenant_id,text,acl) VALUES(?,?,?,?,?)")
-            .run(chunk.chunkId, chunk.docId, chunk.tenantId, chunk.text, JSON.stringify(chunk.acl satisfies Acl)).lastInsertRowid,
+            .prepare("INSERT INTO chunks(chunk_id,doc_id,tenant_id,text,allow_users,allow_groups) VALUES(?,?,?,?,?,?)")
+            .run(chunk.chunkId, chunk.docId, chunk.tenantId, chunk.text, JSON.stringify(chunk.acl.allowUsers), JSON.stringify(chunk.acl.allowGroups))
+            .lastInsertRowid,
         );
         addFts(db, rowid, chunk.text);
         addVec(db, rowid, chunk.embedding);
@@ -48,23 +49,26 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
       validateEmbedding(query?.embedding, dim);
       if (!Number.isInteger(query?.limit) || query.limit < 1 || query.limit > 100) throw new SearchError("LIMIT");
       if (typeof query.text !== "string" || typeof query.acl?.sql !== "string" || query.acl.sql.trim() === "") throw new SearchError("INPUT");
-      const ranked = rrf([searchFts(db, query.text, query.limit, query.acl), searchVec(db, query.embedding, query.limit, query.acl)]).slice(0, query.limit);
-      const find = db.prepare("SELECT doc_id FROM chunks WHERE chunk_id = ?");
-      return ranked.map(({ id, score }) => ({ chunkId: id, docId: String(find.get(id)!.doc_id), score }));
+      try {
+        const lists = [searchFts(db, query.text, query.limit, query.acl), searchVec(db, query.embedding, query.limit, query.acl)];
+        return hydrate(db, rrf(lists).slice(0, query.limit));
+      } catch (error) {
+        throw error instanceof SearchError ? error : new SearchError("DB", error);
+      }
     },
-    remove(docId: string): number {
-      if (!validText(docId)) throw new SearchError("INPUT");
+    remove(docId: string, tenantId: string): number {
+      if (!validText(docId) || !validText(tenantId)) throw new SearchError("INPUT");
       db.exec("BEGIN IMMEDIATE");
       try {
         const ids = db
-          .prepare("SELECT rowid FROM chunks WHERE doc_id=?")
-          .all(docId)
+          .prepare("SELECT rowid FROM chunks WHERE doc_id=? AND tenant_id=?")
+          .all(docId, tenantId)
           .map((r) => Number(r.rowid));
         for (const id of ids) {
           db.prepare("DELETE FROM chunks_fts WHERE rowid=?").run(id);
           db.prepare("DELETE FROM chunks_vec WHERE rowid=?").run(id);
         }
-        db.prepare("DELETE FROM chunks WHERE doc_id=?").run(docId);
+        db.prepare("DELETE FROM chunks WHERE doc_id=? AND tenant_id=?").run(docId, tenantId);
         db.exec("COMMIT");
         return ids.length;
       } catch (error) {
