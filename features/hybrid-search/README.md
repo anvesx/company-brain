@@ -8,7 +8,7 @@ document body.
 ## Interface
 
 `createSearchIndex(dbPath, dim)` returns synchronous `add`, `search`, and
-`remove(docId, tenantId)`, and `updateAcl(docId, tenantId, acl)` operations. The index is pointer-only: `chunks` has no body text column and the FTS5 table is contentless (`content=''`), so only tokens and positions are stored, never the text. `add` takes `text` to tokenise it and discards it; hits carry `chunkId`, `docId` and `score`. `chunks` stores `tenant_id`, `allow_users`, and `allow_groups` (JSON text), so the `allowClause` output of `@brain/acl-filter` runs against it unchanged. `search` accepts an opaque parameterized SQL predicate over
+`remove(docId, tenantId)`, `replace(docId, tenantId, chunks)`, and `updateAcl(docId, tenantId, acl)` operations. The index is pointer-only: `chunks` has no body text column and the FTS5 table is contentless (`content=''`), so only tokens and positions are stored, never the text. `add` takes `text` to tokenise it and discards it; hits carry `chunkId`, `docId` and `score`. `chunks` stores `tenant_id`, `allow_users`, and `allow_groups` (JSON text), so the `allowClause` output of `@brain/acl-filter` runs against it unchanged. `search` accepts an opaque parameterized SQL predicate over
 `chunks`. The predicate executes inside both retrieval statements, so excluded
 chunks cannot enter either list. `rrf(lists, k = 60)` is also public.
 
@@ -39,6 +39,7 @@ const hits = index.search({
 - Every search fuses the same top `MAX_WINDOW` (1000) rows of each list (FTS and vec), then slices `[offset, offset + limit)`. Pages therefore share one ranking: they never overlap or skip, and a page equals the same slice of a longer page. Fusing only `offset + limit` rows per list would change scores between pages. Cost: up to 1000 rows per list per call, whatever `limit` is. Hits ranked below `MAX_WINDOW` in both lists are unreachable.
 - FTS quotes, `*`, and `NEAR` are quoted as literals, never query operators.
 - Chunk ids are unique per tenant; removal is scoped to one tenant. SQL errors surface as `SearchError("DB")`.
+- `replace` removes a doc's chunks and adds the new ones in one `BEGIN IMMEDIATE` transaction. Every chunk is validated first (`DIM`, `INPUT`; each chunk must carry the given `docId` and `tenantId`). Any later failure, such as `DUPLICATE` (a chunk id twice in the list or owned by another doc of the tenant), rolls the whole swap back, so the old chunks stay searchable. An empty list removes the doc. The argument order matches `remove` and `updateAcl` (`docId`, then `tenantId`).
 - `updateAcl` rewrites `allow_users` and `allow_groups` on every chunk of one doc in one transaction.
 - Existing databases created with a `text` column must be rebuilt (re-index); there is no migration.
 - Removal updates chunks, FTS5, and sqlite-vec in one `BEGIN IMMEDIATE` transaction.
@@ -57,4 +58,4 @@ query latency, not ingestion throughput or larger production dimensions.
 ## Verify
 
 Run `pnpm test`, `pnpm typecheck`, and `pnpm mutation` from this directory.
-The scale assertion is `<150 ms`; mutation must be at least 80%.
+The scale assertion is `<150 ms`; mutation must be at least 80%. Last run: 93.82 (run `pnpm exec stryker run --inPlace --concurrency 2`; the 150 ms scale test can flake at the default concurrency).

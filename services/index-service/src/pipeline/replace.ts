@@ -41,29 +41,20 @@ export function probe({ index }: Stores, row: Row | undefined): void {
   }
 }
 
-/** Swap a doc's chunks. Old chunks survive any failure of `remove`; see README for the `add` case. */
+/** Swap a doc's chunks in one atomic index call. On failure the old chunks are intact and the prior pointer is restored. */
 export function replace(s: Stores, p: Pointer, rows: Row[], prior: Pointer | undefined): void {
-  const { index } = s;
+  const chunks = rows.map(({ chunk, embedding }) => ({
+    chunkId: chunk.id,
+    docId: p.id,
+    tenantId: p.tenantId,
+    text: chunk.text,
+    embedding,
+    acl: p.acl,
+  }));
   try {
-    index.remove(p.id, p.tenantId);
+    s.index.replace(p.id, p.tenantId, chunks);
   } catch (error) {
     restore(s, prior, p);
     throw new IndexServiceError("INDEX_FAILED", error);
-  }
-  try {
-    for (const { chunk, embedding } of rows) {
-      const { id: chunkId, text } = chunk;
-      index.add({ chunkId, docId: p.id, tenantId: p.tenantId, text, embedding, acl: p.acl });
-    }
-  } catch (error) {
-    let cleanup: { error: unknown } | undefined;
-    try {
-      index.remove(p.id, p.tenantId);
-    } catch (e) {
-      cleanup = { error: e };
-    }
-    restore(s, undefined, p);
-    if (!cleanup) throw new IndexServiceError("INDEX_FAILED", error);
-    throw new IndexServiceError("CLEANUP_FAILED", new AggregateError([error, cleanup.error], "index add failed and cleanup failed"));
   }
 }

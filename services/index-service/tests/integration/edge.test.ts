@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { pointer, setup } from "../support/harness.js";
+import { HB, pointer, setup, sha } from "../support/harness.js";
 
 const A = "alpha beta gamma";
 const B = "delta epsilon zeta";
 const T = { "acme/d1@v1": A, "acme/d1@v2": B };
-const v2 = () => pointer({ version: "v2", contentHash: "b".repeat(64) });
+const v2 = () => pointer({ version: "v2", contentHash: HB });
 
 describe("apply edge cases", () => {
   it("empty text indexes zero chunks and clears old ones", async () => {
     const { svc, count } = setup({ ...T, "acme/d1@v2": "  " });
     await svc.apply({ type: "upsert", pointer: pointer() });
-    const r = await svc.apply({ type: "upsert", pointer: v2() });
+    const r = await svc.apply({ type: "upsert", pointer: pointer({ version: "v2", contentHash: sha("  ") }) });
     expect(r).toEqual({ outcome: "updated", chunks: 0 });
     expect(count("acme")).toBe(0);
   });
@@ -18,7 +18,7 @@ describe("apply edge cases", () => {
   it("multi-chunk documents index every chunk", async () => {
     const long = "word ".repeat(60);
     const { svc, count } = setup({ "acme/d1@v1": long });
-    const r = await svc.apply({ type: "upsert", pointer: pointer() });
+    const r = await svc.apply({ type: "upsert", pointer: pointer({ contentHash: sha(long) }) });
     expect(r.chunks).toBeGreaterThan(3);
     expect(count("acme")).toBe(r.chunks);
   });

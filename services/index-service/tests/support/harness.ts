@@ -13,7 +13,7 @@ export function pointer(over: Partial<Pointer> = {}): Pointer {
     address: "drive://d1",
     title: "Doc",
     version: "v1",
-    contentHash: "a".repeat(64),
+    contentHash: sha(A),
     zone: "team",
     acl: { allowUsers: ["u1"], allowGroups: [], version: 1 },
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -23,6 +23,9 @@ export function pointer(over: Partial<Pointer> = {}): Pointer {
 }
 
 export const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+export const A = "alpha beta gamma";
+export const B = "delta epsilon zeta";
+export const HB = sha(B);
 
 export const embedText = (t: string) => [t.length % 7, 1, t.charCodeAt(0) % 5];
 
@@ -64,10 +67,8 @@ export function setup(texts: Record<string, string>, over: { [K in keyof IndexDe
   return { registry, index, calls, search, has, count, svc: createIndexService(deps) };
 }
 
-export const A = "alpha beta gamma";
-export const B = "delta epsilon zeta";
 export const T = { "acme/d1@v1": A, "acme/d1@v2": B };
-export const v2 = pointer({ version: "v2", contentHash: "b".repeat(64) });
+export const v2 = pointer({ version: "v2", contentHash: HB });
 export const boom = async () => Promise.reject(new Error("x"));
 
 /** An env where d1@v1 is indexed, plus a service whose deps are overridden over the same stores. */

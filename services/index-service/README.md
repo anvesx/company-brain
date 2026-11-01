@@ -20,8 +20,12 @@ with content succeeds). `unchanged` upserts and deletes never need it.
 ## Behaviour
 
 - Upsert: the registry decides. `unchanged` does nothing (no fetch, no embed). `created` or `updated`
-  fetches text, chunks, embeds, then replaces the document's chunks (`remove(id, tenantId)`, then `add`).
+  fetches text, chunks, embeds, then replaces the document's chunks with one atomic `index.replace(id, tenantId, chunks)`.
   An ACL change makes the pointer `updated`, so chunk ACL columns are rewritten with the new ACL.
+- Fetched text: the text returned by `fetchText` must hash (sha-256 hex of the UTF-8 text) to `pointer.contentHash`, else
+  `HASH_MISMATCH`. This catches a source that changed between list and fetch. The check runs before chunk, embed and any index
+  write; the registry row written for the event is restored like any other failure (prior pointer, ACL narrowed), so
+  the stale body is never indexed under the new pointer.
 - Pre-fetched text: an upsert may carry `content: { text, contentHash }`. Then `fetchText` is not called. Before
   anything changes, `contentHash` must equal `pointer.contentHash` and `text` must hash to it (sha-256 hex of the
   UTF-8 text), else `HASH_MISMATCH` and the registry and index are untouched. A non-string `text` or `contentHash`
@@ -44,16 +48,12 @@ access to stale chunks but never widen it, and the replay still sees the doc as 
 embed failures, wrong vector count, ragged or non-finite vectors, and a vector dimension the index
 rejects (probed with a read-only search) all end this way. Replaying the same event then retries.
 
-Limit: if `index.remove` succeeds and a later `index.add` throws (disk full, for example), the old
-chunks cannot be recovered because the index has no read-back. The service removes partial chunks and
-tombstones the pointer, so the registry and index agree that the doc is not indexed, and a replay
-rebuilds it. `hybrid-search` has no transaction spanning remove and add.
-
-If that cleanup removal also fails, the error is `CLEANUP_FAILED` and `cause` is an `AggregateError` of
-`[addError, cleanupError]`.
+A failed chunk swap is no different: `index.replace` is atomic, so if adding the new chunks fails (disk full, duplicate chunk
+id) the old chunks stay searchable, the prior pointer is restored with the narrowed ACL, and the error is `INDEX_FAILED`. A
+replay retries. A brand new doc that fails is tombstoned and has no chunks.
 
 Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `HASH_MISMATCH`, `FETCH_FAILED`, `CHUNK_FAILED`,
-`EMBED_FAILED`, `EMBED_INVALID`, `INDEX_FAILED`, `CLEANUP_FAILED`, `ROLLBACK_FAILED`. The original error is in `cause`.
+`EMBED_FAILED`, `EMBED_INVALID`, `INDEX_FAILED`, `ROLLBACK_FAILED`. The original error is in `cause`.
 
 ## Limits
 
@@ -64,8 +64,9 @@ Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `HASH_MISMATCH`, `F
 
 `pnpm test`, `pnpm typecheck`, `pnpm mutation` from this folder.
 
-Mutation score is 98.34 with four surviving mutants, each equivalent (no observable behaviour change):
+Mutation score is 97.87 with five surviving mutants, each equivalent (no observable behaviour change):
 
+- `prepare.ts` `if (prefetched === undefined) verifyFetched(...)` forced to `true`: prefetched text was already verified by `verifyContent`, so a second check passes.
 - `prepare.ts` `typeof x === "number"` replaced by `true`: `Number.isFinite` does not coerce, so it already returns false for every non-number.
 - `prepare.ts` `vectors[0]?.length`: `checkEmbeddings` runs only when there is at least one chunk, so `vectors[0]` always exists.
 - `replace.ts` probe text `"x"` replaced by `""`: the probe only validates the embedding dimension and the ACL matches nothing, so the query text is never used.
