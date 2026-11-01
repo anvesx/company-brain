@@ -20,3 +20,9 @@ k6 is AGPL-3.0, so it runs as an external binary and is never imported or bundle
 Start the app, then `BRAIN_URL=http://127.0.0.1:3000/mcp BRAIN_TOKEN=<token> pnpm --filter @brain/scale-test scale`. Load: ramp to 50 virtual users over 30 seconds, hold 1 minute, ramp down. k6 exits non-zero when a threshold fails.
 
 `pnpm test` checks that the k6 script keeps both thresholds and unit-tests the Node evaluation.
+
+## Real k6 run
+
+`SCALE_ENGINE=k6 K6_RAMP=10s K6_HOLD=30s pnpm --filter @brain/scale-test scale:node` starts the built app, then runs `src/search.js` under k6 against it. `setup()` does the MCP handshake once and shares the session. Defaults without the env vars are a 30s ramp and a 1m hold at 50 VUs. Thresholds: failed rate under 1% and p95 under 500 ms.
+
+Last result (k6 v2.3.0, 10s ramp, 30s hold, 50 VUs): 158,401 requests, 0 failed, p95 18.11 ms, 3,167 req/s.
