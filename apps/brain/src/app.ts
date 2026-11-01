@@ -42,7 +42,9 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     runtime: { cursors, clock: deps.clock },
     connectorFor: deps.connectorFor,
     tokenFor: deps.tokenFor,
-    known: (tenantId) => liveIds(registry, tenantId),
+    // Only this connector's pointers: a second source in the registry must never be reaped by this listing.
+    known: (tenantId) => liveIds(registry, tenantId, deps.connectorFor(tenantId)?.id ?? ""),
+    warn: (msg, fields) => logger.warn(msg, fields),
     indexService,
   });
   const governed: BrainApp["search"] = async ({ query: text, principal, limit }) =>
