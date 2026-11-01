@@ -64,8 +64,8 @@ importers:
         specifier: workspace:*
         version: link:../core-types
       json-canonicalize:
-        specifier: ^2.0.0
-        version: 2.0.1
+        specifier: 3.0.0
+        version: 3.0.0
     devDependencies:
       fast-check:
         specifier: 4.10.2
@@ -2642,10 +2642,9 @@ packages:
     hasBin: true
     dev: true
 
-  /json-canonicalize@2.0.1:
-    resolution: {integrity: sha512-TuGrLM400c1VN8bQsSOiyDEEmRjIVgFvcSehWC+0JJaV4BGl1vYNxHBPVsN5ADUZIcWp75IN1yf+vCZyDjPt1Q==}
-    engines: {node: '>=8.5', npm: '>=6.0', yarn: ^1.0}
-    deprecated: Broken publish (no bundles/). Use 2.0.0 or >=3.0.0.
+  /json-canonicalize@3.0.0:
+    resolution: {integrity: sha512-PW21BtLiKRV7gJcT8jf2X4UNN2AF4c1TYEVug1wAWRQSGBJj7fL+v4NgOkIo54SCBPFDyqzMcOJNhjwywCIBuw==}
+    engines: {node: '>=8.5'}
     dev: false
 
   /json-parse-even-better-errors@2.3.1:

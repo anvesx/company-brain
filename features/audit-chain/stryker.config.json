@@ -18,5 +18,8 @@
   },
   "plugins": [
     "../../node_modules/@stryker-mutator/vitest-runner/dist/src/index.js"
-  ]
+  ],
+  "vitest": {
+    "configFile": "vitest.mutation.config.ts"
+  }
 }

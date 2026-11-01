@@ -2,8 +2,8 @@
   "name": "@brain/audit-chain",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/chain.js",
+  "types": "dist/chain.d.ts",
   "files": [
     "dist"
   ],
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@brain/core-types": "workspace:*",
-    "json-canonicalize": "^2.0.0"
+    "json-canonicalize": "3.0.0"
   },
   "devDependencies": {
     "fast-check": "4.10.2"
