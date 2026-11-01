@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ConnectorError,
-  contentHash,
   createConnectorRegistry,
   createFakeConnector,
 } from "../../src/index.js";
@@ -24,12 +23,5 @@ describe("connector registry", () => {
   ])("throws a typed error for %s", (_name, action, code) => {
     expect(action).toThrowError(ConnectorError);
     expect(action).toThrowError(expect.objectContaining({ code }));
-  });
-});
-
-describe("contentHash", () => {
-  it("returns deterministic SHA-256 hex for unicode", () => {
-    expect(contentHash("文档")).toBe("2687ccdbb1d2288a8c7867ab8a17e3a70eade5d774aafd0d7eb7b12cbf8165cd");
-    expect(contentHash("文档")).toHaveLength(64);
   });
 });

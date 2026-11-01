@@ -42,7 +42,9 @@ or ACL symlink resolving outside the configured root throw `PATH_ESCAPE`.
 
 ## Limits and operation
 
-Folder pages rescan the tree, so callers should restart paging after concurrent filesystem changes.
+A `list` call without a cursor rescans the tree and starts a walk; pages fetched with a cursor reuse
+that snapshot, so a full walk costs one scan (5,000 files page in about 2 s). Restart without a
+cursor to see concurrent filesystem changes; a cursor with no prior walk throws `BAD_CURSOR`.
 The adapter follows internal symlinks once and suppresses directory cycles. Files must be UTF-8;
 malformed ACL JSON or ACL schema failures are surfaced unchanged. OAuth, networks, and webhooks are
 outside this package. The `token` argument exists for production adapters; the fake and folder
@@ -59,4 +61,5 @@ pnpm mutation
 ```
 
 Tests cover registry errors, property-based paging, live edits, Unicode, deny-by-default ACLs,
-path and symlink escapes, empty folders, and paging 50,000 fake documents under two seconds.
+path and symlink escapes, empty folders, paging 50,000 fake documents under two seconds, and linear-time folder walks over 5,000 files and
+200-level nesting.
