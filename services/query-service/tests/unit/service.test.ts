@@ -49,7 +49,9 @@ describe("createQueryService", () => {
 
   it("sends the trimmed query, the principal's ACL clause and the max fetch size to the index", () => {
     const { calls } = run([], {});
-    expect(calls).toEqual([{ text: "q", embedding: [1], limit: 100, acl: expect.objectContaining({ params: expect.arrayContaining(["t1", "alice"]) }) }]);
+    expect(calls).toEqual([
+      { text: "q", embedding: [1], limit: 100, offset: 0, acl: expect.objectContaining({ params: expect.arrayContaining(["t1", "alice"]) }) },
+    ]);
   });
 
   it("slices to the limit", () => {

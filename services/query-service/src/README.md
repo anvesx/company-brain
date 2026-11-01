@@ -1,7 +1,9 @@
 # Source layout
 
 - `errors.ts` defines `QueryError` and its codes.
-- `service.ts` validates input, queries the index with the principal's ACL clause, hydrates and re-checks each pointer against the registry.
+- `request.ts` holds the public types and input validation.
+- `service.ts` wires the index, registry and optional live ACL into `search` and `searchLive`.
+- `paging/` pages the index and runs the live ACL check.
 - `index.ts` exposes the supported package API.
 
 All runtime imports use ESM `.js` suffixes.
