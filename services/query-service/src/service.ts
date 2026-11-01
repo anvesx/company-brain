@@ -1,46 +1,57 @@
 import { allowClause, isAllowed } from "@brain/acl-filter";
-import { type Pointer, type Principal, PrincipalSchema } from "@brain/core-types";
-import { SearchError, type SearchIndex } from "@brain/hybrid-search";
-import type { Registry } from "@brain/pointer-registry";
-import { QueryError } from "./errors.js";
+import { QueryError, wrap } from "./errors.js";
+import { liveCheck, realTimer } from "./paging/live.js";
+import { DEFAULT_MAX_CANDIDATES, ids, scan } from "./paging/scan.js";
+import { DEFAULT_LIVE_TIMEOUT_MS, type LiveQueryService, type QueryDeps, type SearchRequest, validate } from "./request.js";
 
-export const DEFAULT_LIMIT = 10;
-export const MAX_LIMIT = 100;
+export function createQueryService(deps: QueryDeps): LiveQueryService {
+  const { index, registry, liveAcl, timer = realTimer } = deps;
+  const { maxCandidates = DEFAULT_MAX_CANDIDATES, liveAclTimeoutMs = DEFAULT_LIVE_TIMEOUT_MS } = deps;
+  if (!Number.isInteger(maxCandidates) || maxCandidates < 1) throw new QueryError("CONFIG");
 
-export type QueryDeps = { index: Pick<SearchIndex, "search">; registry: Pick<Registry, "get"> };
-export type SearchRequest = { query: string; principal: Principal; embedding: number[]; limit?: number };
-export interface QueryService {
-  search(request: SearchRequest): Pointer[];
-}
+  function prepare(request: SearchRequest) {
+    const { limit, principal, text } = validate(request);
+    const acl = allowClause(principal);
+    const run = scan({
+      limit,
+      maxCandidates,
+      fetch: (offset, size) => index.search({ text, embedding: request.embedding, limit: size, offset, acl }),
+      visible(docId) {
+        const pointer = registry.get(principal.tenantId, docId);
+        // The registry is authoritative: re-check tombstone, tenant and the current ACL.
+        if (!pointer || pointer.deletedAt !== null || pointer.tenantId !== principal.tenantId) return undefined;
+        return isAllowed(principal, pointer.acl, pointer.tenantId) ? pointer : undefined;
+      },
+    });
+    return { run, principal };
+  }
 
-export function createQueryService({ index, registry }: QueryDeps): QueryService {
   return {
-    search(request: SearchRequest): Pointer[] {
-      const limit = request?.limit ?? DEFAULT_LIMIT;
-      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new QueryError("LIMIT");
-      const parsed = PrincipalSchema.safeParse(request.principal);
-      if (!parsed.success) throw new QueryError("PRINCIPAL");
-      const query = typeof request.query === "string" ? request.query.trim() : "";
-      if (query === "") throw new QueryError("EMPTY_QUERY");
-      const principal = parsed.data;
+    search(request) {
+      if (liveAcl) throw new QueryError("LIVE_ACL");
+      const { run } = prepare(request);
       try {
-        // Fetch the maximum so hidden hits cannot starve the page; the index ACL is only a prefilter.
-        const hits = index.search({ text: query, embedding: request.embedding, limit: MAX_LIMIT, acl: allowClause(principal) });
-        const seen = new Set<string>();
-        const out: Pointer[] = [];
-        for (const { docId } of hits) {
-          if (seen.has(docId)) continue;
-          seen.add(docId);
-          const pointer = registry.get(principal.tenantId, docId);
-          // The registry is authoritative: re-check tombstone, tenant and the current ACL.
-          if (!pointer || pointer.deletedAt !== null || pointer.tenantId !== principal.tenantId) continue;
-          if (!isAllowed(principal, pointer.acl, pointer.tenantId)) continue;
-          out.push(pointer);
-          if (out.length === limit) break;
-        }
-        return out;
+        let step = run.next();
+        while (!step.done) step = run.next(ids(step.value));
+        return step.value.pointers;
       } catch (error) {
-        throw new QueryError(error instanceof SearchError && error.code === "DIM" ? "EMBEDDING" : "BACKEND", error);
+        return wrap(error);
+      }
+    },
+    async searchLive(request) {
+      const { run, principal } = prepare(request);
+      const meta = { liveDenied: 0, liveUnverified: 0 };
+      try {
+        let step = run.next();
+        while (!step.done) {
+          const check = liveAcl && (await liveCheck(liveAcl, timer, liveAclTimeoutMs, principal, step.value));
+          meta.liveDenied += check?.denied ?? 0;
+          meta.liveUnverified += check?.unverified ?? 0;
+          step = run.next(check ? check.allowed : ids(step.value));
+        }
+        return { ...step.value, ...meta };
+      } catch (error) {
+        return wrap(error);
       }
     },
   };
