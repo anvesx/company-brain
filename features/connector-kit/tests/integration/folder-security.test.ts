@@ -13,7 +13,6 @@ describe("folder connector path security", () => {
     await writeFile(join(root, "note.txt"), "safe");
     await writeFile(join(outside, "acl.json"), JSON.stringify({ version: 0 }));
     await symlink(join(outside, "acl.json"), join(root, "note.txt.acl.json"));
-    await expect(createFolderConnector("folder", root).list({ limit: 10 }))
-      .rejects.toMatchObject({ code: "PATH_ESCAPE" });
+    await expect(createFolderConnector("folder", root).list({ limit: 10 })).rejects.toMatchObject({ code: "PATH_ESCAPE" });
   });
 });

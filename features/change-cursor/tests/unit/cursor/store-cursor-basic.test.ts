@@ -26,8 +26,7 @@ describe("cursors", () => {
     s.setCursor("t1", "drive", "a");
     s.setCursor("t2", "drive", "b");
     s.setCursor("t1", "slack", "c");
-    expect([s.getCursor("t1", "drive"), s.getCursor("t2", "drive"), s.getCursor("t1", "slack")])
-      .toEqual(["a", "b", "c"]);
+    expect([s.getCursor("t1", "drive"), s.getCursor("t2", "drive"), s.getCursor("t1", "slack")]).toEqual(["a", "b", "c"]);
     expect(s.getCursor("t2", "slack")).toBeUndefined();
   });
 

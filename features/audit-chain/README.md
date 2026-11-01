@@ -5,6 +5,7 @@ deleting or reordering any past entry changes every later hash, so `verify` find
 `docs/specs/feature/audit-chain.md` (ticket #36).
 
 ## How it works
+
 - One chain per tenant. Entry N has `hash = sha256(prevHash + canonical(event))`. The first entry's
   `prevHash` is 64 zeros. `canonical` is RFC 8785 JSON via `json-canonicalize`, so key order in `detail`
   never changes the hash, and unicode and nested values are stable.
@@ -19,21 +20,27 @@ deleting or reordering any past entry changes every later hash, so `verify` find
   A missing row reports the seq that should have been there. Rows with unparseable `detail` count as broken.
 
 ## Interface
+
 ```ts
 import { createAuditChain, AuditError } from "@brain/audit-chain";
 
 const chain = createAuditChain("/var/lib/brain/audit.db"); // ":memory:" works for a single handle
 const { seq, hash } = chain.append({
-  tenantId: "acme", actor: "alice", action: "doc.read", target: "doc/42",
-  at: "2026-01-01T12:00:00Z", detail: { via: "api", scopes: ["a", "b"] },
+  tenantId: "acme",
+  actor: "alice",
+  action: "doc.read",
+  target: "doc/42",
+  at: "2026-01-01T12:00:00Z",
+  detail: { via: "api", scopes: ["a", "b"] },
 });
-chain.verify("acme");          // { ok: true } or { ok: false, brokenAt: 7 }
-chain.list("acme", 0, 100);    // entries with seq and hash, ordered, paged by afterSeq/limit (1..1000)
+chain.verify("acme"); // { ok: true } or { ok: false, brokenAt: 7 }
+chain.list("acme", 0, 100); // entries with seq and hash, ordered, paged by afterSeq/limit (1..1000)
 ```
 `append` throws `AuditError` with `code === "INVALID"` for bad input and `"STORAGE"` if SQLite fails.
 Nothing is swallowed; the original error is on `error.cause`.
 
 ## Input rules
+
 - `tenantId`, `actor`, `action`, `target`, `at`: non-empty strings, at most 1024 chars each.
 - `at`: ISO-8601 with a time and `Z` or an offset. The clock is the caller's: nothing here reads the time.
 - No NUL and no lone surrogates in those five fields (SQLite would truncate or rewrite them, which would
@@ -42,6 +49,7 @@ Nothing is swallowed; the original error is on `error.cause`.
 - Unknown fields are rejected, because they would not be covered by the hash.
 
 ## Limits and what it does not do
+
 - Truncating the tail (deleting the newest rows) leaves a valid shorter chain. Detecting that needs an
   external anchor of the latest hash, which is out of scope, as are signing and retention.
 - Someone with file write access can drop the triggers and rewrite the whole chain consistently from the
@@ -51,11 +59,13 @@ Nothing is swallowed; the original error is on `error.cause`.
   `verify` of 50k entries took 0.23 s.
 
 ## Test
+
 ```
 pnpm --filter @brain/audit-chain test        # unit, property (fast-check), integration, scale
 pnpm --filter @brain/audit-chain typecheck
 pnpm --filter @brain/audit-chain mutation    # Stryker, break below 80 (last run 86.85)
 ```
+
 - `tests/unit`: validation, hashing vectors, API behaviour, paging.
 - `tests/property`: random events verify ok; flipping any character of any stored field breaks verify at that row.
 - `tests/integration`: raw-SQL tamper (edit, delete, reorder), triggers, reopen, two worker threads appending to one file.

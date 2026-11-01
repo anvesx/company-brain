@@ -5,14 +5,26 @@ import { PrincipalSchema } from "../../src/principal.js";
 import { mostRestrictedZone, ZONES } from "../../src/zone.js";
 
 const base = {
-  id: "p", tenantId: "t", source: "s", address: "a", version: "v",
-  contentHash: "b".repeat(64), zone: "team", acl: { version: 0 }, updatedAt: "2026-11-01T00:00:00Z",
+  id: "p",
+  tenantId: "t",
+  source: "s",
+  address: "a",
+  version: "v",
+  contentHash: "b".repeat(64),
+  zone: "team",
+  acl: { version: 0 },
+  updatedAt: "2026-11-01T00:00:00Z",
 };
 const len = (n: number) => "x".repeat(n);
 
 describe("length bounds are exact", () => {
   it.each([
-    ["id", 256], ["tenantId", 256], ["source", 64], ["address", 2048], ["version", 256], ["title", 1024],
+    ["id", 256],
+    ["tenantId", 256],
+    ["source", 64],
+    ["address", 2048],
+    ["version", 256],
+    ["title", 1024],
   ])("%s accepts %i and rejects one more", (key, max) => {
     expect(PointerSchema.safeParse({ ...base, [key]: len(max) }).success).toBe(true);
     expect(PointerSchema.safeParse({ ...base, [key]: len(max + 1) }).success).toBe(false);

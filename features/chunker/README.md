@@ -22,10 +22,10 @@ Splitting is delegated to `@langchain/textsplitters` `RecursiveCharacterTextSpli
 
 ## Options
 
-| Option    | Default | Rule                                  |
-|-----------|---------|---------------------------------------|
-| `size`    | 1000    | integer >= 1, in UTF-16 units         |
-| `overlap` | 100     | integer in `[0, size)`                |
+| Option    | Default | Rule                          |
+| --------- | ------- | ----------------------------- |
+| `size`    | 1000    | integer >= 1, in UTF-16 units |
+| `overlap` | 100     | integer in `[0, size)`        |
 
 Invalid options throw `ChunkError` with code `BAD_OPTIONS`. The message names the bad option (`size` or `overlap`). `docId` and `text` must be strings.
 

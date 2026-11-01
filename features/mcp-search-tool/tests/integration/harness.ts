@@ -5,23 +5,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerSearchTool, type SearchFn } from "../../src/index.js";
 
 export const principal: Principal = {
-	id: "user-1",
-	tenantId: "tenant-1",
-	groups: ["engineering"],
+  id: "user-1",
+  tenantId: "tenant-1",
+  groups: ["engineering"],
 };
 
-export async function connected(
-	search: SearchFn,
-	principalFor: (extra: unknown) => Principal = () => principal,
-) {
-	const server = new McpServer({ name: "test-server", version: "1.0.0" });
-	registerSearchTool(server, { search, principalFor });
-	const client = new Client({ name: "test-client", version: "1.0.0" });
-	const [clientTransport, serverTransport] =
-		InMemoryTransport.createLinkedPair();
-	await Promise.all([
-		server.connect(serverTransport),
-		client.connect(clientTransport),
-	]);
-	return { client, server };
+export async function connected(search: SearchFn, principalFor: (extra: unknown) => Principal = () => principal) {
+  const server = new McpServer({ name: "test-server", version: "1.0.0" });
+  registerSearchTool(server, { search, principalFor });
+  const client = new Client({ name: "test-client", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return { client, server };
 }

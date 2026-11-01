@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -17,9 +17,14 @@ describe("folder connector", () => {
     await mkdir(join(root, "nested"));
     await writeFile(join(root, "nested", "文档.txt"), "first");
     await writeFile(join(root, "open.md"), "open");
-    await writeFile(join(root, "open.md.acl.json"), JSON.stringify({
-      allowUsers: ["u1"], allowGroups: ["g1"], version: 2,
-    }));
+    await writeFile(
+      join(root, "open.md.acl.json"),
+      JSON.stringify({
+        allowUsers: ["u1"],
+        allowGroups: ["g1"],
+        version: 2,
+      }),
+    );
     const page = await createFolderConnector("folder", root).list({ limit: 10 });
     expect(page.items.map((item) => item.address)).toEqual(["nested/文档.txt", "open.md"]);
     expect(page.items[0]?.acl).toEqual({ allowUsers: [], allowGroups: [], version: 0 });

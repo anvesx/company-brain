@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 import { chunkText } from "../../src/chunk.js";
 import { expectIdentity, uncoveredNonSpace } from "../support/assertions.js";
 
-const fixture = readFileSync(
-  fileURLToPath(new URL("./fixtures/sample.md", import.meta.url)),
-  "utf8",
-);
+const fixture = readFileSync(fileURLToPath(new URL("./fixtures/sample.md", import.meta.url)), "utf8");
 
 describe("markdown fixture", () => {
   it("chunks at the default size with exact offsets and full coverage", async () => {

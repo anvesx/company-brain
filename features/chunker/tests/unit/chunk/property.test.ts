@@ -23,9 +23,7 @@ describe("whitespace-heavy small-alphabet property", () => {
   it("keeps identity, no lone surrogates and coverage (3000 runs)", async () => {
     const idx = fc.array(fc.nat(ALPHABET.length - 1), { maxLength: 60 });
     await fc.assert(
-      fc.asyncProperty(idx, fc.integer({ min: 1, max: 9 }), fc.nat(), (a, size, ov) =>
-        check(build(a), size, ov % size),
-      ),
+      fc.asyncProperty(idx, fc.integer({ min: 1, max: 9 }), fc.nat(), (a, size, ov) => check(build(a), size, ov % size)),
       { numRuns: 3000 },
     );
   });

@@ -4,7 +4,10 @@ import { createSearchIndex } from "../../src/index.js";
 
 const acl: Acl = { allowUsers: [], allowGroups: [], version: 1 };
 const q = (n: number, tenant: string, limit: number) => ({
-  text: "", embedding: [1, n], limit, acl: { sql: "tenant_id = ?", params: [tenant] },
+  text: "",
+  embedding: [1, n],
+  limit,
+  acl: { sql: "tenant_id = ?", params: [tenant] },
 });
 
 describe("selective ACL vector search", () => {

@@ -1,4 +1,4 @@
-import { ConnectorError, type Connector, type FakeDoc, type ListedDoc } from "../core/contract.js";
+import { type Connector, ConnectorError, type FakeDoc, type ListedDoc } from "../core/contract.js";
 import { pageItems } from "../core/paging.js";
 
 export const createFakeConnector = (id: string, docs: FakeDoc[]): Connector => {

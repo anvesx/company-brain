@@ -23,24 +23,33 @@ export interface CursorStore {
 }
 export function createCursorStore(dbPath: string, clock: () => number, ttlMs?: number): CursorStore;
 export function diffListing(known: Map<string, string>, listed: Map<string, string>): ListingDiff;
-export interface ListingDiff { created: string[]; updated: string[]; deleted: string[] }
-export const CURSOR_MAX_CHARS = 4096;      // longest cursor value, in code points
-export const DEFAULT_TTL_MS = 86_400_000;  // 24 hours
-export class CursorError extends Error { readonly code: "INVALID_INPUT" | "CURSOR_TOO_LARGE" }
+export interface ListingDiff {
+  created: string[];
+  updated: string[];
+  deleted: string[];
+}
+export const CURSOR_MAX_CHARS = 4096; // longest cursor value, in code points
+export const DEFAULT_TTL_MS = 86_400_000; // 24 hours
+export class CursorError extends Error {
+  readonly code: "INVALID_INPUT" | "CURSOR_TOO_LARGE";
+}
 ```
 
 ### Cursors
+
 - Keyed by `(tenantId, source)`. Writes overwrite. Tenants and sources never see each other's cursors.
 - Keys and values may contain any unicode text. The value is stored as TEXT.
 - `getCursor` returns `undefined` when nothing was ever set.
 
 ### Seen ids
+
 - `seen(id)` is `false` on first sight and `true` after that. It stays `true` until `ttlMs` has passed,
   measured with the injected `clock`. After that, the next call returns `false` again and starts a new window.
 - The check and the insert are one SQLite statement (`INSERT ... ON CONFLICT DO UPDATE ... WHERE expired`).
   Two handles on the same file cannot both see a fresh id as new.
 
 ### Diff
+
 - Pure function. Neither input is modified.
 - `created`: in `listed`, not in `known`. `deleted`: in `known`, not in `listed`, reported once.
   `updated`: in both, with different versions. Equal versions appear in no list.
@@ -68,14 +77,15 @@ const { created, updated, deleted } = diffListing(knownVersions, listedVersions)
 
 Every rule the package enforces raises `CursorError` with a `code`:
 
-| Code | When |
-|---|---|
-| `INVALID_INPUT` | Empty or non-string tenant, source or event id; non-string cursor; ttl not a positive safe integer; clock not a function or returning a non-finite number; a diff input that is not a Map of non-empty string keys to string values |
-| `CURSOR_TOO_LARGE` | Cursor value over 4096 code points |
+| Code               | When                                                                                                                                                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVALID_INPUT`    | Empty or non-string tenant, source or event id; non-string cursor; ttl not a positive safe integer; clock not a function or returning a non-finite number; a diff input that is not a Map of non-empty string keys to string values |
+| `CURSOR_TOO_LARGE` | Cursor value over 4096 code points                                                                                                                                                                                                  |
 
 Storage failures from `node:sqlite` are not wrapped. They propagate unchanged.
 
 ## Limits and measured numbers
+
 - Cursor value: at most 4096 code points. Exactly 4096 is accepted. Emoji count as one each.
 - Event id: non-empty. No length cap, because the spec sets none.
 - Rows for event ids that never come back stay in the table. No pruning job exists yet.
@@ -113,6 +123,7 @@ pnpm --filter @brain/change-cursor mutation    # Stryker, break below 80
 - Tests write only under `os.tmpdir()`, in directories they create and delete.
 
 ## Open issues
+
 - **Typecheck does not pass in this worktree.** `@types/node` is not resolvable from this package, so
   `node:sqlite`, `node:fs`, `node:os` and `node:path` fail with TS2307. Fixing it needs `@types/node` as a
   devDependency, which changes the root `pnpm-lock.yaml`. A scratch run with `@types/node@26.6.4` from another

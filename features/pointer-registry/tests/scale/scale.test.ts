@@ -23,6 +23,8 @@ describe.skipIf(process.env["STRYKER_MUTATOR_WORKER"] !== undefined)("scale", ()
       expect(upsertMs).toBeLessThan(30_000);
       expect(listMs).toBeLessThan(20);
       r.close();
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }, 60_000);
 });

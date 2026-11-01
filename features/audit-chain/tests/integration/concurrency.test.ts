@@ -16,8 +16,11 @@ afterAll(() => {
 
 // Workers are plain Node, so compile src to JS in the temp dir first.
 beforeAll(() => {
-  execFileSync("node", [join(root, "../../node_modules/typescript/bin/tsc"), "-p", join(root, "tsconfig.build.json"),
-    "--outDir", build, "--declaration", "false"], { cwd: root });
+  execFileSync(
+    "node",
+    [join(root, "../../node_modules/typescript/bin/tsc"), "-p", join(root, "tsconfig.build.json"), "--outDir", build, "--declaration", "false"],
+    { cwd: root },
+  );
 }, 120_000);
 
 const run = (dbPath: string, tenantId: string, count: number) =>

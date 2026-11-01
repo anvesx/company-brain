@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createFakeConnector, type FakeDoc } from "../../src/index.js";
 
 const doc = (address: string): FakeDoc => ({
-  address, title: address, text: address, version: "1",
+  address,
+  title: address,
+  text: address,
+  version: "1",
   acl: { allowUsers: [], allowGroups: [], version: 0 },
-  zone: "team", updatedAt: "2026-11-01T00:00:00.000Z",
+  zone: "team",
+  updatedAt: "2026-11-01T00:00:00.000Z",
 });
 const three = () => createFakeConnector("f", [doc("a"), doc("b"), doc("c")]);
 
@@ -18,10 +22,9 @@ describe("paging validation", () => {
     await expect(three().list({ limit })).rejects.toThrow(RangeError);
   });
 
-  it.each(["0", "3", "4", "1.5", " 1", "1e1", "9007199254740993", "-0"])(
-    "rejects cursor %j", async (cursor) => {
-      await expect(three().list({ limit: 1, cursor })).rejects.toMatchObject({ code: "BAD_CURSOR" });
-    });
+  it.each(["0", "3", "4", "1.5", " 1", "1e1", "9007199254740993", "-0"])("rejects cursor %j", async (cursor) => {
+    await expect(three().list({ limit: 1, cursor })).rejects.toMatchObject({ code: "BAD_CURSOR" });
+  });
 
   it("emits a cursor only while docs remain and resumes at it", async () => {
     const first = await three().list({ limit: 2 });
@@ -38,8 +41,7 @@ describe("paging validation", () => {
 
   it("rejects a megabyte-long cursor quickly", async () => {
     const start = Date.now();
-    await expect(three().list({ limit: 1, cursor: `1${"9".repeat(1_000_000)}x` }))
-      .rejects.toMatchObject({ code: "BAD_CURSOR" });
+    await expect(three().list({ limit: 1, cursor: `1${"9".repeat(1_000_000)}x` })).rejects.toMatchObject({ code: "BAD_CURSOR" });
     expect(Date.now() - start).toBeLessThan(500);
   });
 });

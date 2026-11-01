@@ -15,10 +15,7 @@ export const fixture = (files: Record<string, string>): string => {
   return root;
 };
 
-export const packageJson = (
-  name: string,
-  dependencies: Record<string, string> = {},
-): string => JSON.stringify({ name, dependencies });
+export const packageJson = (name: string, dependencies: Record<string, string> = {}): string => JSON.stringify({ name, dependencies });
 
 export const cleanFixtures = (): void => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true });

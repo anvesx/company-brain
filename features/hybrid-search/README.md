@@ -17,12 +17,17 @@ import { createSearchIndex } from "@brain/hybrid-search";
 
 const index = createSearchIndex("./brain.sqlite", 3);
 index.add({
-  chunkId: "c1", docId: "d1", tenantId: "acme", text: "incident runbook",
+  chunkId: "c1",
+  docId: "d1",
+  tenantId: "acme",
+  text: "incident runbook",
   embedding: [0.1, 0.2, 0.3],
   acl: { allowUsers: ["u1"], allowGroups: [], version: 1 },
 });
 const hits = index.search({
-  text: "incident", embedding: [0.1, 0.2, 0.3], limit: 10,
+  text: "incident",
+  embedding: [0.1, 0.2, 0.3],
+  limit: 10,
   acl: { sql: "tenant_id = ?", params: ["acme"] },
 });
 ```

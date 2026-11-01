@@ -1,5 +1,5 @@
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { createHash } from "node:crypto";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { ChunkError } from "./errors.js";
 import { locate } from "./offsets.js";
 

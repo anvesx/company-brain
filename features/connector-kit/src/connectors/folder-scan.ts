@@ -18,8 +18,14 @@ export const scan = async (root: string): Promise<ListedDoc[]> => {
       if (info.isDirectory()) await visit(resolved);
       else if (info.isFile()) {
         const address = relative(root, shown).split(sep).join("/");
-        docs.push({ address, title: basename(shown), version: `${info.mtimeMs}:${info.size}`,
-          acl: await readAcl(root, shown), zone: "personal", updatedAt: info.mtime.toISOString() });
+        docs.push({
+          address,
+          title: basename(shown),
+          version: `${info.mtimeMs}:${info.size}`,
+          acl: await readAcl(root, shown),
+          zone: "personal",
+          updatedAt: info.mtime.toISOString(),
+        });
       }
     }
   };

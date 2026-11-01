@@ -1,5 +1,5 @@
-import { ChunkError } from "./errors.js";
 import { inkPrefix, nextCandidate } from "./candidates.js";
+import { ChunkError } from "./errors.js";
 
 export type Located = { text: string; start: number; end: number };
 
@@ -38,9 +38,7 @@ function search(text: string, pieces: readonly string[], slack: number): Located
     const piece = pieces[i] as string;
     const prevStart = i === 0 ? 0 : (starts[i - 1] as number);
     const prevEnd = i === 0 ? 0 : prevStart + (pieces[i - 1] as string).length;
-    const at = nextCandidate(text, piece, Math.max(from[i] as number, prevEnd - slack), prevStart, prevEnd, i === 0, blank, (s) =>
-      dead.has(`${i}:${s}`),
-    );
+    const at = nextCandidate(text, piece, Math.max(from[i] as number, prevEnd - slack), prevStart, prevEnd, i === 0, blank, (s) => dead.has(`${i}:${s}`));
     if (at < 0 || (i === n - 1 && !blank(at + piece.length, text.length))) {
       if (at >= 0) {
         from[i] = at + 1;

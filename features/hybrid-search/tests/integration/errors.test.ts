@@ -4,8 +4,7 @@ import { createSearchIndex, SearchError } from "../../src/index.js";
 
 const acl: Acl = { allowUsers: [], allowGroups: [], version: 1 };
 const all = { sql: "1", params: [] };
-const chunk = (chunkId: string, docId = "d", text = "needle") =>
-  ({ chunkId, docId, tenantId: "t", text, embedding: [1, 0], acl });
+const chunk = (chunkId: string, docId = "d", text = "needle") => ({ chunkId, docId, tenantId: "t", text, embedding: [1, 0], acl });
 
 describe("SearchIndex validation", () => {
   it("accepts limits 1 and 100 and rejects 101 and fractions", () => {

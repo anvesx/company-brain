@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { locate } from "../../src/offsets.js";
 import { ChunkError } from "../../src/errors.js";
+import { locate } from "../../src/offsets.js";
 
 function thrown(fn: () => unknown): unknown {
   try {

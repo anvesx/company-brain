@@ -21,9 +21,7 @@ describe("integration: filtering a real table", () => {
       .prepare(`SELECT id FROM docs WHERE ${sql} ORDER BY id`)
       .all(...(params as never[]))
       .map((r) => Number(r["id"]));
-    const want = rows
-      .filter(([, t, u, g]) => isAllowed(p, { allowUsers: [...u], allowGroups: [...g], version: 1 }, t))
-      .map(([i]) => i);
+    const want = rows.filter(([, t, u, g]) => isAllowed(p, { allowUsers: [...u], allowGroups: [...g], version: 1 }, t)).map(([i]) => i);
     expect(got).toEqual([1, 2]);
     expect(got).toEqual(want);
   });

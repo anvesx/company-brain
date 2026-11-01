@@ -4,14 +4,27 @@ const net = require("node:net");
 class MemorySocket extends EventEmitter {
   writable = true;
   setEncoding() {}
-  write() { return true; }
-  end(callback) { this.writable = false; callback?.(); }
+  write() {
+    return true;
+  }
+  end(callback) {
+    this.writable = false;
+    callback?.();
+  }
 }
 
 class MemoryServer extends EventEmitter {
-  listen(callback) { queueMicrotask(callback); return this; }
-  address() { return { address: "memory", family: "memory", port: 0 }; }
-  close(callback) { queueMicrotask(callback); return this; }
+  listen(callback) {
+    queueMicrotask(callback);
+    return this;
+  }
+  address() {
+    return { address: "memory", family: "memory", port: 0 };
+  }
+  close(callback) {
+    queueMicrotask(callback);
+    return this;
+  }
 }
 
 net.createServer = () => new MemoryServer();

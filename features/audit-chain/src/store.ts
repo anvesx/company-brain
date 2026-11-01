@@ -4,15 +4,24 @@ import { AuditError } from "./errors.js";
 import { installTriggers } from "./triggers.js";
 
 export type Row = {
-  seq: number; actor: string; action: string; target: string;
-  at: string; detail: string | null; hash: string;
+  seq: number;
+  actor: string;
+  action: string;
+  target: string;
+  at: string;
+  detail: string | null;
+  hash: string;
 };
 
 const COLS = "seq, actor, action, target, at, detail, hash";
 
 export interface Store {
-  append(tenant: string, detail: string | null, e: { actor: string; action: string; target: string; at: string },
-    hashOf: (prev: string) => string): { seq: number; hash: string };
+  append(
+    tenant: string,
+    detail: string | null,
+    e: { actor: string; action: string; target: string; at: string },
+    hashOf: (prev: string) => string,
+  ): { seq: number; hash: string };
   rows(tenant: string, after: number, limit: number): Row[];
   each(tenant: string): IterableIterator<Row>;
 }
@@ -31,8 +40,7 @@ export function openStore(path: string): Store {
     throw new AuditError("STORAGE", `cannot open ${path}`, { cause });
   }
   const last = db.prepare("SELECT seq, hash FROM audit WHERE tenant_id = ? ORDER BY seq DESC LIMIT 1");
-  const insert = db.prepare(
-    "INSERT INTO audit (tenant_id, seq, actor, action, target, at, detail, hash) VALUES (?,?,?,?,?,?,?,?)");
+  const insert = db.prepare("INSERT INTO audit (tenant_id, seq, actor, action, target, at, detail, hash) VALUES (?,?,?,?,?,?,?,?)");
   const page = db.prepare(`SELECT ${COLS} FROM audit WHERE tenant_id = ? AND seq > ? ORDER BY seq LIMIT ?`);
   const all = db.prepare(`SELECT ${COLS} FROM audit WHERE tenant_id = ? ORDER BY seq`);
 

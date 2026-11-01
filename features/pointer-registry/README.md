@@ -5,6 +5,7 @@ It never stores body text. The table has twelve columns and none can hold a docu
 asserts the exact column list. Spec: `docs/specs/feature/pointer-registry.md` (ticket #30).
 
 ## What it does
+
 - Key is `(tenantId, id)`. Every method requires a non-empty `tenantId`, and every query filters on it, so one tenant cannot read another.
 - `upsert` validates with `PointerSchema` from `@brain/core-types`, then compares hash, version and `acl.version` with the stored row. All equal and the row is live: `unchanged`, nothing written, the stored pointer is returned. New key: `created`. Otherwise `updated` and the whole row is rewritten.
 - `tombstone` sets `deletedAt` and keeps the row. `get` and `list` hide tombstoned rows. Upserting the same key again revives it (reported as `updated`).
@@ -13,6 +14,7 @@ asserts the exact column list. Spec: `docs/specs/feature/pointer-registry.md` (t
 - Backend is `node:sqlite` (built into Node 26) with plain prepared SQL. `better-sqlite3` failed to compile on Node 26 and drizzle has no `node:sqlite` driver. File databases use WAL and `synchronous=NORMAL`.
 
 ## Interface
+
 ```ts
 interface Registry {
   upsert(p: Pointer): { pointer: Pointer; change: "created" | "updated" | "unchanged" };
@@ -27,23 +29,26 @@ class RegistryError extends Error { code: "INVALID" | "TENANT_REQUIRED" }
 Errors: invalid pointer, non-object input, bad `at`, or `limit` that is not a positive integer throw `INVALID`. A missing or empty `tenantId` throws `TENANT_REQUIRED`. Database errors propagate unchanged after rollback.
 
 ## Usage
+
 ```ts
 import { createRegistry } from "@brain/pointer-registry";
 const reg = createRegistry("./registry.db");
-const { change } = reg.upsert(pointer);          // "created"
-reg.get("acme", pointer.id);                     // Pointer
+const { change } = reg.upsert(pointer); // "created"
+reg.get("acme", pointer.id); // Pointer
 reg.list({ tenantId: "acme", afterId: lastId }); // next page
 reg.tombstone("acme", pointer.id, new Date().toISOString());
 reg.close();
 ```
 
 ## Limits
+
 - One writer at a time per database file (SQLite). Calls are synchronous.
 - Unchanged detection ignores title, address, zone and source: change those without changing version or hash and the update is skipped.
 - `tombstone` does not bump `updatedAt`.
 - Out of scope: Postgres adapter, search, ACL checks.
 
 ## Test
+
 From this folder: `pnpm test`, `pnpm typecheck`, `pnpm mutation` (break below 80).
 Tests write only to temp dirs. The 100k scale test is skipped under Stryker.
 

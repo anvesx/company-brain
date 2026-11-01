@@ -4,8 +4,7 @@ import { createSearchIndex, SearchError } from "../../src/index.js";
 
 const acl: Acl = { allowUsers: [], allowGroups: [], version: 1 };
 const all = { sql: "1", params: [] };
-const row = (chunkId: string, over: object = {}) =>
-  ({ chunkId, docId: "d", tenantId: "t", text: "x", embedding: [1, 0], acl, ...over });
+const row = (chunkId: string, over: object = {}) => ({ chunkId, docId: "d", tenantId: "t", text: "x", embedding: [1, 0], acl, ...over });
 const bad = (code: string) => new SearchError(code as "INPUT");
 
 describe("input edges", () => {
@@ -22,8 +21,7 @@ describe("input edges", () => {
   it("accepts dim 1 and 4096 but rejects 4097 and fractions", () => {
     expect(createSearchIndex(":memory:", 1)).toBeDefined();
     expect(createSearchIndex(":memory:", 4096)).toBeDefined();
-    for (const dim of [4097, 1.5, -2])
-      expect(() => createSearchIndex(":memory:", dim)).toThrowError(bad("DIM"));
+    for (const dim of [4097, 1.5, -2]) expect(() => createSearchIndex(":memory:", dim)).toThrowError(bad("DIM"));
   });
 
   it("survives null and malformed arguments with typed errors", () => {

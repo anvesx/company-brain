@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { PointerSchema, type Pointer } from "@brain/core-types";
+import { type Pointer, PointerSchema } from "@brain/core-types";
 import { RegistryError } from "./errors.js";
 import { DDL, fromRow, isUnchanged, SQL, toParams } from "./schema.js";
 

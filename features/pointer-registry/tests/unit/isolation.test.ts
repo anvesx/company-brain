@@ -3,7 +3,11 @@ import { createRegistry, RegistryError } from "../../src/index.js";
 import { ptr } from "../fixtures.js";
 
 const code = (fn: () => unknown): unknown => {
-  try { fn(); } catch (e) { return e instanceof RegistryError ? e.code : "other"; }
+  try {
+    fn();
+  } catch (e) {
+    return e instanceof RegistryError ? e.code : "other";
+  }
   return "no-throw";
 };
 

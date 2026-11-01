@@ -55,7 +55,6 @@ describe("folder connector paging", () => {
   it("rejects a cursor when no walk has started", async () => {
     const root = await temp();
     await writeFile(join(root, "a"), "x");
-    await expect(createFolderConnector("f", root).list({ limit: 1, cursor: "1" }))
-      .rejects.toMatchObject({ code: "BAD_CURSOR" });
+    await expect(createFolderConnector("f", root).list({ limit: 1, cursor: "1" })).rejects.toMatchObject({ code: "BAD_CURSOR" });
   });
 });

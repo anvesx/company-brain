@@ -1,4 +1,4 @@
-import { workerData, parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 
 const { chainJs, dbPath, tenantId, count } = workerData;
 const { createAuditChain } = await import(chainJs);

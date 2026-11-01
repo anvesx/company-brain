@@ -3,7 +3,12 @@ import { rrf } from "../../src/index.js";
 
 describe("rrf", () => {
   it("sums reciprocal ranks across lists", () => {
-    expect(rrf([["a", "b"], ["b", "c"]])).toEqual([
+    expect(
+      rrf([
+        ["a", "b"],
+        ["b", "c"],
+      ]),
+    ).toEqual([
       { id: "b", score: 1 / 62 + 1 / 61 },
       { id: "a", score: 1 / 61 },
       { id: "c", score: 1 / 62 },

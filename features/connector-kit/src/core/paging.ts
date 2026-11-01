@@ -1,9 +1,6 @@
 import { ConnectorError } from "./contract.js";
 
-export const pageItems = <T>(
-  items: readonly T[],
-  query: { cursor?: string; limit: number },
-): { items: T[]; nextCursor?: string } => {
+export const pageItems = <T>(items: readonly T[], query: { cursor?: string; limit: number }): { items: T[]; nextCursor?: string } => {
   if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 1000) {
     throw new RangeError("limit must be an integer from 1 to 1000");
   }

@@ -2,23 +2,36 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type AuditEvent, AuditError, createAuditChain } from "../../src/chain.js";
 import { GENESIS, hashEvent } from "../../src/canonical.js";
+import { AuditError, type AuditEvent, createAuditChain } from "../../src/chain.js";
 
 const dir = mkdtempSync(join(tmpdir(), "audit-unit-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
 const fresh = () => createAuditChain(join(dir, `${n++}.db`));
 const ev = (o: Partial<AuditEvent> = {}): AuditEvent => ({
-  tenantId: "t1", actor: "alice", action: "read", target: "doc/1", at: "2026-01-01T00:00:00Z", ...o,
+  tenantId: "t1",
+  actor: "alice",
+  action: "read",
+  target: "doc/1",
+  at: "2026-01-01T00:00:00Z",
+  ...o,
 });
 const code = (f: () => unknown) => {
-  try { f(); } catch (e) { return e instanceof AuditError ? e.code : "OTHER"; }
+  try {
+    f();
+  } catch (e) {
+    return e instanceof AuditError ? e.code : "OTHER";
+  }
   return "NONE";
 };
 
 describe("list", () => {
-  const seeded = () => { const c = fresh(); for (let i = 0; i < 5; i++) c.append(ev({ target: `d${i}` })); return c; };
+  const seeded = () => {
+    const c = fresh();
+    for (let i = 0; i < 5; i++) c.append(ev({ target: `d${i}` }));
+    return c;
+  };
   it("returns entries in seq order with hash", () => {
     const l = seeded().list("t1");
     expect(l.map((x) => x.seq)).toEqual([1, 2, 3, 4, 5]);
@@ -35,7 +48,13 @@ describe("list", () => {
   });
   it("rejects bad paging arguments", () => {
     const c = seeded();
-    for (const [a, l] of [[-1, 1], [1.5, 1], [0, 0], [0, 1001], [0, Number.NaN]] as const)
+    for (const [a, l] of [
+      [-1, 1],
+      [1.5, 1],
+      [0, 0],
+      [0, 1001],
+      [0, Number.NaN],
+    ] as const)
       expect(code(() => c.list("t1", a, l))).toBe("INVALID");
     expect(code(() => c.list("", 0, 1))).toBe("INVALID");
     expect(code(() => c.list("t1", 0, 1000))).toBe("NONE");
@@ -43,6 +62,5 @@ describe("list", () => {
 });
 
 describe("open", () => {
-  it("throws STORAGE when the path cannot be opened", () =>
-    expect(code(() => createAuditChain(join(dir, "no/such/dir/x.db")))).toBe("STORAGE"));
+  it("throws STORAGE when the path cannot be opened", () => expect(code(() => createAuditChain(join(dir, "no/such/dir/x.db")))).toBe("STORAGE"));
 });

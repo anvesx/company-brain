@@ -1,13 +1,5 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import {
-  DEFAULT_TTL_MS,
-  requireCursor,
-  requireFunction,
-  requirePositiveInt,
-  requireText,
-  requireTime,
-  SCHEMA_SQL,
-} from "./schema.js";
+import { DEFAULT_TTL_MS, requireCursor, requireFunction, requirePositiveInt, requireText, requireTime, SCHEMA_SQL } from "./schema.js";
 
 /** Durable cursor and dedupe state, backed by one SQLite file. */
 export interface CursorStore {
@@ -18,11 +10,7 @@ export interface CursorStore {
 }
 
 /** Opens (or creates) the store. `clock` returns milliseconds. `ttlMs` defaults to 24 hours. */
-export function createCursorStore(
-  dbPath: string,
-  clock: () => number,
-  ttlMs: number = DEFAULT_TTL_MS,
-): CursorStore {
+export function createCursorStore(dbPath: string, clock: () => number, ttlMs: number = DEFAULT_TTL_MS): CursorStore {
   const path = requireText("dbPath", dbPath);
   const now = requireFunction("clock", clock);
   const ttl = requirePositiveInt("ttlMs", ttlMs);
@@ -51,8 +39,7 @@ function prepare(db: DatabaseSync): Record<"get" | "set" | "seen", StatementSync
   return {
     get: db.prepare("SELECT cursor FROM cursors WHERE tenant_id = ? AND source = ?"),
     set: db.prepare(
-      "INSERT INTO cursors (tenant_id, source, cursor) VALUES (?, ?, ?) " +
-        "ON CONFLICT(tenant_id, source) DO UPDATE SET cursor = excluded.cursor",
+      "INSERT INTO cursors (tenant_id, source, cursor) VALUES (?, ?, ?) " + "ON CONFLICT(tenant_id, source) DO UPDATE SET cursor = excluded.cursor",
     ),
     seen: db.prepare(
       "INSERT INTO seen_events (event_id, seen_at) VALUES (?, ?) " +

@@ -14,7 +14,5 @@ export function rrf(lists: string[][], k = 60): RankedId[] {
       scores.set(id, (scores.get(id) ?? 0) + 1 / (k + index + 1));
     });
   }
-  return [...scores].map(([id, score]) => ({ id, score })).sort(
-    (left, right) => right.score - left.score || (left.id < right.id ? -1 : 1),
-  );
+  return [...scores].map(([id, score]) => ({ id, score })).sort((left, right) => right.score - left.score || (left.id < right.id ? -1 : 1));
 }

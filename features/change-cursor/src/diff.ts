@@ -27,10 +27,7 @@ function requireListing(name: string, value: unknown): Map<string, string> {
  * Pure reconciliation diff. Each list is sorted by UTF-16 code unit order.
  * An address in `known` but not `listed` is reported once, as deleted.
  */
-export function diffListing(
-  known: Map<string, string>,
-  listed: Map<string, string>,
-): ListingDiff {
+export function diffListing(known: Map<string, string>, listed: Map<string, string>): ListingDiff {
   const before = requireListing("known", known);
   const now = requireListing("listed", listed);
   const created: string[] = [];

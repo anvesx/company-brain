@@ -14,7 +14,7 @@ describe("determinism and ids", () => {
     const a = await chunkText("d1", words(200), opt);
     const b = await chunkText("d2", words(200), opt);
     expect(a.length).toBe(b.length);
-    a.forEach((c, i) => expect(c.id).not.toBe(b[i]?.id));
+    for (const [i, c] of a.entries()) expect(c.id).not.toBe(b[i]?.id);
   });
   it("gives unique ids within one document", async () => {
     const chunks = await chunkText("d", "ab ".repeat(300), { size: 20, overlap: 4 });

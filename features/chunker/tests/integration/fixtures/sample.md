@@ -41,11 +41,11 @@ Mixed runs such as 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀�
 
 ## Operational limits
 
-| Limit | Value | Why |
-|---|---|---|
-| Chunk size | 1000 characters | Fits one embedding call with headroom |
-| Overlap | 100 characters | Keeps boundary sentences searchable |
-| Text size | 5 MB in under 3 s | Keeps a full re-index of a large export practical |
+| Limit      | Value             | Why                                               |
+| ---------- | ----------------- | ------------------------------------------------- |
+| Chunk size | 1000 characters   | Fits one embedding call with headroom             |
+| Overlap    | 100 characters    | Keeps boundary sentences searchable               |
+| Text size  | 5 MB in under 3 s | Keeps a full re-index of a large export practical |
 
 The chunker does not extract text from PDFs and does not create embeddings. A later stage owns
 both jobs, and it receives the chunks as plain text with their offsets.

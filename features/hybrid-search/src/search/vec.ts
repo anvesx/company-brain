@@ -8,23 +8,11 @@ export function createVec(db: DatabaseSync, dim: number): void {
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[${dim}])`);
 }
 
-export function addVec(
-  db: DatabaseSync,
-  rowid: number,
-  embedding: number[],
-): void {
-  db.prepare("INSERT INTO chunks_vec(rowid, embedding) VALUES (?, ?)").run(
-    BigInt(rowid),
-    new Float32Array(embedding),
-  );
+export function addVec(db: DatabaseSync, rowid: number, embedding: number[]): void {
+  db.prepare("INSERT INTO chunks_vec(rowid, embedding) VALUES (?, ?)").run(BigInt(rowid), new Float32Array(embedding));
 }
 
-export function searchVec(
-  db: DatabaseSync,
-  embedding: number[],
-  limit: number,
-  acl: AclFragment,
-): string[] {
+export function searchVec(db: DatabaseSync, embedding: number[], limit: number, acl: AclFragment): string[] {
   const sql = `SELECT chunks.chunk_id AS id FROM chunks_vec
     JOIN chunks ON chunks.rowid = chunks_vec.rowid
     WHERE chunks_vec.embedding MATCH ? AND k = ? AND (${acl.sql})
@@ -36,12 +24,7 @@ export function searchVec(
   const cap = Math.min(total, MAX_KNN);
   let candidates = allowed === total ? limit : Math.min(cap, limit * 8);
   for (;;) {
-    const rows = db.prepare(sql).all(
-      new Float32Array(embedding),
-      candidates,
-      ...params,
-      limit,
-    );
+    const rows = db.prepare(sql).all(new Float32Array(embedding), candidates, ...params, limit);
     if (rows.length >= limit || candidates >= total) {
       return rows.map((row) => String(row.id));
     }
@@ -56,19 +39,13 @@ function count(db: DatabaseSync, where: string, params: SQLInputValue[]): number
 }
 
 // vec0 caps knn at 4096; selective ACLs fall back to a scan over allowed rows.
-function exactScan(
-  db: DatabaseSync,
-  embedding: number[],
-  limit: number,
-  acl: AclFragment,
-): string[] {
+function exactScan(db: DatabaseSync, embedding: number[], limit: number, acl: AclFragment): string[] {
   const sql = `SELECT chunks.chunk_id AS id FROM chunks
     JOIN chunks_vec ON chunks_vec.rowid = chunks.rowid
     WHERE (${acl.sql})
     ORDER BY vec_distance_l2(chunks_vec.embedding, ?), chunks.chunk_id LIMIT ?`;
-  return db.prepare(sql).all(
-    ...sqlParams(acl.params),
-    new Float32Array(embedding),
-    limit,
-  ).map((row) => String(row.id));
+  return db
+    .prepare(sql)
+    .all(...sqlParams(acl.params), new Float32Array(embedding), limit)
+    .map((row) => String(row.id));
 }

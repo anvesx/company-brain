@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import { PointerSchema } from "../../src/pointer.js";
 
 const ok = {
-  id: "p1", tenantId: "t1", source: "gdrive", address: "drive://abc", version: "7",
-  contentHash: "a".repeat(64), zone: "team", acl: { version: 1 }, updatedAt: "2026-11-01T00:00:00Z",
+  id: "p1",
+  tenantId: "t1",
+  source: "gdrive",
+  address: "drive://abc",
+  version: "7",
+  contentHash: "a".repeat(64),
+  zone: "team",
+  acl: { version: 1 },
+  updatedAt: "2026-11-01T00:00:00Z",
 };
 
 describe("PointerSchema", () => {

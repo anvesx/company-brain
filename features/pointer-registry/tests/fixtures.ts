@@ -1,4 +1,6 @@
 import type { Pointer } from "@brain/core-types";
+import { expect } from "vitest";
+import { RegistryError } from "../src/index.js";
 
 /** A valid pointer; override any field. Hash is derived from the seed so rows differ. */
 export const ptr = (over: Partial<Pointer> = {}): Pointer => ({
@@ -17,3 +19,13 @@ export const ptr = (over: Partial<Pointer> = {}): Pointer => ({
 });
 
 export const hashOf = (n: number): string => n.toString(16).padStart(64, "0");
+
+export const code = (fn: () => unknown): unknown => {
+  try {
+    fn();
+  } catch (e) {
+    expect(e).toBeInstanceOf(RegistryError);
+    return (e as RegistryError).code;
+  }
+  return "no-throw";
+};

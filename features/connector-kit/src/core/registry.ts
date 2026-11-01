@@ -1,4 +1,4 @@
-import { ConnectorError, type Connector } from "./contract.js";
+import { type Connector, ConnectorError } from "./contract.js";
 
 export type ConnectorRegistry = {
   register(connector: Connector): void;

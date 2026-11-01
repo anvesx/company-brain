@@ -2,18 +2,27 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type AuditEvent, AuditError, createAuditChain } from "../../src/chain.js";
 import { GENESIS, hashEvent } from "../../src/canonical.js";
+import { AuditError, type AuditEvent, createAuditChain } from "../../src/chain.js";
 
 const dir = mkdtempSync(join(tmpdir(), "audit-unit-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
 const fresh = () => createAuditChain(join(dir, `${n++}.db`));
 const ev = (o: Partial<AuditEvent> = {}): AuditEvent => ({
-  tenantId: "t1", actor: "alice", action: "read", target: "doc/1", at: "2026-01-01T00:00:00Z", ...o,
+  tenantId: "t1",
+  actor: "alice",
+  action: "read",
+  target: "doc/1",
+  at: "2026-01-01T00:00:00Z",
+  ...o,
 });
 const code = (f: () => unknown) => {
-  try { f(); } catch (e) { return e instanceof AuditError ? e.code : "OTHER"; }
+  try {
+    f();
+  } catch (e) {
+    return e instanceof AuditError ? e.code : "OTHER";
+  }
   return "NONE";
 };
 

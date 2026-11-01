@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { displayPath, walkDirectories, type Violation } from "./fs/walk.ts";
+import { displayPath, type Violation, walkDirectories } from "./fs/walk.ts";
 
 const missing = (root: string, path: string, message: string): Violation => ({
-  file: displayPath(root, path), rule: "layout", message,
+  file: displayPath(root, path),
+  rule: "layout",
+  message,
 });
 
 export const checkLayout = (root: string, packages: readonly string[]): Violation[] =>

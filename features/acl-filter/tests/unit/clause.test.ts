@@ -13,11 +13,7 @@ describe("allowClause", () => {
   });
 
   it("binds tenant, user id and a JSON group list in order", () => {
-    expect(allowClause({ id: "u", tenantId: "t", groups: ["g1", "g2"] }).params).toEqual([
-      "t",
-      "u",
-      '["g1","g2"]',
-    ]);
+    expect(allowClause({ id: "u", tenantId: "t", groups: ["g1", "g2"] }).params).toEqual(["t", "u", '["g1","g2"]']);
   });
 
   it("matches ids containing quotes, percent and unicode literally", () => {

@@ -8,11 +8,17 @@ const countLines = (content: string): number => {
 };
 
 export const checkLines = (root: string, packages: readonly string[]): Violation[] =>
-  packages.flatMap((packageDir) => codeFiles(packageDir).flatMap((file) => {
-    const lines = countLines(readFileSync(file, "utf8"));
-    return lines > 80 ? [{
-      file: displayPath(root, file),
-      rule: "lines",
-      message: `${lines} lines exceeds 80`,
-    }] : [];
-  }));
+  packages.flatMap((packageDir) =>
+    codeFiles(packageDir).flatMap((file) => {
+      const lines = countLines(readFileSync(file, "utf8"));
+      return lines > 80
+        ? [
+            {
+              file: displayPath(root, file),
+              rule: "lines",
+              message: `${lines} lines exceeds 80`,
+            },
+          ]
+        : [];
+    }),
+  );

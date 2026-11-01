@@ -18,6 +18,7 @@ const KEYS = new Set(["tenantId", "actor", "action", "target", "at", "detail"]);
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 // NUL truncates SQLite text; a lone surrogate would be rewritten to U+FFFD. Either breaks the hash.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is deliberately rejected
 const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const bad = (msg: string): never => {
@@ -51,5 +52,7 @@ export function validateEvent(e: unknown): string | null {
 
 /** sha256(prevHash + canonical(event)), hex. */
 export function hashEvent(prev: string, e: AuditEvent): string {
-  return createHash("sha256").update(prev + canonicalize(e)).digest("hex");
+  return createHash("sha256")
+    .update(prev + canonicalize(e))
+    .digest("hex");
 }

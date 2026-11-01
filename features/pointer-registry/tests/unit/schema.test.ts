@@ -1,25 +1,48 @@
-import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRegistry } from "../../src/index.js";
 import { ptr } from "../fixtures.js";
 
 const dirs: string[] = [];
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
 
 describe("table shape", () => {
   it("has exactly the pointer columns, none able to hold body text", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pr-")); dirs.push(dir);
+    const dir = mkdtempSync(join(tmpdir(), "pr-"));
+    dirs.push(dir);
     const file = join(dir, "r.db");
-    const r = createRegistry(file); r.close();
+    const r = createRegistry(file);
+    r.close();
     const db = new DatabaseSync(file);
-    const cols = db.prepare("PRAGMA table_info(pointers)").all().map((c) => c["name"]);
-    const pk = db.prepare("PRAGMA table_info(pointers)").all().filter((c) => c["pk"] !== 0).map((c) => c["name"]);
+    const cols = db
+      .prepare("PRAGMA table_info(pointers)")
+      .all()
+      .map((c) => c["name"]);
+    const pk = db
+      .prepare("PRAGMA table_info(pointers)")
+      .all()
+      .filter((c) => c["pk"] !== 0)
+      .map((c) => c["name"]);
     db.close();
-    expect(cols).toEqual(["tenant_id", "id", "source", "address", "title", "version", "content_hash",
-      "zone", "acl_json", "acl_version", "updated_at", "deleted_at"]);
+    expect(cols).toEqual([
+      "tenant_id",
+      "id",
+      "source",
+      "address",
+      "title",
+      "version",
+      "content_hash",
+      "zone",
+      "acl_json",
+      "acl_version",
+      "updated_at",
+      "deleted_at",
+    ]);
     expect(pk).toEqual(["tenant_id", "id"]);
   });
 });
@@ -41,7 +64,8 @@ describe("unicode and size", () => {
     expect(r.get("t1", "doc-1")?.acl).toEqual(p.acl);
   });
   it("opens twice on :memory: independently", () => {
-    const a = createRegistry(":memory:"); const b = createRegistry(":memory:");
+    const a = createRegistry(":memory:");
+    const b = createRegistry(":memory:");
     a.upsert(ptr());
     expect(b.get("t1", "doc-1")).toBeUndefined();
   });

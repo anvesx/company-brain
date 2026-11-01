@@ -13,7 +13,11 @@ export interface AuditChain {
 }
 
 const toEvent = (tenantId: string, r: Row): AuditEvent => ({
-  tenantId, actor: r.actor, action: r.action, target: r.target, at: r.at,
+  tenantId,
+  actor: r.actor,
+  action: r.action,
+  target: r.target,
+  at: r.at,
   ...(r.detail === null ? {} : { detail: JSON.parse(r.detail) as Record<string, unknown> }),
 });
 

@@ -2,8 +2,18 @@ import type { Pointer } from "@brain/core-types";
 
 /** Every column the table has. None can hold document body text. */
 export const COLUMNS = [
-  "tenant_id", "id", "source", "address", "title", "version", "content_hash",
-  "zone", "acl_json", "acl_version", "updated_at", "deleted_at",
+  "tenant_id",
+  "id",
+  "source",
+  "address",
+  "title",
+  "version",
+  "content_hash",
+  "zone",
+  "acl_json",
+  "acl_version",
+  "updated_at",
+  "deleted_at",
 ] as const;
 
 export const DDL = `CREATE TABLE IF NOT EXISTS pointers (
@@ -28,16 +38,24 @@ export const SQL = {
 
 /** Same hash, version, acl version and liveness means nothing to write. */
 export const isUnchanged = (old: Pointer, next: Pointer): boolean =>
-  old.contentHash === next.contentHash && old.version === next.version
-  && old.acl.version === next.acl.version && old.deletedAt === next.deletedAt;
+  old.contentHash === next.contentHash && old.version === next.version && old.acl.version === next.acl.version && old.deletedAt === next.deletedAt;
 
 type Row = Record<string, unknown>;
 
 /** Positional params in COLUMNS order. */
 export const toParams = (p: Pointer): (string | number | null)[] => [
-  p.tenantId, p.id, p.source, p.address, p.title, p.version, p.contentHash, p.zone,
+  p.tenantId,
+  p.id,
+  p.source,
+  p.address,
+  p.title,
+  p.version,
+  p.contentHash,
+  p.zone,
   JSON.stringify({ allowUsers: p.acl.allowUsers, allowGroups: p.acl.allowGroups }),
-  p.acl.version, p.updatedAt, p.deletedAt,
+  p.acl.version,
+  p.updatedAt,
+  p.deletedAt,
 ];
 
 export const fromRow = (r: Row): Pointer => {

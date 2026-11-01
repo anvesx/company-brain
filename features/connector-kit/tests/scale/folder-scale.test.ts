@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -23,7 +23,10 @@ it("pages 5k folder files in linear-ish time and handles deep nesting", async ()
     await Promise.all(Array.from({ length: 100 }, (_, i) => writeFile(join(root, `d${dir}`, `f${i}.txt`), "x")));
   }
   let deep = root;
-  for (let level = 0; level < 200; level += 1) { deep = join(deep, "n"); await mkdir(deep); }
+  for (let level = 0; level < 200; level += 1) {
+    deep = join(deep, "n");
+    await mkdir(deep);
+  }
   await writeFile(join(deep, "leaf.txt"), "x");
   const connector = createFolderConnector("scale", root);
   const start = performance.now();

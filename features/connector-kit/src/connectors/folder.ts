@@ -1,9 +1,9 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { ConnectorError, type Connector, type ListedDoc } from "../core/contract.js";
+import { type Connector, ConnectorError, type ListedDoc } from "../core/contract.js";
 import { pageItems } from "../core/paging.js";
-import { scan } from "./folder-scan.js";
 import { escapes, safeRealpath } from "./folder-path.js";
+import { scan } from "./folder-scan.js";
 
 export const createFolderConnector = (id: string, rootDir: string): Connector => {
   // A listing without a cursor starts a walk and rescans; later pages reuse that snapshot so a

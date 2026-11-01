@@ -18,7 +18,11 @@ beforeEach(() => {
 });
 
 describe("raw-SQL tamper is detected at the first bad seq", () => {
-  const run = (sql: string) => { const db = rawTamperDb(path); db.exec(sql); db.close(); };
+  const run = (sql: string) => {
+    const db = rawTamperDb(path);
+    db.exec(sql);
+    db.close();
+  };
   const verify = () => createAuditChain(path).verify("t");
 
   it("edited field", () => {

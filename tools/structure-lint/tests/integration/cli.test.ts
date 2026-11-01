@@ -1,6 +1,6 @@
 import { execFile, spawnSync } from "node:child_process";
-import { promisify } from "node:util";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanFixtures, fixture, packageJson } from "../unit/fixture.js";
 
@@ -17,11 +17,12 @@ const base = (name: string) => ({
 
 describe("structure-lint CLI", () => {
   it("prints all four rule violations and exits one", () => {
-    const crowded = Object.fromEntries(
-      Array.from({ length: 6 }, (_, index) => [`features/two/src/many/${index}.ts`, ""]),
-    );
+    const crowded = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`features/two/src/many/${index}.ts`, ""]));
     const root = fixture({
-      ...base("core-types"), ...base("one"), ...base("two"), ...crowded,
+      ...base("core-types"),
+      ...base("one"),
+      ...base("two"),
+      ...crowded,
       "features/one/src/long.ts": Array(81).fill("x").join("\n"),
       "features/one/src/missing/code.ts": "",
       "features/two/src/many/README.md": "# source",
@@ -41,8 +42,7 @@ describe("structure-lint CLI", () => {
 
   it("runs concurrently on a valid fixture and on the real repository", async () => {
     const root = fixture(base("core-types"));
-    const outputs = await Promise.all([root, root].map((path) =>
-      runAsync(process.execPath, [cli, "--root", path], { encoding: "utf8" })));
+    const outputs = await Promise.all([root, root].map((path) => runAsync(process.execPath, [cli, "--root", path], { encoding: "utf8" })));
     expect(outputs.every(({ stdout }) => stdout.includes("checked 1 packages"))).toBe(true);
     const real = run(resolve("../.."));
     expect(real.status).not.toBe(2);

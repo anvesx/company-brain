@@ -14,22 +14,25 @@ const doc = (address: string): FakeDoc => ({
 
 describe("fake connector paging", () => {
   it("returns every doc exactly once for every limit 1..1000", async () => {
-    await fc.assert(fc.asyncProperty(
-      fc.uniqueArray(fc.string({ minLength: 1, maxLength: 24 }), { selector: String, maxLength: 200 }),
-      fc.integer({ min: 1, max: 1000 }),
-      async (addresses, limit) => {
-        const connector = createFakeConnector("fake", addresses.map(doc));
-        const seen: string[] = [];
-        let cursor: string | undefined;
-        do {
-          const page = await connector.list(cursor === undefined ? { limit } : { limit, cursor });
-          seen.push(...page.items.map((item) => item.address));
-          cursor = page.nextCursor;
-        } while (cursor !== undefined);
-        expect(seen).toEqual(addresses);
-        expect(new Set(seen).size).toBe(addresses.length);
-      },
-    ), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(fc.string({ minLength: 1, maxLength: 24 }), { selector: String, maxLength: 200 }),
+        fc.integer({ min: 1, max: 1000 }),
+        async (addresses, limit) => {
+          const connector = createFakeConnector("fake", addresses.map(doc));
+          const seen: string[] = [];
+          let cursor: string | undefined;
+          do {
+            const page = await connector.list(cursor === undefined ? { limit } : { limit, cursor });
+            seen.push(...page.items.map((item) => item.address));
+            cursor = page.nextCursor;
+          } while (cursor !== undefined);
+          expect(seen).toEqual(addresses);
+          expect(new Set(seen).size).toBe(addresses.length);
+        },
+      ),
+      { numRuns: 100 },
+    );
   });
 
   it.each([0, -1, 1001])("rejects invalid limit %i", async (limit) => {

@@ -18,9 +18,16 @@ const str = fc.string({ unit: "grapheme", minLength: 1, maxLength: 40 }).filter(
 const iso = fc.date({ min: new Date("2000-01-01"), max: new Date("2100-01-01"), noInvalidDate: true }).map((d) => d.toISOString());
 const detail = fc.dictionary(str, fc.jsonValue(), { maxKeys: 4 });
 const event = (tenantId: string) =>
-  fc.tuple(str, str, str, iso, fc.option(detail, { nil: undefined })).map(([actor, action, target, at, d]): AuditEvent => ({
-    tenantId, actor, action, target, at, ...(d ? { detail: d } : {}),
-  }));
+  fc.tuple(str, str, str, iso, fc.option(detail, { nil: undefined })).map(
+    ([actor, action, target, at, d]): AuditEvent => ({
+      tenantId,
+      actor,
+      action,
+      target,
+      at,
+      ...(d ? { detail: d } : {}),
+    }),
+  );
 
 describe("properties", () => {
   it("random event sequences always verify ok and list back what was appended", () => {
