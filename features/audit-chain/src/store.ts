@@ -24,6 +24,7 @@ export interface Store {
   ): { seq: number; hash: string };
   rows(tenant: string, after: number, limit: number): Row[];
   each(tenant: string): IterableIterator<Row>;
+  head(tenant: string): { seq: number; hash: string };
 }
 
 export function openStore(path: string): Store {
@@ -61,5 +62,6 @@ export function openStore(path: string): Store {
     },
     rows: (tenant, after, limit) => page.all(tenant, after, limit) as Row[],
     each: (tenant) => all.iterate(tenant) as IterableIterator<Row>,
+    head: (tenant) => (last.get(tenant) as { seq: number; hash: string } | undefined) ?? { seq: 0, hash: GENESIS },
   };
 }

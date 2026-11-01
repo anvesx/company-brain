@@ -6,9 +6,15 @@ export type { AuditEvent } from "./canonical.js";
 export { AuditError } from "./errors.js";
 export type Entry = AuditEvent & { seq: number; hash: string };
 
+export type Anchor = { seq: number; hash: string };
+/** `anchor` is set only when the chain is self-consistent but disagrees with the supplied anchor. */
+export type Verdict = { ok: true } | { ok: false; brokenAt: number; anchor?: "truncated" | "mismatch" };
+
 export interface AuditChain {
-  append(e: AuditEvent): { seq: number; hash: string };
-  verify(tenantId: string): { ok: true } | { ok: false; brokenAt: number };
+  append(e: AuditEvent): Anchor;
+  /** Chain head to store outside this database. Empty chain: `{ seq: 0, hash: GENESIS }`. */
+  head(tenantId: string): Anchor;
+  verify(tenantId: string, anchor?: Anchor): Verdict;
   list(tenantId: string, afterSeq?: number, limit?: number): Entry[];
 }
 
@@ -38,8 +44,15 @@ export function createAuditChain(dbPath: string): AuditChain {
       const detail = validateEvent(e);
       return store.append(e.tenantId, detail, e, (prev) => hashEvent(prev, e));
     },
-    verify(tenantId) {
+    head(tenantId) {
+      return store.head(tenant(tenantId));
+    },
+    verify(tenantId, anchor) {
       tenant(tenantId);
+      if (anchor !== undefined) {
+        int(anchor.seq, "anchor.seq", 0, Number.MAX_SAFE_INTEGER);
+        if (typeof anchor.hash !== "string" || anchor.hash.length === 0) throw new AuditError("INVALID", "anchor.hash must be a non-empty string");
+      }
       let prev = GENESIS;
       let expected = 1;
       for (const r of store.each(tenantId)) {
@@ -50,8 +63,10 @@ export function createAuditChain(dbPath: string): AuditChain {
           return { ok: false, brokenAt: r.seq }; // stored detail is not valid JSON
         }
         if (prev !== r.hash) return { ok: false, brokenAt: r.seq };
+        if (r.seq === anchor?.seq && r.hash !== anchor.hash) return { ok: false, brokenAt: r.seq, anchor: "mismatch" };
         expected++;
       }
+      if (anchor && anchor.seq >= expected) return { ok: false, brokenAt: expected, anchor: "truncated" };
       return { ok: true };
     },
     list(tenantId, afterSeq = 0, limit = 100) {
