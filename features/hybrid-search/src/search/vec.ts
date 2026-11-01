@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { AclFragment } from "../index.js";
 import { sqlParams } from "./db.js";
 
@@ -30,26 +30,29 @@ export function searchVec(
     WHERE chunks_vec.embedding MATCH ? AND k = ? AND (${acl.sql})
     ORDER BY chunks_vec.distance, chunks.chunk_id LIMIT ?`;
   const params = sqlParams(acl.params);
-  const total = Number(db.prepare("SELECT count(*) AS n FROM chunks").get()?.n);
-  const allowed = Number(db.prepare(
-    `SELECT count(*) AS n FROM chunks WHERE (${acl.sql})`,
-  ).get(...params)?.n);
+  const total = count(db, "1", []);
+  const allowed = count(db, acl.sql, params);
   if (allowed === 0) return [];
   const cap = Math.min(total, MAX_KNN);
   let candidates = allowed === total ? limit : Math.min(cap, limit * 8);
-  let rows: Record<string, unknown>[] = [];
-  while (candidates > 0 && limit <= MAX_KNN) {
-    rows = db.prepare(sql).all(
+  for (;;) {
+    const rows = db.prepare(sql).all(
       new Float32Array(embedding),
       candidates,
       ...params,
       limit,
     );
-    if (rows.length >= limit || candidates >= total) break;
+    if (rows.length >= limit || candidates >= total) {
+      return rows.map((row) => String(row.id));
+    }
     if (candidates >= cap) return exactScan(db, embedding, limit, acl);
     candidates = Math.min(cap, candidates * 2);
   }
-  return rows.map((row) => String(row.id));
+}
+
+function count(db: DatabaseSync, where: string, params: SQLInputValue[]): number {
+  const row = db.prepare(`SELECT count(*) AS n FROM chunks WHERE (${where})`).get(...params);
+  return Number(row!.n);
 }
 
 // vec0 caps knn at 4096; selective ACLs fall back to a scan over allowed rows.

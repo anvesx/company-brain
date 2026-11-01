@@ -45,7 +45,7 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
       if (typeof query.text !== "string" || typeof query.acl?.sql !== "string" || query.acl.sql.trim() === "") throw new SearchError("INPUT");
       const ranked = rrf([searchFts(db, query.text, query.limit, query.acl), searchVec(db, query.embedding, query.limit, query.acl)]).slice(0, query.limit);
       const find = db.prepare("SELECT doc_id FROM chunks WHERE chunk_id = ?");
-      return ranked.map(({ id, score }) => ({ chunkId: id, docId: String(find.get(id)?.doc_id), score }));
+      return ranked.map(({ id, score }) => ({ chunkId: id, docId: String(find.get(id)!.doc_id), score }));
     },
     remove(docId: string): number {
       if (!validText(docId)) throw new SearchError("INPUT");
