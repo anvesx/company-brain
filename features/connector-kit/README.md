@@ -37,14 +37,18 @@ A document at `policies/leave.md` may have `policies/leave.md.acl.json` containi
 ```
 
 Missing sidecars become `{ allowUsers: [], allowGroups: [], version: 0 }` (deny by default).
-Folder documents use the `personal` zone. Versions are `<mtimeMs>:<size>`. Traversal and any file
+Folder documents use the `personal` zone. Versions are `<mtimeMs>:<size>:<acl fingerprint>`; the fingerprint is the first 16 hex characters of
+the SHA-256 of the ACL (users, groups, version), so editing only the sidecar changes the version. Traversal and any file
 or ACL symlink resolving outside the configured root throw `PATH_ESCAPE`.
 
 ## Limits and operation
 
-A `list` call without a cursor rescans the tree and starts a walk; pages fetched with a cursor reuse
-that snapshot, so a full walk costs one scan (5,000 files page in about 2 s). Restart without a
-cursor to see concurrent filesystem changes; a cursor with no prior walk throws `BAD_CURSOR`.
+A `list` call without a cursor rescans the tree and starts a walk with its own snapshot; pages fetched
+with that walk's cursor reuse it, so a full walk costs one scan (5,000 files page in about 2 s) and
+concurrent walks do not disturb each other. Cursors are opaque (`<walkId>:<offset>`). At most 16
+walks stay open per connector, the oldest is evicted, and a walk is dropped after its last page. A cursor
+this instance did not issue, or whose walk finished or was evicted, throws `BAD_CURSOR`; restart without a
+cursor to see concurrent filesystem changes.
 The adapter follows internal symlinks once and suppresses directory cycles. Files must be UTF-8;
 malformed ACL JSON or ACL schema failures are surfaced unchanged. OAuth, networks, and webhooks are
 outside this package. The `token` argument exists for production adapters; the fake and folder

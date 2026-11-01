@@ -5,7 +5,7 @@ export const CURSOR_MAX_CHARS = 4096;
 /** How long a seen event id is remembered when the caller sets no ttl. */
 export const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** Database shape. One row per (tenant, source) cursor and one row per seen event id. */
+/** Database shape. One row per (tenant, source) cursor and one row per (tenant, event id) seen. */
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS cursors (
   tenant_id TEXT NOT NULL,
@@ -14,9 +14,15 @@ CREATE TABLE IF NOT EXISTS cursors (
   PRIMARY KEY (tenant_id, source)
 );
 CREATE TABLE IF NOT EXISTS seen_events (
-  event_id TEXT PRIMARY KEY,
-  seen_at  INTEGER NOT NULL
-);`;
+  tenant_id TEXT NOT NULL,
+  event_id  TEXT NOT NULL,
+  seen_at   INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, event_id)
+);
+CREATE INDEX IF NOT EXISTS seen_events_seen_at ON seen_events (seen_at);`;
+
+/** Drops the pre-tenant seen_events table (event_id only). Its rows are 24 h dedupe state, so losing them is safe. */
+export const DROP_LEGACY_SEEN_SQL = "DROP TABLE IF EXISTS seen_events";
 
 const invalid = (message: string): CursorError => new CursorError("INVALID_INPUT", message);
 
