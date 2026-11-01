@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@brain/audit-service": "workspace:*",
+    "@brain/connector-kit": "workspace:*",
     "@brain/core-types": "workspace:*",
     "@brain/mcp-service": "workspace:*",
     "@brain/query-service": "workspace:*"

@@ -30,7 +30,7 @@ class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "
 
 ## Index API gap
 
-`@brain/hybrid-search` `SearchQuery` has no `offset`, and `limit` is capped at 100. The service passes `offset` through the `PagedIndex` interface; today's index ignores it, returns the same top 100 again, and the service detects the repeat and stops, so behaviour equals one 100-hit window. Needed from hybrid-search: optional `offset` (integer >= 0) applied to the fused RRF ranking (fetch `offset + limit` from each of FTS and vec, so the per-list cap must exceed 100), with ACL applied before ranking as now.
+Closed. `@brain/hybrid-search` `SearchQuery` now has optional `offset` (integer >= 0) applied to the fused RRF ranking, with ACL applied inside both lists as before. Every page fuses the same top `MAX_WINDOW` (1000) of each list, so the ranking is identical across pages. The window bounds paging: `offset + limit` must be at most 1000, so a `maxCandidates` above 1000 makes the last page fail with a backend error. Keep `maxCandidates` at 1000 or below.
 
 ## Limits
 

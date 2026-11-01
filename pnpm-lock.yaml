@@ -89,6 +89,9 @@ importers:
       '@brain/query-service':
         specifier: workspace:*
         version: link:../../services/query-service
+      '@brain/retrieval':
+        specifier: workspace:*
+        version: link:../../modules/retrieval
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
@@ -235,6 +238,9 @@ importers:
       '@brain/audit-service':
         specifier: workspace:*
         version: link:../../services/audit-service
+      '@brain/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
       '@brain/core-types':
         specifier: workspace:*
         version: link:../../features/core-types

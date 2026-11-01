@@ -6,7 +6,7 @@ import type { AddChunk, Hit, SearchIndex, SearchQuery } from "../index.js";
 import { rrf } from "../rrf.js";
 import { createChunks, hydrate, removeDoc, setAcl } from "./db.js";
 import { addFts, createFts, searchFts } from "./fts.js";
-import { validateEmbedding, validText } from "./validate.js";
+import { MAX_WINDOW, validateEmbedding, validateWindow, validText } from "./validate.js";
 import { addVec, createVec, searchVec } from "./vec.js";
 
 function initialize(path: string, dim: number): DatabaseSync {
@@ -47,11 +47,12 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
     },
     search(query: SearchQuery): Hit[] {
       validateEmbedding(query?.embedding, dim);
-      if (!Number.isInteger(query?.limit) || query.limit < 1 || query.limit > 100) throw new SearchError("LIMIT");
+      const { limit, offset } = validateWindow(query ?? {});
       if (typeof query.text !== "string" || typeof query.acl?.sql !== "string" || query.acl.sql.trim() === "") throw new SearchError("INPUT");
       try {
-        const lists = [searchFts(db, query.text, query.limit, query.acl), searchVec(db, query.embedding, query.limit, query.acl)];
-        return hydrate(db, rrf(lists).slice(0, query.limit));
+        // Every page fuses the same top-MAX_WINDOW of each list, so the order is identical on all pages.
+        const lists = [searchFts(db, query.text, MAX_WINDOW, query.acl), searchVec(db, query.embedding, MAX_WINDOW, query.acl)];
+        return hydrate(db, rrf(lists).slice(offset, offset + limit));
       } catch (error) {
         throw error instanceof SearchError ? error : new SearchError("DB", error);
       }

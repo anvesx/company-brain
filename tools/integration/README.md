@@ -16,6 +16,7 @@ Dependencies must be built first: the suite imports each package's `dist`.
 ## What it covers
 
 - `tests/search`: ingest then search on real SQLite; user, group and tenant ACL; ACL tightened or widened at the source.
+- `tests/live`: the real stack with the connector live ACL (`stack.searchLive`) over files on disk: allow, deny, source error, timeout (typed `LIVE_ACL`, fail closed) and a revocation at the source with no re-ingest.
 - `tests/lifecycle`: delete tombstones, audit chain verify and tamper detection, retrieval over MCP, restart, connector failure.
 
 ## Limits

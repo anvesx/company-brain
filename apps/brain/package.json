@@ -29,7 +29,8 @@
     "@brain/ingestion": "workspace:*",
     "@brain/mcp-service": "workspace:*",
     "@brain/pointer-registry": "workspace:*",
-    "@brain/query-service": "workspace:*"
+    "@brain/query-service": "workspace:*",
+    "@brain/retrieval": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2"

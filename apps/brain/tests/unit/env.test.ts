@@ -42,8 +42,8 @@ describe("demoDeps", () => {
       ["faq", "faq", ["alice"], "team"],
     ]);
     const pointer = (address: string) => ({ address }) as never;
-    expect(await d.fetchText(pointer("welcome"))).toBe("Welcome to the Devx Brain demo.");
-    expect(await d.fetchText(pointer("faq"))).toBe("Ask the brain a question.");
+    expect(await d.fetchText!(pointer("welcome"))).toBe("Welcome to the Devx Brain demo.");
+    expect(await d.fetchText!(pointer("faq"))).toBe("Ask the brain a question.");
   });
   it("embeds documents and queries to the same two-dimensional space", async () => {
     const d = demoDeps();

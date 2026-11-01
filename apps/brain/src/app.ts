@@ -6,6 +6,8 @@ import { createIndexService } from "@brain/index-service";
 import { createIngestion } from "@brain/ingestion";
 import { startMcpServer } from "@brain/mcp-service";
 import { createQueryService } from "@brain/query-service";
+import { liveSearch } from "./live/search.js";
+import { textFetcher } from "./runtime/fetch.js";
 import { liveIds } from "./runtime/known.js";
 import { defaultLogger } from "./runtime/logger.js";
 import { openStores } from "./runtime/stores.js";
@@ -33,7 +35,7 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     registry,
     index,
     embed: deps.embed,
-    fetchText: deps.fetchText,
+    fetchText: textFetcher(deps),
     chunk: async (docId, text) => chunkText(docId, text),
   });
   const ingestion = createIngestion({
@@ -43,8 +45,9 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     known: (tenantId) => liveIds(registry, tenantId),
     indexService,
   });
-  const search: BrainApp["search"] = async ({ query: text, principal, limit }) =>
+  const governed: BrainApp["search"] = async ({ query: text, principal, limit }) =>
     governance.search({ query: text, principal, embedding: await deps.embedQuery(text), ...(limit !== undefined && { limit }) });
+  const search = deps.userTokenFor ? liveSearch({ deps, index, registry, audit, userTokenFor: deps.userTokenFor }) : governed;
   const server = await startMcpServer({
     transport: deps.transport,
     port: deps.port,

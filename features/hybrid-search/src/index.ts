@@ -15,6 +15,8 @@ export type SearchQuery = {
   text: string;
   embedding: number[];
   limit: number;
+  /** Rank position to start at in the fused RRF order; integer >= 0, default 0. offset + limit must be <= MAX_WINDOW. */
+  offset?: number;
   acl: AclFragment;
 };
 export interface SearchIndex {
@@ -28,3 +30,4 @@ export interface SearchIndex {
 export { SearchError } from "./errors.js";
 export { rrf } from "./rrf.js";
 export { createSearchIndex } from "./search/index-db.js";
+export { MAX_WINDOW } from "./search/validate.js";
