@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 import { createBrainApp } from "./app.js";
+import { resolveAuditKey } from "./auth/audit-key.js";
 import { signedPrincipalFor } from "./auth/token.js";
 import { DEMO_TENANT, demoDeps, readEnv } from "./config.js";
 
 const env = readEnv(process.env);
 if (!env.demo) {
   console.error("brain: no connector configured. Set BRAIN_DEMO=1 to run with the demo connector.");
+  process.exit(1);
+}
+let auditKey: string;
+try {
+  auditKey = resolveAuditKey(process.env, (msg) => console.error(msg));
+} catch (error) {
+  console.error(`brain: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 const demo = demoDeps();
@@ -15,7 +23,7 @@ const app = await createBrainApp({
   principalFor: env.authSecret ? signedPrincipalFor(env.authSecret) : demo.principalFor,
   dataDir: env.dataDir,
   cursors: env.dataDir ? undefined : demo.cursors,
-  auditKey: process.env.BRAIN_AUDIT_KEY ?? "demo-only-audit-key",
+  auditKey,
   auditDbPath: env.auditDbPath,
   anchorPath: env.anchorPath,
   transport: "http",

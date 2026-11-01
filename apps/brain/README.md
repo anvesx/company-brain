@@ -44,18 +44,24 @@ Cost: the check fetches the full document for each hit. Fine for a handful of hi
 
 ## Run
 
-`BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`, `BRAIN_DATA_DIR`, `BRAIN_AUTH_SECRET`.
+`BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`, `BRAIN_DATA_DIR`, `BRAIN_AUTH_SECRET`, `BRAIN_AUDIT_KEY`.
 
 ## Auth
 
-Bearer token: `<user>:<tenant>:<hmac-sha256-hex(secret, "user:tenant")>`, checked in constant time; a missing or bad signature is unauthenticated. `BRAIN_AUTH_SECRET` must be at least 32 characters or startup fails. Mint with the exported `mintToken(secret, user, tenant)`. Demo mode only: with `BRAIN_DEMO=1` and no secret, the forgeable unsigned `Bearer alice:acme` is accepted. Set a secret in anything reachable by others.
+Bearer token: `<user>:<tenant>:<exp>:<hmac-sha256-hex(secret, "user:tenant:exp")>`, `exp` in epoch seconds, checked in constant time. A missing or bad signature is unauthenticated. A correctly signed token at or past `exp` throws `TokenExpiredError` (`code` `TOKEN_EXPIRED`, message `unauthenticated: token expired`); MCP clients see the same 401 as any other unauthenticated call. `BRAIN_AUTH_SECRET` must be at least 32 characters or startup fails. Mint with the exported `mintToken(secret, user, tenant, { ttlSeconds?, now? })`; the default lifetime is one hour (`DEFAULT_TTL_SECONDS`). `signedPrincipalFor(secret, now?)` takes an injectable millisecond clock.
+
+Breaking change: the earlier `user:tenant:hmac` tokens carry no expiry and are rejected. Re-mint every token. There is still no revocation before `exp` except rotating `BRAIN_AUTH_SECRET`, and `groups` is always empty.
+
+Demo mode only: with `BRAIN_DEMO=1` and no secret, the forgeable unsigned `Bearer alice:acme` is accepted. Set a secret in anything reachable by others.
+
+Audit key: `BRAIN_AUDIT_KEY` (at least 32 characters) is required whenever `BRAIN_AUTH_SECRET` or `BRAIN_DATA_DIR` is set; `bin.ts` prints the reason and exits 1 without it. Only in pure demo mode (neither set) a missing key falls back to the public constant `demo-only-audit-key`, with a warning on stderr.
 
 ## Limits
 
 - `@brain/retrieval` cannot take an injected search function, so the app starts `@brain/mcp-service` directly. Governed search (no live ACL) uses governance, whose sync query path cannot run a live verifier; live search composes retrieval's `toOutcomeFn`, `auditedOutcome` and `toSearchFn` instead.
 - `truncated` (candidate cap hit) is not exposed by `app.search`, which returns pointers only.
 - `bin.ts` does not configure `userTokenFor`; the live ACL is a library option.
-- After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers (`runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing.
+- After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers written by the tenant's own connector (`pointer.source` equals the connector id; `runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing. A complete but empty listing, or one that would tombstone more than half of 10 or more known documents, is not reaped: the run returns `reapSkipped` and the app logs `reap skipped` at warn level (see `@brain/ingestion`).
 - `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
 
 ## Test

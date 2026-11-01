@@ -37,7 +37,7 @@ export function mutableConnector(initial: FakeDoc[]) {
 }
 
 /** `tenants` limits which tenants resolve to the connector; default is every tenant. */
-export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexService = (s) => s, tenants?: string[]) {
+export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexService = (s) => s, tenants?: string[], extra: Partial<IngestionDeps> = {}) {
   const registry = createRegistry(":memory:");
   const index = createSearchIndex(":memory:", 3);
   const mine = mutableConnector(initial);
@@ -53,12 +53,14 @@ export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexServ
     },
   };
   const cursors = createCursorStore(":memory:", () => 1000);
-  const make = (known?: IngestionDeps["known"]) =>
+  const make = (known?: IngestionDeps["known"], over: Partial<IngestionDeps> = {}) =>
     createIngestion({
       runtime: { cursors, clock: () => 1000, pageSize: 2 },
       connectorFor: (t) => (!tenants || tenants.includes(t) ? mine.connector : undefined),
       tokenFor: (t) => (!tenants || tenants.includes(t) ? `token-${t}` : undefined),
       indexService: wrap(createIndexService(deps)),
+      ...extra,
+      ...over,
       ...(known && { known }),
     });
   const rows = (tenantId = "acme") => registry.list({ tenantId, limit: 1000 });

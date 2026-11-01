@@ -53,6 +53,8 @@ export function openStack(dir: string, sources: Record<string, Source>, opts: St
     connectorFor: (tenantId) => sources[tenantId],
     tokenFor: (tenantId) => (sources[tenantId] ? "t" : undefined),
     known: live,
+    // Lifecycle tests delete down to zero documents on purpose.
+    reapGuard: false,
     indexService,
   });
   return {

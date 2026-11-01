@@ -16,6 +16,24 @@ export interface IngestionDeps {
    * process was down are tombstoned. Duplicates are fine. If it throws, the run rejects before any delete.
    */
   known?(tenantId: string): Iterable<string> | Promise<Iterable<string>>;
+  /** Refuses suspicious delete passes (see `ReapGuard`). Default: 50% above 10 known docs, and any empty listing. `false` disables. */
+  reapGuard?: ReapGuard | false;
+  /** Receives a line when a delete pass is skipped. Never gets document text or tokens. */
+  warn?(msg: string, fields: Record<string, unknown>): void;
+}
+
+export interface ReapGuard {
+  /** Largest share of known documents one run may tombstone. Default 0.5. */
+  maxFraction?: number;
+  /** The share limit applies only with at least this many known documents. Default 10. */
+  minDocs?: number;
+}
+
+export interface ReapSkipped {
+  /** `empty-listing`: the complete listing held nothing. `too-many`: the run would tombstone more than `maxFraction`. */
+  reason: "empty-listing" | "too-many";
+  wouldDelete: number;
+  known: number;
 }
 
 export interface IngestionCounts {
@@ -28,6 +46,8 @@ export interface IngestionCounts {
   failures: Failure[];
   /** Documents given up on after repeated failures; skipped until a new version or ACL arrives. */
   quarantined: Failure[];
+  /** Present only when a complete listing was not reaped because the guard refused it; no document was deleted. */
+  reapSkipped?: ReapSkipped;
 }
 
 export interface Ingestion {

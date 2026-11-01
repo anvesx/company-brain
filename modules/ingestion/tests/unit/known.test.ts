@@ -58,7 +58,7 @@ describe("known seed", () => {
   it("a huge seed of ids the registry lacks is handled without failures", async () => {
     const s = await ingested();
     const many = Array.from({ length: 20000 }, (_, i) => `ghost-${i}`);
-    const counts = await s.reopen(() => many).runOnce("acme");
+    const counts = await s.reopen(() => many, { reapGuard: false }).runOnce("acme");
     expect(counts.emitted).toBe(20000);
     expect(counts.failed).toBe(0);
     expect(s.rows()).toHaveLength(3);

@@ -1,12 +1,13 @@
 import { contentHash } from "@brain/connector-kit";
 import { type ChangeEvent, createConnectorRuntime, createKeyedLock } from "@brain/connector-runtime";
 import { IngestionError } from "./errors.js";
+import { reapSkip } from "./pipeline/guard.js";
 import { watchListing } from "./pipeline/listing.js";
 import { docId, toPointer } from "./pipeline/pointer.js";
 import { reap } from "./pipeline/reap.js";
 import type { Ingestion, IngestionCounts, IngestionDeps } from "./types.js";
 
-export function createIngestion({ runtime, indexService, connectorFor, tokenFor, known: seed }: IngestionDeps): Ingestion {
+export function createIngestion({ runtime, indexService, connectorFor, tokenFor, known: seed, reapGuard, warn }: IngestionDeps): Ingestion {
   /** tenant -> (pointer id -> address) of documents this process indexed and has not deleted. */
   const known = new Map<string, Map<string, string>>();
   const knownFor = (tenantId: string) => known.get(tenantId) ?? known.set(tenantId, new Map()).get(tenantId)!;
@@ -41,7 +42,11 @@ export function createIngestion({ runtime, indexService, connectorFor, tokenFor,
       // Ids known only from the seed have no address; the id stands in for it in failure reports.
       for (const id of seed ? await seed(tenantId) : []) if (!mine.has(id)) mine.set(id, id);
       const listedIds = new Set([...listed.keys()].map((address) => docId(connector.id, address)));
-      await reap(indexService, tenantId, new Date(runtime.clock()).toISOString(), mine, listedIds, counts);
+      const skipped = reapSkip(mine, listedIds, reapGuard);
+      if (skipped) {
+        counts.reapSkipped = skipped;
+        warn?.("reap skipped", { tenantId, ...skipped });
+      } else await reap(indexService, tenantId, new Date(runtime.clock()).toISOString(), mine, listedIds, counts);
     }
     return counts;
   }
