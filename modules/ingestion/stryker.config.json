@@ -1,5 +1,6 @@
 {
   "testRunner": "vitest",
+  "inPlace": true,
   "mutate": ["src/**/*.ts", "!src/index.ts"],
   "thresholds": {
     "high": 90,

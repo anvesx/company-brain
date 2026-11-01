@@ -32,7 +32,11 @@ describe("connector list errors", () => {
     const s = make(() => {
       throw new ConnectorError("BAD_CURSOR", "always");
     });
-    await expect(s.runtime.runOnce("t1")).rejects.toMatchObject({ code: "BAD_CURSOR_LOOP" });
+    await expect(s.runtime.runOnce("t1")).rejects.toMatchObject({
+      code: "BAD_CURSOR_LOOP",
+      message: "BAD_CURSOR after full restart",
+      cause: { code: "BAD_CURSOR" },
+    });
   });
 
   it("propagates non-cursor connector errors unchanged", async () => {
