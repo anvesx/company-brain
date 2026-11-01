@@ -6,7 +6,9 @@ The runnable Devx Brain server. Spec: `docs/specs/app/brain.md`. It composes ing
 const app = await createBrainApp({
   connectorFor: (tenantId) => connectors.get(tenantId), // undefined for an unknown tenant
   tokenFor: (tenantId) => tokens.get(tenantId),
-  cursors,
+  cursors, // optional: defaults to a file in dataDir, else in memory
+  dataDir, // optional: registry, search index and cursors on disk
+  logger, // optional: { error, warn, info }; default JSON lines on stderr
   clock,
   embed,
   embedQuery,
@@ -28,17 +30,23 @@ await app.close(); // idempotent, frees the port
 
 - Every search, whether over MCP or `app.search`, goes through governance and writes one audit row.
 - ACL, tenant and tombstone rules come from the query service. Unauthenticated HTTP gets `401`.
-- The registry and search index are in memory. Only the audit chain and anchors are files.
+- With `dataDir` (env `BRAIN_DATA_DIR`) the registry, search index and cursor store are files there, so ingested docs stay searchable and are not re-emitted after a restart. Without it they are in memory.
+- MCP search failures are logged through `logger` (cause name and message only, never query text, principal or token); the client still sees only `Search failed`.
 - Vector size is measured by embedding one probe text at startup unless `dimension` is given.
 
 ## Run
 
-`BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`. Demo token: `Bearer alice:acme`.
+`BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`, `BRAIN_DATA_DIR`, `BRAIN_AUTH_SECRET`.
+
+## Auth
+
+Bearer token: `<user>:<tenant>:<hmac-sha256-hex(secret, "user:tenant")>`, checked in constant time; a missing or bad signature is unauthenticated. `BRAIN_AUTH_SECRET` must be at least 32 characters or startup fails. Mint with the exported `mintToken(secret, user, tenant)`. Demo mode only: with `BRAIN_DEMO=1` and no secret, the forgeable unsigned `Bearer alice:acme` is accepted. Set a secret in anything reachable by others.
 
 ## Limits
 
 - `@brain/retrieval` cannot take an injected search function (it builds its own query service from `index` and `registry`), so the app starts `@brain/mcp-service` directly with a governance-backed search. Retrieval is not used.
-- Index and registry are lost on restart; re-run `ingest`.
+- Documents deleted at source while the app was down are not tombstoned after a restart: `@brain/ingestion` keeps its `known` set in memory and exposes no way to seed it from the registry. It needs a seed hook (for example `IngestionDeps.known?(tenantId)` returning id and address pairs, filled from `registry.list`).
+- `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
 
 ## Test
 

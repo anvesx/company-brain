@@ -5,12 +5,23 @@ import type { Pointer, Principal } from "@brain/core-types";
 import type { Governance } from "@brain/governance";
 import type { IngestionCounts } from "@brain/ingestion";
 
+export type Logger = {
+  error(msg: string, fields?: Record<string, unknown>): void;
+  warn(msg: string, fields?: Record<string, unknown>): void;
+  info(msg: string, fields?: Record<string, unknown>): void;
+};
+
 export type BrainDeps = {
   /** The connector bound to a tenant, or undefined for an unknown tenant. Never one connector for several tenants. */
   connectorFor: (tenantId: string) => Connector | undefined;
   /** The credential bound to a tenant, or undefined for an unknown tenant. */
   tokenFor: (tenantId: string) => string | undefined;
-  cursors: CursorStore;
+  /** Default: a file under `dataDir`, or in memory when `dataDir` is unset. */
+  cursors?: CursorStore | undefined;
+  /** Directory for the pointer registry, search index and cursor store. Omitted: all in memory, lost on restart. */
+  dataDir?: string | undefined;
+  /** Default: JSON lines on stderr. Never receives query text or tokens. */
+  logger?: Logger | undefined;
   /** Milliseconds. Drives ingestion cursors and audit timestamps. */
   clock: () => number;
   embed: (texts: string[]) => Promise<number[][]>;

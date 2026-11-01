@@ -2,12 +2,12 @@ import { createAuditChain } from "@brain/audit-chain";
 import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
 import { chunkText } from "@brain/chunker";
 import { createGovernance } from "@brain/governance";
-import { createSearchIndex } from "@brain/hybrid-search";
 import { createIndexService } from "@brain/index-service";
 import { createIngestion } from "@brain/ingestion";
 import { startMcpServer } from "@brain/mcp-service";
-import { createRegistry } from "@brain/pointer-registry";
 import { createQueryService } from "@brain/query-service";
+import { defaultLogger } from "./runtime/logger.js";
+import { openStores } from "./runtime/stores.js";
 import type { BrainApp, BrainDeps } from "./types.js";
 
 async function probeDimension(embed: BrainDeps["embed"]): Promise<number> {
@@ -19,8 +19,8 @@ async function probeDimension(embed: BrainDeps["embed"]): Promise<number> {
 /** Composes ingestion, governed search and the MCP server. Adds no logic of its own. */
 export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
   const dimension = deps.dimension ?? (await probeDimension(deps.embed));
-  const registry = createRegistry(":memory:");
-  const index = createSearchIndex(":memory:", dimension);
+  const logger = deps.logger ?? defaultLogger;
+  const { registry, index, cursors } = openStores(deps, dimension);
   const query = createQueryService({ index, registry });
   const audit = createAuditService({
     chain: createAuditChain(deps.auditDbPath),
@@ -36,7 +36,7 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     chunk: async (docId, text) => chunkText(docId, text),
   });
   const ingestion = createIngestion({
-    runtime: { cursors: deps.cursors, clock: deps.clock },
+    runtime: { cursors, clock: deps.clock },
     connectorFor: deps.connectorFor,
     tokenFor: deps.tokenFor,
     indexService,
@@ -49,6 +49,8 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     stdin: deps.stdin,
     stdout: deps.stdout,
     principalFor: deps.principalFor,
+    // Cause name and message only: never the query, the principal or the token.
+    logger: (cause) => logger.error("search failed", { cause: cause instanceof Error ? `${cause.name}: ${cause.message}` : "non-error thrown" }),
     search: ({ query: text, limit, principal }) => search({ query: text, limit, principal }),
   });
   let closing: Promise<void> | undefined;
@@ -58,7 +60,7 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     verify: (tenantId) => governance.verify(tenantId),
     checkpoint: (tenantId) => governance.checkpoint(tenantId),
     close: () => {
-      closing ??= server.close();
+      closing ??= server.close().finally(() => registry.close());
       return closing;
     },
     port: server.port,

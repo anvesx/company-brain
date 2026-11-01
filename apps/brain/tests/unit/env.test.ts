@@ -11,6 +11,13 @@ describe("readEnv", () => {
     const env = { BRAIN_PORT: "8080", BRAIN_AUDIT_DB: "/d/a.db", BRAIN_ANCHOR: "/d/a.log", BRAIN_DEMO: "1" };
     expect(readEnv(env)).toEqual({ port: 8080, auditDbPath: "/d/a.db", anchorPath: "/d/a.log", demo: true });
   });
+  it("reads BRAIN_DATA_DIR and BRAIN_AUTH_SECRET", () => {
+    const secret = "k".repeat(32);
+    expect(readEnv({ BRAIN_DATA_DIR: "/data", BRAIN_AUTH_SECRET: secret })).toMatchObject({ dataDir: "/data", authSecret: secret });
+  });
+  it("rejects an auth secret shorter than 32 characters", () => {
+    expect(() => readEnv({ BRAIN_AUTH_SECRET: "k".repeat(31) })).toThrow("BRAIN_AUTH_SECRET");
+  });
   it("demo only for the exact value 1", () => {
     expect(readEnv({ BRAIN_DEMO: "true" }).demo).toBe(false);
     expect(readEnv({ BRAIN_DEMO: "0" }).demo).toBe(false);
