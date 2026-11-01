@@ -7,6 +7,7 @@ import { createIndexService } from "@brain/index-service";
 
 const svc = createIndexService({ registry, index, chunk, embed, fetchText });
 await svc.apply({ type: "upsert", pointer }); // { outcome: "created" | "updated" | "unchanged", chunks }
+await svc.apply({ type: "upsert", pointer, content: { text, contentHash } }); // text already fetched: no fetchText call
 await svc.apply({ type: "delete", tenantId, id, at }); // { outcome: "deleted" | "absent", chunks: 0 }
 ```
 
@@ -19,6 +20,10 @@ are injected, so the service does no network I/O of its own.
 - Upsert: the registry decides. `unchanged` does nothing (no fetch, no embed). `created` or `updated`
   fetches text, chunks, embeds, then replaces the document's chunks (`remove(id, tenantId)`, then `add`).
   An ACL change makes the pointer `updated`, so chunk ACL columns are rewritten with the new ACL.
+- Pre-fetched text: an upsert may carry `content: { text, contentHash }`. Then `fetchText` is not called. Before
+  anything changes, `contentHash` must equal `pointer.contentHash` and `text` must hash to it (sha-256 hex of the
+  UTF-8 text), else `HASH_MISMATCH` and the registry and index are untouched. A non-string `text` or `contentHash`
+  is `INVALID_EVENT`. Without `content` the service fetches as before. `unchanged` ignores `content`.
 - Delete: chunks are removed first, then the pointer is tombstoned. Deleting an unknown or already
   deleted doc returns `absent` and still removes any stray chunks, so replay is safe.
 - Everything is keyed by `(tenantId, id)`. The same `id` in two tenants never mixes.
@@ -44,13 +49,13 @@ rebuilds it. `hybrid-search` has no transaction spanning remove and add.
 If that cleanup removal also fails, the error is `CLEANUP_FAILED` and `cause` is an `AggregateError` of
 `[addError, cleanupError]`.
 
-Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `FETCH_FAILED`, `CHUNK_FAILED`,
+Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `HASH_MISMATCH`, `FETCH_FAILED`, `CHUNK_FAILED`,
 `EMBED_FAILED`, `EMBED_INVALID`, `INDEX_FAILED`, `CLEANUP_FAILED`, `ROLLBACK_FAILED`. The original error is in `cause`.
 
 ## Limits
 
 - Serialisation is in-process. Two processes writing the same database file can interleave.
-- The registry stores pointers only; the index keeps tokens and ACLs only (no body text), so text is re-fetched from the source.
+- The registry stores pointers only; the index keeps tokens and ACLs only (no body text), so text is re-fetched from the source unless the caller passes it as `content`.
 
 ## Test
 

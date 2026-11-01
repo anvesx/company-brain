@@ -19,7 +19,7 @@ const { emitted, indexed, failed, failures, quarantined } = await ingestion.runO
 
 ## Behaviour
 
-- Each changed document is fetched for its content hash, turned into a pointer (ACL, zone and times from the listing) and applied as an upsert.
+- Each changed document is fetched once for its content hash, turned into a pointer (ACL, zone and times from the listing) and applied as an upsert that carries the fetched text, so the index service does not fetch it again.
 - First run indexes all documents. A rerun emits none. A new version emits one.
 - The connector and the credential are resolved per tenant by `connectorFor` and `tokenFor`. If either returns undefined, `runOnce` throws `IngestionError` `UNKNOWN_TENANT` before touching anything. A resolver must never return one tenant's connector for another tenant.
 - A failing document does not stop the run. It is counted in `failed` and listed in `failures` (`{address, error}`); the other documents are indexed and the delete pass still runs. A caller must check `failures`: an empty list is the only full success.
@@ -35,7 +35,7 @@ const { emitted, indexed, failed, failures, quarantined } = await ingestion.runO
 - A run resumed from a saved mid-scan cursor does not detect deletes; the next full run does.
 - A file deleted and re-added at the same version within the runtime's seen-id ttl (24 h) is not re-emitted.
 - `runOnce` calls for one tenant are serialised (a second call waits); different tenants run in parallel. The lock is in-process.
-- Each changed document is fetched twice: once here for the content hash, once by the index service through its own `fetchText`. `IndexService.apply` takes a pointer only, so the text cannot be passed through without changing that package. If the source changes between the two fetches, the stored hash does not match the indexed text until the next version.
+- Each attempt on a changed document is one fetch. A document that fails and is retried is fetched again on the retry. The text is held in memory from fetch to index, and the index service verifies it against the pointer hash.
 
 ## Test
 

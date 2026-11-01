@@ -22,6 +22,8 @@ export function pointer(over: Partial<Pointer> = {}): Pointer {
   } as Pointer;
 }
 
+export const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+
 export const embedText = (t: string) => [t.length % 7, 1, t.charCodeAt(0) % 5];
 
 export function setup(texts: Record<string, string>, over: Partial<IndexDeps> = {}) {

@@ -1,8 +1,9 @@
 import type { Pointer } from "@brain/core-types";
+import { verifyContent } from "./pipeline/content.js";
 import { createKeyedLock } from "./pipeline/lock.js";
 import { prepare } from "./pipeline/prepare.js";
 import { probe, replace, restore } from "./pipeline/replace.js";
-import { type ApplyResult, type ChangeEvent, type IndexDeps, type IndexService, IndexServiceError } from "./types.js";
+import { type ApplyResult, type ChangeEvent, type Content, type IndexDeps, type IndexService, IndexServiceError } from "./types.js";
 
 const text = (v: unknown): v is string => typeof v === "string" && v !== "";
 const PASS = new Set(["INDEX_FAILED", "CLEANUP_FAILED", "ROLLBACK_FAILED"]);
@@ -17,7 +18,9 @@ export function createIndexService(deps: IndexDeps): IndexService {
   const { registry, index } = deps;
   const lock = createKeyedLock();
 
-  async function upsert(incoming: Pointer): Promise<ApplyResult> {
+  async function upsert(incoming: Pointer, content?: Content): Promise<ApplyResult> {
+    // Verified before any state changes, so a bad body leaves the registry and the index untouched.
+    const prefetched = content === undefined ? undefined : verifyContent(incoming, content);
     let prior: Pointer | undefined;
     let res: ReturnType<typeof registry.upsert>;
     try {
@@ -29,7 +32,7 @@ export function createIndexService(deps: IndexDeps): IndexService {
     if (res.change === "unchanged") return { outcome: "unchanged", chunks: 0 };
     const p = res.pointer;
     try {
-      const rows = await prepare(deps, p);
+      const rows = await prepare(deps, p, prefetched);
       probe(deps, rows[0]);
       replace(deps, p, rows, prior);
       return { outcome: res.change, chunks: rows.length };
@@ -53,7 +56,7 @@ export function createIndexService(deps: IndexDeps): IndexService {
   return {
     async apply(event) {
       const key = keyOf(event);
-      return lock(key, async () => (event.type === "upsert" ? upsert(event.pointer) : remove(event.tenantId, event.id, event.at)));
+      return lock(key, async () => (event.type === "upsert" ? upsert(event.pointer, event.content) : remove(event.tenantId, event.id, event.at)));
     },
   };
 }
