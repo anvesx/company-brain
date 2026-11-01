@@ -1,2 +1,3 @@
 export { createBrainApp } from "./app.js";
-export type { BrainApp, BrainDeps, SearchInput } from "./types.js";
+export { mintToken, signedPrincipalFor } from "./auth/token.js";
+export type { BrainApp, BrainDeps, Logger, SearchInput } from "./types.js";
