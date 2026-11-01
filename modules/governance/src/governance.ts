@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
 import type { Pointer } from "@brain/core-types";
 import type { SearchRequest } from "@brain/query-service";
+import { createTargetDigest } from "./digest.js";
 import { GovernanceError } from "./errors.js";
 import type { Governance, GovernanceDeps } from "./types.js";
-
-const queryHash = (query: string): string => createHash("sha256").update(query.trim()).digest("hex");
 
 async function audited<T>(what: string, op: () => Promise<T>): Promise<T> {
   try {
@@ -14,14 +12,15 @@ async function audited<T>(what: string, op: () => Promise<T>): Promise<T> {
   }
 }
 
-export function createGovernance({ audit, query }: GovernanceDeps): Governance {
+export function createGovernance({ audit, query, auditKey }: GovernanceDeps): Governance {
+  const digest = createTargetDigest(auditKey);
   return {
     async search(request: SearchRequest): Promise<Pointer[]> {
       // Query errors pass through and leave no row; results are held back until the audit row is written.
       const results = await query.search(request);
       const { id, tenantId } = request.principal;
       await audited("record", () =>
-        audit.record(tenantId, { actor: id, action: "search", target: queryHash(request.query), detail: { count: results.length } }),
+        audit.record(tenantId, { actor: id, action: "search", target: digest(tenantId, request.query), detail: { count: results.length } }),
       );
       return results;
     },

@@ -44,7 +44,7 @@ export function rig() {
     index.add({ chunkId: `${tenantId}-c`, docId: `${tenantId}-d`, tenantId, text: "needle", embedding: [1, 0], acl });
     registry.upsert(pointer(tenantId, acl));
   }
-  const gov = createGovernance({ audit, query });
+  const gov = createGovernance({ audit, query, auditKey: "integration-key" });
   const go = (principal: Principal, q = "needle") => gov.search({ query: q, principal, embedding: [1, 0] });
   /** Tamper with the audit database behind the service's back. */
   const raw = (sql: string) => {

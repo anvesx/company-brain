@@ -5,6 +5,8 @@ import type { QueryService, SearchRequest } from "@brain/query-service";
 export interface GovernanceDeps {
   audit: AuditService;
   query: QueryService;
+  /** Master secret for the audit target digest. Required and non-empty; a per-tenant key is derived from it. */
+  auditKey: string | Uint8Array;
 }
 
 export interface Governance {

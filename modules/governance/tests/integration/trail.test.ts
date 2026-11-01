@@ -28,7 +28,7 @@ describe("audit trail over real audit and query services", () => {
       verify: async () => ({ status: "ok" as const }),
       checkpoint: async () => ({ seq: 0, hash: "" }),
     };
-    const broken = createGovernance({ audit, query });
+    const broken = createGovernance({ audit, query, auditKey: "k" });
     await expect(broken.search({ query: "needle", principal: who("alice"), embedding: [1, 0] })).rejects.toMatchObject({ code: "AUDIT" });
     expect((await go(who("alice"))).length).toBe(1);
   });

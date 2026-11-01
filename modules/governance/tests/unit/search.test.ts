@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { GovernanceError } from "../../src/index.js";
-import { alice, fakes, ptr, req } from "./helpers.js";
+import { alice, fakes, ptr, req, targetFor } from "./helpers.js";
 
 describe("governed search", () => {
   it("returns the query results and records exactly one audit row", async () => {
@@ -10,11 +9,11 @@ describe("governed search", () => {
     expect(out.map((p) => p.id)).toEqual(["d1", "d2"]);
     expect(calls).toHaveLength(1);
   });
-  it("records actor, action, hashed target, result count under the principal tenant", async () => {
+  it("records actor, action, keyed target, result count under the principal tenant", async () => {
     const { gov, calls } = fakes();
     await gov.search(req("  secret roadmap  "));
-    const hash = createHash("sha256").update("secret roadmap").digest("hex");
-    expect(calls[0]).toEqual({ tenantId: "t1", event: { actor: "alice", action: "search", target: hash, detail: { count: 2 } } });
+    const target = targetFor("t1", "secret roadmap");
+    expect(calls[0]).toEqual({ tenantId: "t1", event: { actor: "alice", action: "search", target, detail: { count: 2 } } });
   });
   it("never stores the raw query text", async () => {
     const { gov, calls } = fakes();
@@ -59,9 +58,9 @@ describe("governed search", () => {
     await gov.search(req("q", { ...alice, id: "bob", tenantId: "t9" }));
     expect(calls[0]).toMatchObject({ tenantId: "t9", event: { actor: "bob" } });
   });
-  it("hashes unicode queries by their utf-8 bytes", async () => {
+  it("digests unicode queries by their utf-8 bytes", async () => {
     const { gov, calls } = fakes();
     await gov.search(req("日本語"));
-    expect(calls[0]?.event.target).toBe(createHash("sha256").update("日本語", "utf8").digest("hex"));
+    expect(calls[0]?.event.target).toBe(targetFor("t1", "日本語"));
   });
 });

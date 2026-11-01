@@ -14,7 +14,28 @@ export function principalFor(extra: unknown): Principal {
   return { id, tenantId: "t1", groups: groups === "" ? [] : groups.split(",") };
 }
 
+export const auditKey = "test-master-key";
+
+export type Row = { tenantId: string; event: { actor: string; action: string; target: string; detail?: Record<string, unknown> } };
+
+/** Audit fake that logs rows; set `failWith` to make the write fail. */
+export function fakeAudit() {
+  const rows: Row[] = [];
+  const audit = {
+    failWith: undefined as unknown,
+    async record(tenantId: string, event: Row["event"]) {
+      if (this.failWith !== undefined) throw this.failWith;
+      rows.push({ tenantId, event });
+      return { seq: rows.length, hash: "h" };
+    },
+    checkpoint: async (_t: string) => ({ seq: 0, hash: "" }),
+    verify: async (_t: string) => ({ status: "ok" as const }) as { status: "ok" },
+  };
+  return { rows, audit };
+}
+
 export function rig(overrides: Partial<RetrievalOptions> = {}) {
+  const { rows, audit } = fakeAudit();
   const index = createSearchIndex(":memory:", 2);
   const registry = createRegistry(":memory:");
   const seed = (id: string, users: string[] = [], groups: string[] = [], tenantId = "t1") => {
@@ -36,8 +57,8 @@ export function rig(overrides: Partial<RetrievalOptions> = {}) {
     registry.upsert(pointer);
   };
   const start = (extra: Partial<RetrievalOptions> = {}) =>
-    createRetrieval({ index, registry, principalFor, embedQuery: async () => [1, 0], transport: "http", port: 0, ...overrides, ...extra });
-  return { index, registry, seed, start };
+    createRetrieval({ index, registry, audit, auditKey, principalFor, embedQuery: async () => [1, 0], transport: "http", port: 0, ...overrides, ...extra });
+  return { index, registry, seed, start, rows, audit };
 }
 
 export const urlOf = (port: number | undefined) => new URL(`http://127.0.0.1:${port}/mcp`);

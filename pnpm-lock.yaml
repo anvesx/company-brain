@@ -232,6 +232,9 @@ importers:
 
   modules/retrieval:
     dependencies:
+      '@brain/audit-service':
+        specifier: workspace:*
+        version: link:../../services/audit-service
       '@brain/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
