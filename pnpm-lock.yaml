@@ -157,6 +157,33 @@ importers:
         specifier: workspace:*
         version: link:../../services/query-service
 
+  modules/ingestion:
+    dependencies:
+      '@brain/change-cursor':
+        specifier: workspace:*
+        version: link:../../features/change-cursor
+      '@brain/chunker':
+        specifier: workspace:*
+        version: link:../../features/chunker
+      '@brain/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
+      '@brain/connector-runtime':
+        specifier: workspace:*
+        version: link:../../services/connector-runtime
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+      '@brain/hybrid-search':
+        specifier: workspace:*
+        version: link:../../features/hybrid-search
+      '@brain/index-service':
+        specifier: workspace:*
+        version: link:../../services/index-service
+      '@brain/pointer-registry':
+        specifier: workspace:*
+        version: link:../../features/pointer-registry
+
   modules/retrieval:
     dependencies:
       '@brain/core-types':
