@@ -1,0 +1,55 @@
+import { createCursorStore } from "@brain/change-cursor";
+import { chunkText } from "@brain/chunker";
+import { type Connector, createFakeConnector, type FakeDoc } from "@brain/connector-kit";
+import { createSearchIndex } from "@brain/hybrid-search";
+import { createIndexService, type IndexDeps, type IndexService } from "@brain/index-service";
+import { createRegistry } from "@brain/pointer-registry";
+import { createIngestion } from "../../src/index.js";
+
+export const doc = (address: string, version = "v1", text = `text of ${address}`): FakeDoc => ({
+  address,
+  title: address,
+  version,
+  acl: { allowUsers: ["u1"], allowGroups: [], version: 1 },
+  zone: "personal",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  text,
+});
+
+/** A connector whose document set can change between runs. */
+export function mutableConnector(initial: FakeDoc[]) {
+  let inner = createFakeConnector("fake", initial);
+  const connector: Connector = {
+    id: "fake",
+    list: (q) => inner.list(q),
+    fetch: (a, c) => inner.fetch(a, c),
+  };
+  const set = (docs: FakeDoc[]) => {
+    inner = createFakeConnector("fake", docs);
+  };
+  return { connector, set };
+}
+
+export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexService = (s) => s) {
+  const registry = createRegistry(":memory:");
+  const index = createSearchIndex(":memory:", 3);
+  const mine = mutableConnector(initial);
+  const state = { failEmbed: false };
+  const deps: IndexDeps = {
+    registry,
+    index,
+    chunk: (id, text) => chunkText(id, text, { size: 40, overlap: 5 }),
+    fetchText: async (p) => (await mine.connector.fetch(p.address, { token: "t" })).text,
+    embed: async (ts) => {
+      if (state.failEmbed) throw new Error("embed down");
+      return ts.map((t) => [t.length % 7, 1, 2]);
+    },
+  };
+  const cursors = createCursorStore(":memory:", () => 1000);
+  const ingestion = createIngestion({
+    runtime: { connector: mine.connector, cursors, clock: () => 1000, pageSize: 2 },
+    indexService: wrap(createIndexService(deps)),
+  });
+  const rows = (tenantId = "acme") => registry.list({ tenantId, limit: 1000 });
+  return { ...mine, ingestion, registry, state, cursors, rows };
+}
