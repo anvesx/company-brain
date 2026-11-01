@@ -9,11 +9,11 @@ export async function reap(
   tenantId: string,
   at: string,
   mine: Map<string, string>,
-  listed: Map<string, unknown>,
+  listedIds: Set<string>,
   counts: IngestionCounts,
 ): Promise<void> {
   for (const [id, address] of [...mine]) {
-    if (listed.has(address)) continue;
+    if (listedIds.has(id)) continue;
     counts.emitted++;
     try {
       await indexService.apply({ type: "delete", tenantId, id, at });

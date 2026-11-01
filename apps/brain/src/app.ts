@@ -6,6 +6,7 @@ import { createIndexService } from "@brain/index-service";
 import { createIngestion } from "@brain/ingestion";
 import { startMcpServer } from "@brain/mcp-service";
 import { createQueryService } from "@brain/query-service";
+import { liveIds } from "./runtime/known.js";
 import { defaultLogger } from "./runtime/logger.js";
 import { openStores } from "./runtime/stores.js";
 import type { BrainApp, BrainDeps } from "./types.js";
@@ -39,6 +40,7 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     runtime: { cursors, clock: deps.clock },
     connectorFor: deps.connectorFor,
     tokenFor: deps.tokenFor,
+    known: (tenantId) => liveIds(registry, tenantId),
     indexService,
   });
   const search: BrainApp["search"] = async ({ query: text, principal, limit }) =>

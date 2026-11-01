@@ -10,6 +10,7 @@ const ingestion = createIngestion({
   indexService, // @brain/index-service
   connectorFor: (tenantId) => connectors.get(tenantId), // undefined for an unknown tenant
   tokenFor: (tenantId) => tokens.get(tenantId),
+  known: (tenantId) => ids, // optional: pointer ids already indexed, e.g. from the registry
 });
 const { emitted, indexed, failed, failures, quarantined } = await ingestion.runOnce("tenant-1");
 ```
@@ -24,13 +25,13 @@ const { emitted, indexed, failed, failures, quarantined } = await ingestion.runO
 - A failing document does not stop the run. It is counted in `failed` and listed in `failures` (`{address, error}`); the other documents are indexed and the delete pass still runs. A caller must check `failures`: an empty list is the only full success.
 - A failed document is retried on the next runs (the runtime re-lists from the start). After `maxAttempts` runs (default 3) it is quarantined: skipped, and returned in `quarantined` on every run, until a new version or ACL arrives.
 - A changed ACL at an unchanged version is a new event and is re-indexed.
-- After a run that listed every page from the start (document failures do not prevent this; a connector error does), documents this process indexed earlier but that are no longer listed get a delete event (tombstone).
+- After a run that listed every page from the start (document failures do not prevent this; a connector error does), documents this process indexed earlier, or that `known(tenantId)` returns (read only at this point, so an incomplete listing never calls it), but that are no longer listed get a delete event (tombstone). A throwing `known` rejects the run; the upserts already applied stay.
 - Counts: `emitted` is events sent to the index (upserts and deletes, including failed ones); `indexed` is events applied as created, updated or deleted; `failed` is rejected events (one per failed document attempt or delete). A failed delete is reported in `failures` and retried on the next full run.
 - Other runtime errors (`INVALID_INPUT`, `BAD_CURSOR_LOOP`, connector errors) propagate unchanged.
 
 ## Limits
 
-- Delete detection relies on in-memory state. After a process restart, documents deleted while it was down stay indexed until re-indexed. Persisting the known set needs a registry listing the module may not read.
+- Delete detection uses an in-memory known set. After a restart it is empty unless the caller supplies `known`; without it, documents deleted while the process was down stay indexed. Ids that `known` returns but the index does not hold are still sent a delete when unlisted (counted in `emitted`); failure reports show the id in place of the address for them.
 - A run resumed from a saved mid-scan cursor does not detect deletes; the next full run does.
 - A file deleted and re-added at the same version within the runtime's seen-id ttl (24 h) is not re-emitted.
 - `runOnce` calls for one tenant are serialised (a second call waits); different tenants run in parallel. The lock is in-process.
