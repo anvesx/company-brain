@@ -18,7 +18,8 @@ export type IndexDeps = {
   index: SearchIndex;
   chunk: (docId: string, text: string) => Promise<Chunk[]>;
   embed: (texts: string[]) => Promise<number[][]>;
-  fetchText: (pointer: Pointer) => Promise<string>;
+  /** Optional. Without it every upsert must carry `content`, else `INVALID_EVENT`. */
+  fetchText?: (pointer: Pointer) => Promise<string>;
 };
 
 export interface IndexService {
