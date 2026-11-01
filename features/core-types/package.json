@@ -4,12 +4,16 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "mutation": "stryker run"
   },
-  "dependencies": { "zod": "^4.6.7" }
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
 }

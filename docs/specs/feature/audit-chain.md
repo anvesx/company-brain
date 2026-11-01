@@ -4,7 +4,7 @@ Ticket: #36   Tier: feature   Milestone: M0   Design cards: sec.audit
 ## Purpose
 Append-only log where each entry's hash covers the previous one, so any edit or delete is detectable.
 ## Reuse decision
-`json-canonicalize` (RFC 8785) for stable bytes, `node:crypto` sha256, `better-sqlite3@13.0.3`
+`json-canonicalize` (RFC 8785) for stable bytes, `node:crypto` sha256, `node:sqlite`
 storage with triggers that block UPDATE and DELETE, `fast-check@4.10.2` for properties.
 ## Public interface
 ```ts

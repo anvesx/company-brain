@@ -4,7 +4,7 @@ Ticket: #35   Tier: feature   Milestone: M0   Design cards: sec.acl
 ## Purpose
 Turn a principal into a SQL predicate and an equivalent pure check. Deny by default.
 ## Reuse decision
-No library fits; this is a 30 line predicate. Test the SQL with `better-sqlite3` and `fast-check@4.10.2`.
+No library fits; this is a 30 line predicate. Test the SQL with `node:sqlite` and `fast-check@4.10.2`.
 ## Public interface
 ```ts
 export function isAllowed(p: Principal, acl: Acl, rowTenant: string): boolean;

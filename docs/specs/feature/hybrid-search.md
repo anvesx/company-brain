@@ -5,7 +5,7 @@ Ticket: #34   Tier: feature   Milestone: M0   Design cards: idx.search
 Keyword + vector search over derived chunks, fused with Reciprocal Rank Fusion. The ACL filter
 arrives as an opaque SQL fragment, so this package never imports `acl-filter`.
 ## Reuse decision
-`better-sqlite3@13.0.3` with built-in FTS5, plus `sqlite-vec@0.1.9` for vectors. RRF is ours
+`node:sqlite` with built-in FTS5, plus `sqlite-vec@0.1.9` for vectors (verified: `sqliteVec.load(db)` works on `new DatabaseSync(path,{allowExtension:true})`). RRF is ours
 (about 25 lines); Orama was rejected because it weights scores instead of fusing ranks.
 ## Public interface
 ```ts

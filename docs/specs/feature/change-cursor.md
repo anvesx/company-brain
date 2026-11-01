@@ -5,7 +5,7 @@ Ticket: #32   Tier: feature   Milestone: M0 (used by M1)   Design cards: chg.tri
 Remember where each source sync stopped, drop duplicate events, and find what changed when we
 compare what we know with what the source lists now (the reconciliation sweep).
 ## Reuse decision
-`better-sqlite3@13.0.3` for durable state (embedded). Later `pg-boss@12.38.0` runs the schedule.
+`node:sqlite` for durable state (embedded, built in). Later `pg-boss@12.38.0` runs the schedule.
 Pure diff logic is ours (about 40 lines); no library does exactly this.
 ## Public interface
 ```ts

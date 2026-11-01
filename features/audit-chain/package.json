@@ -1,0 +1,23 @@
+{
+  "name": "@brain/audit-chain",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "@brain/core-types": "workspace:*",
+    "json-canonicalize": "^2.0.0"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
+}

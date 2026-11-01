@@ -1,0 +1,20 @@
+{
+  "name": "@brain/hybrid-search",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "@brain/core-types": "workspace:*",
+    "sqlite-vec": "0.1.9"
+  }
+}

@@ -4,8 +4,7 @@ Ticket: #30   Tier: feature   Milestone: M0   Design cards: idx.reg
 ## Purpose
 Store one pointer row per document: where it is, its version, hash, zone and ACL. Never body text.
 ## Reuse decision
-`drizzle-orm@0.45.4` + `better-sqlite3@13.0.3` (embedded, zero servers). Same table definitions
-move to `pg@8.23.1` later. We write only the registry functions and the schema.
+`node:sqlite` (built into Node 26, no native build; `better-sqlite3@13.0.3` failed to compile on Node 26 and drizzle has no node:sqlite driver, so plain SQL with prepared statements). Postgres adapter later.
 ## Public interface
 ```ts
 export interface Registry {
