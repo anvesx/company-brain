@@ -24,4 +24,13 @@ describe("textFetcher", () => {
     await expect(fetch(pointer("t9", "a"))).rejects.toThrow("no connector or credential for tenant t9");
     await expect(fetch(pointer("t1", "a"))).resolves.toBe("needle");
   });
+
+  it("rejects when either the connector or the credential is missing, and never reads the source", async () => {
+    const source = guarded(defaultGrants());
+    const noToken = textFetcher({ connectorFor: () => source, tokenFor: () => undefined });
+    const noConnector = textFetcher({ connectorFor: () => undefined, tokenFor: () => "token-t1" });
+    await expect(noToken(pointer("t1", "a"))).rejects.toThrow("no connector or credential for tenant t1");
+    await expect(noConnector(pointer("t1", "a"))).rejects.toThrow("no connector or credential for tenant t1");
+    expect(source.calls).toEqual([]);
+  });
 });

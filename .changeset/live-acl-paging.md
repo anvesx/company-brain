@@ -1,4 +1,5 @@
 ---
+
 "@brain/hybrid-search": minor
 "@brain/query-service": minor
 "@brain/index-service": minor

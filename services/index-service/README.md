@@ -63,3 +63,10 @@ Errors are `IndexServiceError` with `code`: `INVALID_EVENT`, `HASH_MISMATCH`, `F
 ## Test
 
 `pnpm test`, `pnpm typecheck`, `pnpm mutation` from this folder.
+
+Mutation score is 98.34 with four surviving mutants, each equivalent (no observable behaviour change):
+
+- `prepare.ts` `typeof x === "number"` replaced by `true`: `Number.isFinite` does not coerce, so it already returns false for every non-number.
+- `prepare.ts` `vectors[0]?.length`: `checkEmbeddings` runs only when there is at least one chunk, so `vectors[0]` always exists.
+- `replace.ts` probe text `"x"` replaced by `""`: the probe only validates the embedding dimension and the ACL matches nothing, so the query text is never used.
+- `service.ts` fallback `[]` in `keyOf` replaced by a one-element array: `id` stays undefined, so the event is rejected as `INVALID_EVENT` either way.
