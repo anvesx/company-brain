@@ -136,6 +136,24 @@ importers:
         specifier: workspace:*
         version: link:../core-types
 
+  services/query-service:
+    dependencies:
+      '@brain/acl-filter':
+        specifier: workspace:*
+        version: link:../../features/acl-filter
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+      '@brain/hybrid-search':
+        specifier: workspace:*
+        version: link:../../features/hybrid-search
+      '@brain/pointer-registry':
+        specifier: workspace:*
+        version: link:../../features/pointer-registry
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   tools/structure-lint: {}
 
 packages:
