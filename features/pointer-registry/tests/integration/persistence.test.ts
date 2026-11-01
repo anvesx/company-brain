@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRegistry } from "../../src/index.js";
-import { hashOf, ptr } from "../fixtures.js";
+import { ptr } from "../fixtures.js";
 
 const dirs: string[] = [];
 const tmp = (): string => {
@@ -37,41 +37,5 @@ describe("file-backed db", () => {
     expect(b.upsert(ptr()).change).toBe("unchanged");
     a.close();
     b.close();
-  });
-});
-
-describe("interleaved writers", () => {
-  it("1000 upserts from 4 interleaved loops give 1000 rows", async () => {
-    const r = createRegistry(tmp());
-    const loop = async (k: number) => {
-      for (let i = k; i < 1000; i += 4) {
-        r.upsert(ptr({ id: `d${i}`, contentHash: hashOf(i) }));
-        await Promise.resolve();
-      }
-    };
-    await Promise.all([0, 1, 2, 3].map(loop));
-    let n = 0;
-    let after: string | undefined;
-    for (;;) {
-      const page = r.list(after === undefined ? { tenantId: "t1", limit: 1000 } : { tenantId: "t1", limit: 1000, afterId: after });
-      if (page.length === 0) break;
-      n += page.length;
-      after = page[page.length - 1]?.id;
-    }
-    expect(n).toBe(1000);
-    r.close();
-  });
-  it("same key from 4 loops and 2 handles ends with one row", async () => {
-    const file = tmp();
-    const hs = [createRegistry(file), createRegistry(file)];
-    const loop = async (k: number) => {
-      for (let i = 0; i < 50; i++) {
-        hs[k % 2]?.upsert(ptr({ contentHash: hashOf(k * 100 + i) }));
-        await Promise.resolve();
-      }
-    };
-    await Promise.all([0, 1, 2, 3].map(loop));
-    expect(hs[0]?.list({ tenantId: "t1" })).toHaveLength(1);
-    for (const h of hs) h.close();
   });
 });

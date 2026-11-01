@@ -36,10 +36,6 @@ export const SQL = {
   tombstone: "UPDATE pointers SET deleted_at = ? WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL",
 } as const;
 
-/** Same hash, version, acl version and liveness means nothing to write. */
-export const isUnchanged = (old: Pointer, next: Pointer): boolean =>
-  old.contentHash === next.contentHash && old.version === next.version && old.acl.version === next.acl.version && old.deletedAt === next.deletedAt;
-
 type Row = Record<string, unknown>;
 
 /** Positional params in COLUMNS order. */
