@@ -15,8 +15,8 @@
   },
   "dependencies": {
     "@brain/core-types": "workspace:*",
-    "@langchain/textsplitters": "1.0.2",
-    "@langchain/core": "^1.0.0"
+    "@langchain/core": "^1.0.0",
+    "@langchain/textsplitters": "1.0.2"
   },
   "devDependencies": {
     "fast-check": "4.10.2"
