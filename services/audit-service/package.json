@@ -1,0 +1,20 @@
+{
+  "name": "@brain/audit-service",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "@brain/audit-chain": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
