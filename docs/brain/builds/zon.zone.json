@@ -1,0 +1,469 @@
+{
+ "zn_tag": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "so_norm",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "rules",
+    "pick": "plain Python functions in one versioned module",
+    "why": "a rule is a pure function over source sharing fields; no model, no rules engine needed"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a classifier model or an LLM call to decide zone",
+    "why": "a wrong guess exposes private text; the zone must be a fact from the source"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/zone/tag.py : tag_from_source and the rule table",
+   "brain/zone/rules.py : one rule per source_kind",
+   "migrations/010_zone_columns.sql : zone, owner_id, zone_reason, zone_version on pointer",
+   "tests/test_tag.py : fail-closed and idempotence tests"
+  ],
+  "schema": "ALTER TABLE pointer\n  ADD COLUMN zone text NOT NULL DEFAULT 'personal' CHECK (zone IN ('company','team','personal')),\n  ADD COLUMN owner_id text,\n  ADD COLUMN zone_reason text NOT NULL DEFAULT 'default',\n  ADD COLUMN zone_version bigint NOT NULL DEFAULT 0,\n  ADD CONSTRAINT personal_owner CHECK (zone <> 'company' OR owner_id IS NULL);\nCREATE INDEX pointer_owner ON pointer (tenant_id, owner_id) WHERE zone = 'personal';",
+  "interface": "def tag_from_source(obj: dict, rules: dict) -> Tag  # pure; returns Tag(zone, owner_id, reason); never raises on bad input, returns personal with owner None",
+  "code": "from dataclasses import dataclass\n\nZONES = {'company', 'team', 'personal'}\n\n@dataclass(frozen=True)\nclass Tag:\n    zone: str\n    owner_id: str | None\n    reason: str\n\nFAIL_CLOSED = Tag('personal', None, 'fail_closed')   # matches no user\n\ndef tag_from_source(obj: dict, rules: dict) -> Tag:\n    kind, sharing = obj.get('source_kind'), obj.get('sharing')\n    rule = rules.get(kind)\n    if rule is None or not isinstance(sharing, dict):\n        return FAIL_CLOSED                    # unknown kind or missing field: never guess\n    try:\n        zone = rule(sharing)                  # pure function over source fields, no model\n    except Exception:\n        return FAIL_CLOSED\n    if zone not in ZONES:\n        return FAIL_CLOSED\n    owner = sharing.get('owner_id') if zone == 'personal' else None\n    if zone == 'personal' and (not owner or len(owner.encode()) > 256):\n        return FAIL_CLOSED                    # personal needs a real owner from the source\n    return Tag(zone, owner, f'rule:{kind}')\n\ndef narrower(a: Tag, b: Tag) -> Tag:         # two conflicting signals: the stricter wins\n    rank = {'company': 0, 'team': 1, 'personal': 2}\n    return a if rank[a.zone] >= rank[b.zone] else b\n\n# example rules; field names are per app, check current docs before shipping each one\nRULES = {\n  'drive.file': lambda s: 'team' if s.get('drive_type') == 'shared_drive' else ('team' if s.get('shared_with') else 'personal'),\n  'chat.channel': lambda s: 'company' if s.get('is_public') else 'team',\n  'chat.dm': lambda s: 'personal',\n}",
+  "steps": [
+   {
+    "do": "Add the four columns and the index with the migration",
+    "done_when": "psql -c '\\d pointer' lists zone, owner_id, zone_reason, zone_version"
+   },
+   {
+    "do": "Write tag_from_source and the rule table",
+    "done_when": "pytest tests/test_tag.py -q passes the missing-sharing test"
+   },
+   {
+    "do": "Call it from the so_norm to ix_ptr write path before the pointer is saved",
+    "done_when": "inserting a fixture object stores zone and owner_id on the row"
+   },
+   {
+    "do": "Add compare-and-set on zone_version for retags",
+    "done_when": "a second write with an old zone_version changes 0 rows"
+   },
+   {
+    "do": "Add one rule per installed connector, each with a test from a recorded sample object",
+    "done_when": "one passing test per rule; unknown kinds return personal with owner null"
+   },
+   {
+    "do": "Run a sweep over existing pointers",
+    "done_when": "select count(*) from pointer where zone_reason = 'default' returns 0"
+   }
+  ],
+  "config": {
+   "UNKNOWN_ZONE": "personal // fail closed, owner null matches no user",
+   "MAX_OWNER_BYTES": "256 // reject longer ids",
+   "RETAG_ALERT": "3 per connector per 10 minutes // spot a broken rule fast"
+  },
+  "verify": [
+   "pytest tests/test_tag.py -q  # all pass, includes missing-sharing and owner-from-source tests",
+   "psql -c \"select zone, count(*) from pointer group by zone\"  # no row has zone_reason 'default' after the sweep"
+  ],
+  "pitfalls": [
+   "Reading the owner from a webhook payload lets a forged event set an owner: take it only from the fetched object",
+   "Setting a zone per connector mislabels items when one app holds both personal and shared items",
+   "Vendor sharing field names are not in our research: each rule must say check current docs until a recorded sample proves it"
+  ]
+ },
+ "zn_scope": {
+  "milestone": "M2",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_ptr",
+   "ac_filter",
+   "qr_hyd",
+   "zn_tag"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "second line",
+    "pick": "Postgres row-level security with a session setting for the user id",
+    "why": "the same predicate runs in the database, so a bug in application code cannot skip it"
+   },
+   {
+    "part": "do not pick",
+    "pick": "post-filter on the top k by owner",
+    "why": "needs k times the number of users in candidates and leaks other users' rows to later stages (t_t22, p_acorn)"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pgvector pytest"
+  ],
+  "layout": [
+   "brain/zone/scope.py : owner_term and hydrate_recheck",
+   "migrations/011_owner_rls.sql : row-level security policy on chunk",
+   "tests/test_owner_filter.py : sparse owner and cross-user tests",
+   "tests/test_leak_canary.py : planted personal rows for 5 synthetic users"
+  ],
+  "schema": "ALTER TABLE chunk ENABLE ROW LEVEL SECURITY;\nCREATE POLICY zone_read ON chunk FOR SELECT USING (\n  (zone <> 'personal') OR\n  (zone = 'personal' AND owner_id = current_setting('brain.user_id', true))\n);\n-- queries run as role brain_query and SET LOCAL brain.user_id = '<verified user id>' per request",
+  "interface": "def owner_term(ctx: RequestContext) -> OwnerTerm  # {zone:'personal', owner_id} or match-nothing when ctx.user_id is empty\ndef hydrate_recheck(ptr: Pointer, ctx: RequestContext) -> bool  # False means drop, never fetch",
+  "code": "from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass OwnerTerm:\n    owner_id: str | None\n    match_nothing: bool\n\ndef owner_term(ctx) -> OwnerTerm:\n    if not ctx.user_id:                        # no verified user: personal branch matches nothing\n        return OwnerTerm(None, True)\n    return OwnerTerm(ctx.user_id, False)\n\nPERSONAL_SQL = (\n    \"(c.zone <> 'personal' AND a.principals && %(principals)s) \"\n    \"OR (c.zone = 'personal' AND c.owner_id = %(owner)s)\"\n)\n\ndef build_where(f, t: OwnerTerm):\n    if f is None:                               # tricky part: a client with no filter must fail closed\n        raise PermissionError('query without filter object')\n    owner = None if t.match_nothing else t.owner_id\n    return PERSONAL_SQL, {'principals': f.principals, 'owner': owner}\n    # owner None makes 'owner_id = NULL' false, so the personal branch returns 0 rows\n\ndef hydrate_recheck(db, ptr_id, ctx, audit) -> bool:\n    row = db.execute('SELECT zone, owner_id FROM pointer WHERE doc_id = %s', (ptr_id,)).fetchone()\n    if row is None:\n        return False\n    zone, owner = row\n    if zone == 'personal' and owner != ctx.user_id:\n        audit('owner_recheck_denied', ptr_id=ptr_id)   # a hit here means a gate upstream has a bug\n        return False\n    return True",
+  "steps": [
+   {
+    "do": "Enable row-level security and the zone_read policy on chunk",
+    "done_when": "psql as brain_query with no user setting returns 0 personal rows"
+   },
+   {
+    "do": "Write owner_term and wire it into the ac_filter compile step",
+    "done_when": "a query with user u1 shows the personal branch with owner u1 in EXPLAIN"
+   },
+   {
+    "do": "Pass the identical predicate to the BM25 query and the vector query",
+    "done_when": "both queries return only u1's personal rows in a fixture"
+   },
+   {
+    "do": "Add hydrate_recheck in front of every live fetch in qr_hyd",
+    "done_when": "a pointer owned by u2 injected for u1 is dropped and 1 audit row is written"
+   },
+   {
+    "do": "Plant personal rows for 5 synthetic users and run the canary",
+    "done_when": "each user retrieves 0 of the other users' planted phrases"
+   },
+   {
+    "do": "Measure latency with and without the term at your expected row count",
+    "done_when": "p95 with the term is within 1.1 times the p95 without it, else plan per-user partitions"
+   }
+  ],
+  "config": {
+   "RECHECK_ENABLED": "true // no off switch in production",
+   "FILTER_TIMEOUT_MS": "100 // retry once, then fail closed",
+   "PARTITION_THRESHOLD_ROWS": "10000 // personal rows per user above which per-user partitions are used (tune)"
+  },
+  "verify": [
+   "pytest tests/test_owner_filter.py tests/test_leak_canary.py -q  # all pass, canary reports 0 leaks",
+   "psql -c \"set role brain_query; select count(*) from chunk where zone='personal'\"  # 0 with no user setting"
+  ],
+  "pitfalls": [
+   "Comparing owner as email text: emails change; use an immutable internal id",
+   "A background job that connects as a superuser skips row-level security: run query code under brain_query only",
+   "Cache keys without the owner term serve one user's personal hits to another"
+  ]
+ },
+ "zn_key": {
+  "milestone": "M2",
+  "effort_days": 8,
+  "depends_on": [
+   "zn_tag",
+   "ix_vec"
+  ],
+  "stack": [
+   {
+    "part": "cipher",
+    "pick": "AES-256-GCM through the Python cryptography library",
+    "why": "authenticated encryption, so a tampered row fails to decrypt; check current docs for the pinned version"
+   },
+   {
+    "part": "key wrapping",
+    "pick": "the cloud KMS you already use (AWS KMS, Google Cloud KMS) or HashiCorp Vault Transit",
+    "why": "the tenant key never leaves the KMS; we only ask it to wrap and unwrap 32-byte data keys; check current docs for quotas"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "do not pick",
+    "pick": "one shared key for all personal rows",
+    "why": "a leaver cannot be erased without rewriting rows"
+   }
+  ],
+  "install": [
+   "pip install cryptography 'psycopg[binary]' numpy pytest",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16"
+  ],
+  "layout": [
+   "brain/zone/keys.py : create_key, unwrap_key, shred_key",
+   "brain/zone/seal.py : encrypt and decrypt of chunk payload and vector",
+   "migrations/012_user_key.sql : the key table",
+   "tests/test_shred.py : shred and tamper tests"
+  ],
+  "schema": "CREATE TABLE user_key (\n  tenant_id text NOT NULL,\n  user_id text NOT NULL,\n  key_id text NOT NULL,\n  wrapped_key bytea,\n  state text NOT NULL CHECK (state IN ('active','deleting','shredded')),\n  created_at timestamptz NOT NULL DEFAULT now(),\n  shredded_at timestamptz,\n  PRIMARY KEY (tenant_id, user_id)\n);\nALTER TABLE chunk ADD COLUMN key_id text, ADD COLUMN nonce bytea, ADD COLUMN sealed bytea;",
+  "interface": "def seal(dek: bytes, tenant: str, user: str, uri: str, plaintext: bytes) -> tuple[bytes, bytes]  # (nonce, ciphertext)\ndef shred_key(tenant: str, user: str) -> ShredReceipt  # deletes the wrapped key, confirms a test decrypt fails",
+  "code": "import os\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\n\ndef aad(tenant, user, uri) -> bytes:\n    return f'{tenant}|{user}|{uri}'.encode('utf-8')   # binds the row to its owner\n\ndef seal(dek: bytes, tenant, user, uri, plaintext: bytes):\n    nonce = os.urandom(12)                             # 96-bit random nonce, new per row\n    ct = AESGCM(dek).encrypt(nonce, plaintext, aad(tenant, user, uri))\n    return nonce, ct\n\ndef unseal(dek: bytes, tenant, user, uri, nonce, ct) -> bytes:\n    return AESGCM(dek).decrypt(nonce, ct, aad(tenant, user, uri))   # raises on tamper or wrong key\n\ndef get_or_create_key(db, kms, tenant, user) -> bytes:\n    row = db.execute('SELECT wrapped_key, state FROM user_key WHERE tenant_id=%s AND user_id=%s', (tenant, user)).fetchone()\n    if row and row[1] == 'active':\n        return kms.unwrap(row[0])                      # one KMS call per request, held in memory only\n    if row:\n        raise PermissionError('key is deleting or shredded')\n    dek = AESGCM.generate_key(bit_length=256)\n    db.execute(\"INSERT INTO user_key VALUES (%s,%s,gen_random_uuid()::text,%s,'active',now(),NULL) ON CONFLICT DO NOTHING\",\n               (tenant, user, kms.wrap(dek)))\n    return get_or_create_key(db, kms, tenant, user)    # loser of a race reads the winner's key\n\ndef shred_key(db, tenant, user):\n    db.execute(\"UPDATE user_key SET state='deleting' WHERE tenant_id=%s AND user_id=%s\", (tenant, user))\n    db.execute(\"UPDATE user_key SET wrapped_key=NULL, state='shredded', shredded_at=now() WHERE tenant_id=%s AND user_id=%s\", (tenant, user))\n    # then purge the wrapped key from backups on their retention schedule and run a test decrypt that must fail",
+  "steps": [
+   {
+    "do": "Create the key table and the sealed columns on chunk",
+    "done_when": "psql -c '\\d user_key' lists 7 columns"
+   },
+   {
+    "do": "Write seal and unseal with the authenticated data string tenant|user|uri",
+    "done_when": "a round trip returns the plaintext; changing the uri makes unseal raise"
+   },
+   {
+    "do": "Write get_or_create_key against your KMS with a test key",
+    "done_when": "two calls for one user return the same key and the table holds 1 row"
+   },
+   {
+    "do": "Seal personal chunk payload and vector in the ix_vec write path for zone personal only",
+    "done_when": "select count(*) from chunk where zone='personal' and sealed is null returns 0"
+   },
+   {
+    "do": "Write the personal search path: unwrap once, decrypt that user's rows into memory, exact scan",
+    "done_when": "a fixture user with 1,000 rows gets the right top 5 and the key is dropped after the request"
+   },
+   {
+    "do": "Write shred_key and the shred receipt to the audit log",
+    "done_when": "after shred, reading any of that user's rows raises and the receipt shows test_decrypt_failed true"
+   }
+  ],
+  "config": {
+   "KMS_KEY_ID": "arn or resource id of the tenant key // the wrapping key, never exported",
+   "KMS_TIMEOUT_MS": "2000 // skip personal rows after this, company rows still answer",
+   "SCAN_P95_BUDGET_MS": "150 // above this move the user to a decrypted-in-memory ANN partition (tune)"
+  },
+  "verify": [
+   "pytest tests/test_shred.py -q  # all pass: two keys differ, tamper fails, shred makes rows unreadable",
+   "psql -c \"select state, count(*) from user_key group by state\"  # a shredded user shows state shredded with wrapped_key null"
+  ],
+  "pitfalls": [
+   "Storing vectors in plain text beside encrypted payloads: embeddings can be inverted to text (x_sec_vec2text, snippet), so seal them too",
+   "Reusing a nonce with one key breaks GCM: use 12 random bytes per row and rotate keys well before 2^32 writes (check current docs for the limit)",
+   "Backups still hold wrapped keys after a shred: the shred is not complete until backups age out"
+  ]
+ },
+ "zn_promote": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "zn_tag",
+   "ac_audit"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "prompt delivery",
+    "pick": "a signed link to the brain's own approval page behind company SSO",
+    "why": "the confirm must come from the verified owner session; a chat button alone can be forged or auto-clicked"
+   },
+   {
+    "part": "policy check",
+    "pick": "a plain function; move to OPA only if more rules appear",
+    "why": "there are exactly two allowed triggers, so a rules engine adds nothing yet"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a model that decides what is safe to share",
+    "why": "excessive agency is a named root cause of harm (x_sec_owasp-llm06)"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/zone/promote.py : request_promotion and apply",
+   "migrations/013_promotion.sql : log and pending tables",
+   "tests/test_promote.py : trigger, model-blocked and expiry tests"
+  ],
+  "schema": "CREATE TABLE promotion_log (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  from_zone text NOT NULL,\n  to_zone text NOT NULL,\n  trigger text NOT NULL CHECK (trigger IN ('source_sharing','owner_confirm','narrowing')),\n  actor text NOT NULL,\n  at timestamptz NOT NULL DEFAULT now(),\n  UNIQUE (tenant_id, uri, to_zone, at)\n);\nCREATE TABLE promotion_prompt (\n  prompt_id text PRIMARY KEY, tenant_id text NOT NULL, uri text NOT NULL, owner_id text NOT NULL,\n  to_zone text NOT NULL, expires_at timestamptz NOT NULL, answered boolean\n);",
+  "interface": "def request_promotion(uri: str, to_zone: str, trigger: str, actor: Actor) -> Decision  # Decision(applied, reason); denies any actor whose kind is model, agent or service",
+  "code": "RANK = {'company': 0, 'team': 1, 'personal': 2}\nHUMAN_KINDS = {'owner_session'}\nPROMPT_DAYS = 14\n\ndef request_promotion(db, audit, uri, to_zone, trigger, actor, observed_sharing=None):\n    ptr = db.execute('SELECT zone, owner_id, zone_version FROM pointer WHERE uri=%s', (uri,)).fetchone()\n    if ptr is None:\n        return Decision(False, 'no_pointer')\n    zone, owner, ver = ptr\n    if RANK[to_zone] > RANK[zone]:                      # narrowing is always allowed\n        return apply(db, audit, uri, zone, to_zone, 'narrowing', actor.id, ver)\n    if trigger == 'source_sharing':\n        # the widening must be visible in the fetched source object, not claimed by the caller\n        if observed_sharing is None or observed_zone(observed_sharing) != to_zone:\n            return Decision(False, 'source_does_not_show_it')\n        return apply(db, audit, uri, zone, to_zone, trigger, 'source', ver)\n    if trigger == 'owner_confirm':\n        if actor.kind not in HUMAN_KINDS or actor.user_id != owner:\n            return Decision(False, 'not_the_owner')     # tricky part: models and services never promote\n        if not prompt_open(db, uri, owner, to_zone):\n            return Decision(False, 'no_open_prompt')\n        return apply(db, audit, uri, zone, to_zone, trigger, actor.user_id, ver)\n    return Decision(False, 'unknown_trigger')\n\ndef apply(db, audit, uri, frm, to, trigger, actor, ver):\n    audit('promotion', uri=uri, frm=frm, to=to, trigger=trigger, actor=actor)   # log first, then change\n    n = db.execute('UPDATE pointer SET zone=%s, zone_version=zone_version+1 WHERE uri=%s AND zone_version=%s', (to, uri, ver)).rowcount\n    return Decision(n == 1, 'applied' if n == 1 else 'lost_race')",
+  "steps": [
+   {
+    "do": "Create the log and prompt tables",
+    "done_when": "psql -c '\\d promotion_log' shows the trigger check"
+   },
+   {
+    "do": "Write request_promotion with the two triggers and the narrowing rule",
+    "done_when": "pytest tests/test_promote.py -q passes the model-blocked test"
+   },
+   {
+    "do": "Wire the source trigger from zn_tag sweeps",
+    "done_when": "sharing a fixture file in the app test account changes its zone in under 5 s"
+   },
+   {
+    "do": "Build the owner approval page behind SSO and the 14-day prompt expiry job",
+    "done_when": "an unanswered prompt shows answered null and is expired after 14 days in the test clock"
+   },
+   {
+    "do": "Rate limit prompts to 5 per user per day and batch them into a daily digest",
+    "done_when": "a user with 20 candidates gets 1 digest and at most 5 single prompts"
+   },
+   {
+    "do": "Send every change to ac_audit before it is applied",
+    "done_when": "a forced audit failure leaves the zone unchanged"
+   }
+  ],
+  "config": {
+   "PROMPT_EXPIRY_DAYS": "14 // unanswered prompts lapse and the item stays personal",
+   "PROMPTS_PER_USER_PER_DAY": "5 // limits approval fatigue",
+   "SUPPRESS_AFTER_DECLINE_DAYS": "90 // do not re-offer a declined item"
+  },
+  "verify": [
+   "pytest tests/test_promote.py -q  # all pass, agent actor denied, expiry works, narrowing instant",
+   "psql -c \"select trigger, count(*) from promotion_log group by trigger\"  # every row has a trigger and an actor"
+  ],
+  "pitfalls": [
+   "Trusting a claimed sharing change from the caller: re-read the source object and check it",
+   "Letting a service account confirm 'on behalf of' the owner: the actor kind check must be strict",
+   "Promoting the item but forgetting that derived rows keep their old label: derived data is never copied up"
+  ]
+ },
+ "zn_taint": {
+  "milestone": "M2",
+  "effort_days": 6,
+  "depends_on": [
+   "zn_tag"
+  ],
+  "stack": [
+   {
+    "part": "label",
+    "pick": "a small integer column zone_rank (0, 1, 2) plus owner_id on every derived table",
+    "why": "the join is a max over integers; cheap and checkable in SQL"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "enforcement",
+    "pick": "a CHECK constraint or trigger on each company-level store",
+    "why": "the store itself refuses a personal label, so a missing check in one writer cannot leak"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a redaction or summarising model to make personal data safe",
+    "why": "a miss leaks; a label is exact about origin"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/zone/taint.py : join and ceiling check",
+   "migrations/014_taint.sql : zone_rank and owner_id on derived tables, CHECK on company stores",
+   "tests/test_taint.py : max rule and unlabeled input tests",
+   "tests/test_taint_canary.py : plants personal facts and scans every company store"
+  ],
+  "schema": "ALTER TABLE answer_cache ADD COLUMN zone_rank smallint NOT NULL DEFAULT 2, ADD COLUMN owner_id text;\nALTER TABLE entity ADD COLUMN zone_rank smallint NOT NULL DEFAULT 2, ADD COLUMN owner_id text;\nALTER TABLE lesson ADD COLUMN zone_rank smallint NOT NULL DEFAULT 2, ADD COLUMN owner_id text;\n-- company-level store: refuse personal at the database\nALTER TABLE lesson ADD CONSTRAINT lesson_company_only CHECK (zone_rank = 0);\nCREATE TABLE store_ceiling (store text PRIMARY KEY, max_rank smallint NOT NULL);\nINSERT INTO store_ceiling VALUES ('lesson',0),('answer_cache_company',0),('answer_cache_team',1),('answer_cache_personal',2);",
+  "interface": "def taint_of(inputs: list[Labeled]) -> Taint  # Taint(rank, owner_ids); empty list raises\ndef check_write(store: str, taint: Taint) -> None  # raises TaintRejected when rank > ceiling(store)",
+  "code": "RANK = {'company': 0, 'team': 1, 'personal': 2}\n\nclass TaintRejected(Exception):\n    pass\n\ndef rank_of(zone) -> int:\n    return RANK.get(zone, 2)                  # unknown or missing label counts as personal\n\ndef taint_of(inputs):\n    if not inputs:\n        raise TaintRejected('no inputs listed')   # a writer must name what it used\n    rank = max(rank_of(i.zone) for i in inputs)\n    owners = sorted({i.owner_id for i in inputs if rank_of(i.zone) == 2 and i.owner_id})\n    return Taint(rank, owners)\n\nCEILING = {'lesson': 0, 'answer_cache_company': 0, 'answer_cache_team': 1, 'answer_cache_personal': 2}\n\ndef check_write(store, taint):\n    ceiling = CEILING.get(store)\n    if ceiling is None:\n        raise TaintRejected(f'unknown store {store}')       # new stores must register a ceiling\n    if taint.rank > ceiling:\n        count_rejection(store, taint.rank)\n        raise TaintRejected(f'rank {taint.rank} above ceiling {ceiling} for {store}')\n\ndef serve_ok(row_rank, row_owners, asker_id) -> bool:\n    if row_rank < 2:\n        return True\n    # tricky part: a personal row built from two owners is served only to someone who owns all of them\n    return bool(row_owners) and all(o == asker_id for o in row_owners)",
+  "steps": [
+   {
+    "do": "Add zone_rank and owner_id to the derived tables, default 2",
+    "done_when": "psql -c '\\d answer_cache' shows zone_rank smallint not null"
+   },
+   {
+    "do": "Implement taint_of, check_write and the ceiling table",
+    "done_when": "pytest tests/test_taint.py -q passes the company, company, personal case with taint 2"
+   },
+   {
+    "do": "Make every writer to qr_cache, ix_ent, pl_mem and op_trace call taint_of with its inputs",
+    "done_when": "a writer that sends no inputs list gets TaintRejected and stores 0 rows"
+   },
+   {
+    "do": "Add the CHECK constraint on the company-level lesson store",
+    "done_when": "inserting zone_rank 2 into lesson fails with a constraint error"
+   },
+   {
+    "do": "Serve personal rows only through serve_ok",
+    "done_when": "user u2 asking the same question as u1 gets 0 of u1's personal cache rows"
+   },
+   {
+    "do": "Run the canary nightly: plant 20 personal facts and scan every company store",
+    "done_when": "the scan reports 0 matches and pages on any hit"
+   }
+  ],
+  "config": {
+   "UNLABELED_RANK": "2 // missing label counts as personal",
+   "CEILING_TABLE": "store_ceiling // register a ceiling for every new derived store",
+   "CANARY_FACTS": "20 // planted personal facts per nightly run"
+  },
+  "verify": [
+   "pytest tests/test_taint.py tests/test_taint_canary.py -q  # all pass, canary finds 0 in company stores",
+   "psql -c \"select count(*) from lesson where zone_rank > 0\"  # 0"
+  ],
+  "pitfalls": [
+   "A writer that forgets an input leaks it: reject writes with no inputs list and test with the canary",
+   "Traces that store query text in a company dashboard: store counts for company views and keep text in the owner's partition",
+   "Merging a personal name into a company entity: ix_ent must merge only inside one zone"
+  ]
+ },
+ "zn_review": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "zn_promote",
+   "cp_exp"
+  ],
+  "stack": [
+   {
+    "part": "ui",
+    "pick": "a review page in the existing app shell",
+    "why": "No new service"
+   },
+   {
+    "part": "do not pick",
+    "pick": "auto-promote on timeout",
+    "why": "Sharing must be a yes, not a default"
+   }
+  ],
+  "install": [
+   "pip install pytest",
+   "pip install pydantic"
+  ],
+  "layout": [
+   "brain/zones/review.py",
+   "tests/test_review.py"
+  ],
+  "schema": "{\"card_id\":\"str\",\"decision\":\"approve|edit|reject\",\"audience\":\"me|team|department|company\",\"edited_text\":\"object|null\"}",
+  "interface": "def decide(owner, card_id, decision, audience, edits) -> Decision  # raises PolicyError if audience > policy",
+  "code": "AUD = [\"me\", \"team\", \"department\", \"company\"]\n\ndef decide(db, owner, card_id, decision, audience, edits):\n    card = db.draft(card_id, owner)                            # only the owner can decide\n    if AUD.index(audience) > AUD.index(policy_for(owner)):\n        raise PolicyError(audience)\n    if decision == \"approve\":\n        promote(card.apply(edits), audience)\n    db.log_decision(card_id, owner, decision, audience, diff(card, edits))\n    return Decision(decision)",
+  "steps": [
+   {
+    "do": "Write the preview page",
+    "done_when": "shows full text, citations, audience"
+   },
+   {
+    "do": "Enforce the policy cap",
+    "done_when": "company over department is refused"
+   },
+   {
+    "do": "Archive after 14 days",
+    "done_when": "no answer gives archived, not promoted"
+   },
+   {
+    "do": "Log the diff",
+    "done_when": "decision row has the diff"
+   }
+  ],
+  "config": {
+   "TIMEOUT_DAYS": "14 // design",
+   "AUDIENCES": "me, team, department, company",
+   "POLICY_CAP": "set per owner by the zone policy"
+  },
+  "verify": [
+   "pytest tests/test_review.py -q  # all passed",
+   "python -m brain.zones.review --sim timeout  # draft archived, nothing promoted"
+  ],
+  "pitfalls": [
+   "Promoting on timeout",
+   "Letting a manager decide for the owner"
+  ]
+ }
+}

@@ -1,0 +1,2180 @@
+{
+ "c2_hf_quant": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://huggingface.co/blog/embedding-quantization",
+  "verdict": "ok"
+ },
+ "c2_lazygraphrag": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://www.microsoft.com/en-us/research/blog/lazygraphrag/",
+  "verdict": "ok"
+ },
+ "c2_notion_vec": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "c2_tpuf_ann3": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://turbopuffer.com/blog/ann-v3",
+  "verdict": "ok"
+ },
+ "c2_tpuf_arch": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://turbopuffer.com/docs/architecture",
+  "verdict": "ok"
+ },
+ "p26_agentonto": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.23317",
+  "verdict": "ok"
+ },
+ "p26_aquillm": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.08883",
+  "verdict": "ok"
+ },
+ "p26_clm": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.04377",
+  "verdict": "ok"
+ },
+ "p26_ctxgraph": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2607.07721",
+  "verdict": "ok"
+ },
+ "p26_drac": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.24220",
+  "verdict": "ok"
+ },
+ "p26_egc": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.19836",
+  "verdict": "ok"
+ },
+ "p26_infra": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.05510",
+  "verdict": "ok"
+ },
+ "p26_kas": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.25991",
+  "verdict": "ok"
+ },
+ "p26_kcis": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2607.02609",
+  "verdict": "ok"
+ },
+ "p26_kupas": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.37673",
+  "verdict": "ok"
+ },
+ "p26_lace": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.03201",
+  "verdict": "ok"
+ },
+ "p26_linkedin": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.10224",
+  "verdict": "ok"
+ },
+ "p26_memleak": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.04195",
+  "verdict": "ok"
+ },
+ "p26_moss": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2607.04391",
+  "verdict": "ok"
+ },
+ "p26_myskill": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.09608",
+  "verdict": "ok"
+ },
+ "p26_onto": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.13662",
+  "verdict": "ok"
+ },
+ "p26_org": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.32851",
+  "verdict": "ok"
+ },
+ "p26_praxis": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.19784",
+  "verdict": "ok"
+ },
+ "p26_refind": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.12888",
+  "verdict": "ok"
+ },
+ "p26_retail": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.25096",
+  "verdict": "ok"
+ },
+ "p26_scair": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2607.22571",
+  "verdict": "ok"
+ },
+ "p26_unidata": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.27257",
+  "verdict": "ok"
+ },
+ "p26b_acm": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2607.21503",
+  "verdict": "ok"
+ },
+ "p26b_akasic": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.25563",
+  "verdict": "ok"
+ },
+ "p26b_ground": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.11060",
+  "verdict": "ok"
+ },
+ "p26b_kl": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2604.11364",
+  "verdict": "ok"
+ },
+ "p26b_sap": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2608.00122",
+  "verdict": "ok"
+ },
+ "p26b_secbrain": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.12540",
+  "verdict": "ok"
+ },
+ "p_a-mem": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2502.12110",
+  "verdict": "ok"
+ },
+ "p_acorn": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2403.04871",
+  "verdict": "ok"
+ },
+ "p_adaptive-rag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2403.14403",
+  "verdict": "ok"
+ },
+ "p_afterdeletebench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2610.31366",
+  "verdict": "ok"
+ },
+ "p_agentic-rag-survey": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2501.09136",
+  "verdict": "ok"
+ },
+ "p_agenticrag-enterprise": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2605.05538",
+  "verdict": "ok"
+ },
+ "p_aim-memory": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2609.12320",
+  "verdict": "ok"
+ },
+ "p_anatomy-mem": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2602.19320",
+  "verdict": "ok"
+ },
+ "p_aubench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2610.17659",
+  "verdict": "ok"
+ },
+ "p_bemula": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2610.18052",
+  "verdict": "ok"
+ },
+ "p_bm25-to-crag": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2604.01733",
+  "verdict": "ok"
+ },
+ "p_camel": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2503.18813",
+  "verdict": "ok"
+ },
+ "p_case-judge": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2602.20379",
+  "verdict": "ok"
+ },
+ "p_codeskill": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2605.25430",
+  "verdict": "ok"
+ },
+ "p_colbert-plaid": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2205.09707",
+  "verdict": "ok"
+ },
+ "p_copilot-qualitative": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2503.17661",
+  "verdict": "ok"
+ },
+ "p_copilot-survey-research-org": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.18576",
+  "verdict": "ok"
+ },
+ "p_crag-bench": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2406.04744",
+  "verdict": "ok"
+ },
+ "p_deep-search-enterprise": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2506.23139",
+  "verdict": "ok"
+ },
+ "p_dfams": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2508.20353",
+  "verdict": "ok"
+ },
+ "p_direct-corpus": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2605.05242",
+  "verdict": "ok"
+ },
+ "p_drbench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2510.00172",
+  "verdict": "ok"
+ },
+ "p_ema-filtered": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2606.00734",
+  "verdict": "ok"
+ },
+ "p_embedding-inference-attack": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2607.01276",
+  "verdict": "ok"
+ },
+ "p_embedding-inversion": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2310.06816",
+  "verdict": "ok"
+ },
+ "p_enterprise-kg-activity": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2503.07993",
+  "verdict": "ok"
+ },
+ "p_er-in-practice": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2607.26298",
+  "verdict": "ok"
+ },
+ "p_event-baseline": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2511.17208",
+  "verdict": "ok"
+ },
+ "p_evermembench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.01313",
+  "verdict": "ok"
+ },
+ "p_exec-state-unlearning": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2609.04875",
+  "verdict": "ok"
+ },
+ "p_extraction-bench": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2602.09319",
+  "verdict": "ok"
+ },
+ "p_facts-rag": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2407.07858",
+  "verdict": "ok"
+ },
+ "p_fedrag-mapping": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2505.18906",
+  "verdict": "ok"
+ },
+ "p_filtered-stale": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.15130",
+  "verdict": "ok"
+ },
+ "p_freshdiskann": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2105.09613",
+  "verdict": "ok"
+ },
+ "p_freshllms": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2310.03214",
+  "verdict": "ok"
+ },
+ "p_generative-agents": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2304.03442",
+  "verdict": "ok"
+ },
+ "p_ghost-vectors": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2606.18497",
+  "verdict": "ok"
+ },
+ "p_graphrag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2404.16130",
+  "verdict": "ok"
+ },
+ "p_hipporag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2405.14831",
+  "verdict": "ok"
+ },
+ "p_hipporag2": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2502.14802",
+  "verdict": "ok"
+ },
+ "p_indirect-injection": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2302.12173",
+  "verdict": "ok"
+ },
+ "p_injection-firewalls": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2510.05244",
+  "verdict": "ok"
+ },
+ "p_interrogation-attack": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2502.00306",
+  "verdict": "ok"
+ },
+ "p_ip-diskann": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2502.13826",
+  "verdict": "ok"
+ },
+ "p_keyword-agentic": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.23368",
+  "verdict": "ok"
+ },
+ "p_lightrag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2410.05779",
+  "verdict": "ok"
+ },
+ "p_livemcpbench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2508.01780",
+  "verdict": "ok"
+ },
+ "p_livevectorlake": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2601.05270",
+  "verdict": "ok"
+ },
+ "p_locomo-plus": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.10715",
+  "verdict": "ok"
+ },
+ "p_lost-middle": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2307.03172",
+  "verdict": "ok"
+ },
+ "p_mcp-atlas": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.00933",
+  "verdict": "ok"
+ },
+ "p_mcp-audit": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2603.21641",
+  "verdict": "ok"
+ },
+ "p_mcp-enterprise": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2504.08623",
+  "verdict": "ok"
+ },
+ "p_mcp-tdp": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2605.24069",
+  "verdict": "ok"
+ },
+ "p_mcptox": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2508.14925",
+  "verdict": "ok"
+ },
+ "p_mem0": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2504.19413",
+  "verdict": "ok"
+ },
+ "p_memgpt": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2310.08560",
+  "verdict": "ok"
+ },
+ "p_memory-age": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2512.13564",
+  "verdict": "ok"
+ },
+ "p_memory-security-survey": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2604.16548",
+  "verdict": "ok"
+ },
+ "p_mextra": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2502.13172",
+  "verdict": "ok"
+ },
+ "p_multi-camel": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2610.05640",
+  "verdict": "ok"
+ },
+ "p_multisource-agentic": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2610.25096",
+  "verdict": "ok"
+ },
+ "p_multitenant-rag": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2605.05287",
+  "verdict": "ok"
+ },
+ "p_oob-adaptive-eval": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2606.26479",
+  "verdict": "ok"
+ },
+ "p_participant-acl": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2509.14608",
+  "verdict": "ok"
+ },
+ "p_pisas": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2607.05318",
+  "verdict": "ok"
+ },
+ "p_poisoned-rag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2402.07867",
+  "verdict": "ok"
+ },
+ "p_policy-aware-vector-search": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2606.19803",
+  "verdict": "ok"
+ },
+ "p_rag-orig": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2005.11401",
+  "verdict": "ok"
+ },
+ "p_rag-privacy": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2402.16893",
+  "verdict": "ok"
+ },
+ "p_ragas": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2309.15217",
+  "verdict": "ok"
+ },
+ "p_ragroute": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2502.19280",
+  "verdict": "ok"
+ },
+ "p_recon-bench": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2607.16716",
+  "verdict": "ok"
+ },
+ "p_search-r1": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2503.09516",
+  "verdict": "ok"
+ },
+ "p_secure-rag-review": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2603.21654",
+  "verdict": "ok"
+ },
+ "p_self-rag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2310.11511",
+  "verdict": "ok"
+ },
+ "p_seven-failures": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2401.05856",
+  "verdict": "ok"
+ },
+ "p_spann": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2111.08566",
+  "verdict": "ok"
+ },
+ "p_spem": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2610.26995",
+  "verdict": "ok"
+ },
+ "p_stale-poison": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2609.31342",
+  "verdict": "ok"
+ },
+ "p_streaming-rag": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2508.05662",
+  "verdict": "ok"
+ },
+ "p_swe-chat": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2604.20779",
+  "verdict": "ok"
+ },
+ "p_temporal-validity": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2606.26511",
+  "verdict": "ok"
+ },
+ "p_topology-matters": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2512.04668",
+  "verdict": "ok"
+ },
+ "p_ucc-shared-state": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2604.01350",
+  "verdict": "ok"
+ },
+ "p_unims-rag": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2401.13256",
+  "verdict": "ok"
+ },
+ "p_zep": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/abs/2501.13956",
+  "verdict": "ok"
+ },
+ "p_zero2text": {
+  "code": 200,
+  "status": "verified",
+  "url": "https://arxiv.org/abs/2602.01757",
+  "verdict": "ok"
+ },
+ "pr_atlassian-rovo": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://support.atlassian.com/rovo/docs/manage-teamworkgraph-connectors/",
+  "verdict": "ok"
+ },
+ "pr_chatgpt-company-knowledge": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://help.openai.com/en/articles/10847137-chatgpt-apps-with-sync-faq",
+  "verdict": "ok"
+ },
+ "pr_claude-connectors": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities",
+  "verdict": "ok"
+ },
+ "pr_cognee": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.cognee.ai/build-an-ai-company-brain",
+  "verdict": "ok"
+ },
+ "pr_coveo": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.coveo.com/en/3246/",
+  "verdict": "ok"
+ },
+ "pr_databricks-lakehouse-federation": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.databricks.com/aws/en/query-federation/database-federation",
+  "verdict": "ok"
+ },
+ "pr_dust": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.dust.tt/docs/what-data-sources-can-be-connected-to-dust",
+  "verdict": "ok"
+ },
+ "pr_elastic": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.elastic.co/docs/reference/search-connectors/es-connectors-security",
+  "verdict": "ok"
+ },
+ "pr_gemini-enterprise": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.cloud.google.com/agentspace/docs/introduction-to-connectors-and-data-stores",
+  "verdict": "ok"
+ },
+ "pr_glean": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.glean.com/connectors/about",
+  "verdict": "ok"
+ },
+ "pr_guru": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://help.getguru.com/docs/linking-sources-for-guru-answers",
+  "verdict": "ok"
+ },
+ "pr_gyld": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://gyld.ai/blog/best-company-brain-software-in-2026-9-tools-that-give-ai-real-business-context",
+  "verdict": "ok"
+ },
+ "pr_m365-copilot": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/graph/connecting-external-content-connectors-overview",
+  "verdict": "ok"
+ },
+ "pr_moveworks": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.moveworks.com/ai-assistant/search-connectors",
+  "verdict": "ok"
+ },
+ "pr_notion-ai": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/help/enterprise-search",
+  "verdict": "ok"
+ },
+ "pr_pancake": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://kingy.ai/news/pancake-ai-review-the-slack-ai-cofounder-trying-to-make-startups-autonomous/",
+  "verdict": "ok"
+ },
+ "pr_perplexity-enterprise": {
+  "code": 404,
+  "status": "fetched",
+  "url": "https://intercom.help/perplexity-ai/en/collections/18799295-connectors-integrations",
+  "verdict": "dead"
+ },
+ "pr_salesforce-data360": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.salesforce.com/blog/unlock-trapped-data-in-your-data-lakes-introducing-zero-copy-file-federation-in-data-cloud/",
+  "verdict": "ok"
+ },
+ "pr_sana": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://support.sana.ai/en/articles/148543-integrations-101",
+  "verdict": "ok"
+ },
+ "pr_slack-ai": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.slack.dev/changelog/2026/02/17/slack-mcp",
+  "verdict": "ok"
+ },
+ "pr_supermemory-company-brain": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://supermemory.ai/changelog/introducing-company-brain/",
+  "verdict": "ok"
+ },
+ "pr_writer": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://support.writer.com/article/348-using-connectors",
+  "verdict": "ok"
+ },
+ "r_activepieces": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/activepieces/activepieces",
+  "verdict": "ok"
+ },
+ "r_agentgateway": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/agentgateway/agentgateway",
+  "verdict": "ok"
+ },
+ "r_airbyte": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/airbytehq/airbyte",
+  "verdict": "ok"
+ },
+ "r_airweave": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/airweave-ai/airweave",
+  "verdict": "ok"
+ },
+ "r_ankole": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/AgentBull/ankole",
+  "verdict": "ok"
+ },
+ "r_cerbos": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/cerbos/cerbos",
+  "verdict": "ok"
+ },
+ "r_cocoindex": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/cocoindex-io/cocoindex",
+  "verdict": "ok"
+ },
+ "r_cognee": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/topoteretes/cognee",
+  "verdict": "ok"
+ },
+ "r_composio": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/ComposioHQ/composio",
+  "verdict": "ok"
+ },
+ "r_contextforge": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/IBM/mcp-context-forge",
+  "verdict": "ok"
+ },
+ "r_debezium": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/debezium/debezium",
+  "verdict": "ok"
+ },
+ "r_dlt": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/dlt-hub/dlt",
+  "verdict": "ok"
+ },
+ "r_docker-mcp": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/docker/mcp-gateway",
+  "verdict": "ok"
+ },
+ "r_docling": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/docling-project/docling",
+  "verdict": "ok"
+ },
+ "r_elasticsearch": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/elastic/elasticsearch",
+  "verdict": "ok"
+ },
+ "r_fastmcp": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/PrefectHQ/fastmcp",
+  "verdict": "ok"
+ },
+ "r_graphiti": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/getzep/graphiti",
+  "verdict": "ok"
+ },
+ "r_graphrag": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/microsoft/graphrag",
+  "verdict": "ok"
+ },
+ "r_haystack": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/deepset-ai/haystack",
+  "verdict": "ok"
+ },
+ "r_khoj": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/khoj-ai/khoj",
+  "verdict": "ok"
+ },
+ "r_kombo-cb": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/kombohq/company-brain",
+  "verdict": "ok"
+ },
+ "r_lancedb": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/lancedb/lancedb",
+  "verdict": "ok"
+ },
+ "r_letta": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/letta-ai/letta",
+  "verdict": "ok"
+ },
+ "r_lightrag": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/HKUDS/LightRAG",
+  "verdict": "ok"
+ },
+ "r_llamaindex": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/run-llama/llama_index",
+  "verdict": "ok"
+ },
+ "r_mcp-gw-registry": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/agentic-community/mcp-gateway-registry",
+  "verdict": "ok"
+ },
+ "r_mcp-registry": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/modelcontextprotocol/registry",
+  "verdict": "ok"
+ },
+ "r_mcp-servers": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/modelcontextprotocol/servers",
+  "verdict": "ok"
+ },
+ "r_meltano": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/meltano/meltano",
+  "verdict": "ok"
+ },
+ "r_mem0": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/mem0ai/mem0",
+  "verdict": "ok"
+ },
+ "r_metorial": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/metorial/metorial",
+  "verdict": "ok"
+ },
+ "r_milvus": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/milvus-io/milvus",
+  "verdict": "ok"
+ },
+ "r_n8n": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/n8n-io/n8n",
+  "verdict": "ok"
+ },
+ "r_nango": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/NangoHQ/nango",
+  "verdict": "ok"
+ },
+ "r_onyx": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/onyx-dot-app/onyx",
+  "verdict": "ok"
+ },
+ "r_opa": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/open-policy-agent/opa",
+  "verdict": "ok"
+ },
+ "r_openfga": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/openfga/openfga",
+  "verdict": "ok"
+ },
+ "r_opensearch": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/opensearch-project/OpenSearch",
+  "verdict": "ok"
+ },
+ "r_pathway": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/pathwaycom/pathway",
+  "verdict": "ok"
+ },
+ "r_pgvector": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/pgvector/pgvector",
+  "verdict": "ok"
+ },
+ "r_pgvectorscale": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/timescale/pgvectorscale",
+  "verdict": "ok"
+ },
+ "r_pipedream": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/PipedreamHQ/pipedream",
+  "verdict": "ok"
+ },
+ "r_qdrant": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/qdrant/qdrant",
+  "verdict": "ok"
+ },
+ "r_r2r": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/SciPhi-AI/R2R",
+  "verdict": "ok"
+ },
+ "r_ragflow": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/infiniflow/ragflow",
+  "verdict": "ok"
+ },
+ "r_scout": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/agno-agi/scout",
+  "verdict": "ok"
+ },
+ "r_spicedb": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/authzed/spicedb",
+  "verdict": "ok"
+ },
+ "r_steampipe": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/turbot/steampipe",
+  "verdict": "ok"
+ },
+ "r_supermemory": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/supermemoryai/supermemory",
+  "verdict": "ok"
+ },
+ "r_supermemory-cb": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/supermemoryai/company-brain",
+  "verdict": "ok"
+ },
+ "r_temporal": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/temporalio/temporal",
+  "verdict": "ok"
+ },
+ "r_unstructured": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/Unstructured-IO/unstructured",
+  "verdict": "ok"
+ },
+ "r_vald": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/vdaas/vald",
+  "verdict": "ok"
+ },
+ "r_vespa": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/vespa-engine/vespa",
+  "verdict": "ok"
+ },
+ "r_weaviate": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/weaviate/weaviate",
+  "verdict": "ok"
+ },
+ "r_zilobase": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://github.com/zilobase/zilobase",
+  "verdict": "ok"
+ },
+ "t_t01": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/graph/api/resources/subscription",
+  "verdict": "ok"
+ },
+ "t_t02": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/graph/delta-query-overview",
+  "verdict": "ok"
+ },
+ "t_t03": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://developers.google.com/workspace/drive/api/guides/push",
+  "verdict": "ok"
+ },
+ "t_t04": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://developers.google.com/workspace/drive/api/guides/manage-changes",
+  "verdict": "ok"
+ },
+ "t_t05": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
+  "verdict": "ok"
+ },
+ "t_t06": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://developer.atlassian.com/cloud/jira/platform/rate-limiting/",
+  "verdict": "ok"
+ },
+ "t_t07": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.slack.dev/changelog/2025/05/29/rate-limit-changes-for-non-marketplace-apps",
+  "verdict": "ok"
+ },
+ "t_t08": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://developers.notion.com/reference/request-limits",
+  "verdict": "ok"
+ },
+ "t_t09": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://www.stacksync.com/two-way-sync/smart-api-rate-limits.md",
+  "verdict": "ok"
+ },
+ "t_t10": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+  "verdict": "ok"
+ },
+ "t_t11": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
+  "verdict": "ok"
+ },
+ "t_t12": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
+  "verdict": "ok"
+ },
+ "t_t13": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://docs.slack.dev/changelog/2026/02/17/slack-mcp",
+  "verdict": "ok"
+ },
+ "t_t14": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://aem.dropbox.com/cms/content/dam/dropbox/warp/en-us/dash/Dash-Security-Architecture-Overview_Whitepaper.pdf",
+  "verdict": "ok"
+ },
+ "t_t15": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://arxiv.org/abs/2310.06816",
+  "verdict": "ok"
+ },
+ "t_t16": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://securiti.ai/summary-of-edpb-opinion-282024-concerning-ai-models-processing-of-personal-data",
+  "verdict": "ok"
+ },
+ "t_t17": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://tianpan.co/blog/2026-04-20-gdpr-llm-memory-erasure-vector-database",
+  "verdict": "ok"
+ },
+ "t_t18": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
+  "verdict": "ok"
+ },
+ "t_t19": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
+  "verdict": "ok"
+ },
+ "t_t20": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.glean.com/blog/using-our-identity-schema-to-deliver-personalized-permissions-aware-results",
+  "verdict": "ok"
+ },
+ "t_t21": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
+  "verdict": "ok"
+ },
+ "t_t22": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://wavect.io/blog/rag-permissions-sharepoint-confluence-drive/",
+  "verdict": "ok"
+ },
+ "t_t23": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://www.descope.com/blog/post/rebac-rag",
+  "verdict": "ok"
+ },
+ "t_t24": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+  "verdict": "ok"
+ },
+ "t_t25": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://docs.slack.dev/ai/slack-mcp-server/",
+  "verdict": "ok"
+ },
+ "t_t26": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/news/contextual-retrieval",
+  "verdict": "ok"
+ },
+ "t_t27": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/news/contextual-retrieval",
+  "verdict": "ok"
+ },
+ "t_t28": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://learn.vespa.ai/vector-search/hybrid-search",
+  "verdict": "ok"
+ },
+ "t_t29": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://mongodb.com/company/blog/product-release-announcements/rerank-2-5-and-rerank-2-5-lite-instruction-following-rerankers",
+  "verdict": "ok"
+ },
+ "t_t30": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
+  "verdict": "ok"
+ },
+ "t_t31": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://glean.com/resources/glean-knowledge-graph",
+  "verdict": "ok"
+ },
+ "t_t32": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+  "verdict": "ok"
+ },
+ "t_t33": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://developers.openai.com/api/docs/guides/tools-file-search",
+  "verdict": "ok"
+ },
+ "t_t34": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
+  "verdict": "ok"
+ },
+ "t_t35": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://turbopuffer.com/docs/limits",
+  "verdict": "ok"
+ },
+ "t_t36": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://turbopuffer.com/docs/architecture",
+  "verdict": "ok"
+ },
+ "t_t37": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://turbopuffer.com/pricing",
+  "verdict": "ok"
+ },
+ "t_t38": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.pinecone.io/blog/serverless-architecture/",
+  "verdict": "ok"
+ },
+ "t_t39": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://docs.pinecone.io/guides/manage-cost/understanding-cost",
+  "verdict": "ok"
+ },
+ "t_t40": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.elastic.co/search-labs/blog/elasticsearch-bbq-vs-opensearch-faiss",
+  "verdict": "ok"
+ },
+ "t_t41": {
+  "code": 404,
+  "status": "search-snippet",
+  "url": "https://www.elastic.co/search-labs/en/blog/bit-vectors-elasticsearch-bbq-vs-pq",
+  "verdict": "dead"
+ },
+ "t_t42": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "t_t43": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "t_t44": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "t_t45": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "t_t46": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "t_t47": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://developers.glean.com/libraries/indexing-sdk/",
+  "verdict": "ok"
+ },
+ "t_t48": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://www.designgurus.io/answers/detail/what-to-expect-in-the-glean-system-design-interview",
+  "verdict": "ok"
+ },
+ "t_t49": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
+  "verdict": "ok"
+ },
+ "t_t50": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
+  "verdict": "ok"
+ },
+ "t_t51": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+  "verdict": "ok"
+ },
+ "t_t52": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://arxiv.org/html/2509.10540v1",
+  "verdict": "ok"
+ },
+ "t_t53": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+  "verdict": "ok"
+ },
+ "t_t54": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/graph/api/resources/subscription",
+  "verdict": "ok"
+ },
+ "t_t55": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://learn.microsoft.com/en-us/graph/delta-query-overview",
+  "verdict": "ok"
+ },
+ "t_t56": {
+  "code": 200,
+  "status": "search-snippet",
+  "url": "https://tianpan.co/blog/2026/04/17/vector-store-access-control-rag-rls",
+  "verdict": "ok"
+ },
+ "t_t57": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://turbopuffer.com/docs/architecture",
+  "verdict": "ok"
+ },
+ "t_t58": {
+  "code": 200,
+  "status": "fetched",
+  "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-eligibility": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-exclusions": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-keys": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-rate": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-scopes": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_anthropic-compliance-sync": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
+  "verdict": "ok"
+ },
+ "x_cap_claude-code-transcripts": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://code.claude.com/docs/en/hooks",
+  "verdict": "ok"
+ },
+ "x_cap_codex-hooks-otel": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://learn.chatgpt.com/codex",
+  "verdict": "ok"
+ },
+ "x_cap_codex-rollout-files": {
+  "code": 404,
+  "status": "snippet",
+  "url": "https://codex.danielvaughan.com/2026/04/11/codex-cli-session-lifecycle-resume-fork-rollouts",
+  "verdict": "dead"
+ },
+ "x_cap_cursor-analytics-api": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://cursor.com/docs/account/teams/analytics-api",
+  "verdict": "ok"
+ },
+ "x_cap_cursor-audit": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://cursor.com/docs/enterprise/compliance-and-monitoring.md",
+  "verdict": "ok"
+ },
+ "x_cap_gemini-vault": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://support.google.com/vault",
+  "verdict": "ok"
+ },
+ "x_cap_github-copilot-audit": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-for-enterprise/review-audit-logs",
+  "verdict": "ok"
+ },
+ "x_cap_mcp-spec": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://modelcontextprotocol.io/specification",
+  "verdict": "ok"
+ },
+ "x_cap_ms-graph-ai-interaction": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://learn.microsoft.com/graph/api/resources/aiinteractionhistory",
+  "verdict": "ok"
+ },
+ "x_cap_openai-compliance-logs": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://anarlog.so/blog/chatgpt-data-retention-policy/",
+  "verdict": "ok"
+ },
+ "x_cap_openai-enterprise-privacy": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://openai.com/enterprise-privacy/",
+  "verdict": "ok"
+ },
+ "x_prod_agentops": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.agentops.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_atlassian-rovo": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.atlassian.com/software/rovo",
+  "verdict": "ok"
+ },
+ "x_prod_capacities": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://capacities.io/",
+  "verdict": "ok"
+ },
+ "x_prod_chatgpt-company-knowledge": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://help.openai.com/articles/12628342",
+  "verdict": "ok"
+ },
+ "x_prod_claude-code-analytics": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://code.claude.com/docs/en/analytics",
+  "verdict": "ok"
+ },
+ "x_prod_claude-enterprise": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://support.claude.com/en/articles/12138966-release-notes",
+  "verdict": "ok"
+ },
+ "x_prod_claude-session-sharing-tools": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://lethain.com/sharing-claude-transcripts/",
+  "verdict": "ok"
+ },
+ "x_prod_cognee": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.cognee.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_coveo": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.coveo.com/en/platform",
+  "verdict": "ok"
+ },
+ "x_prod_cursor-rules": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://cursor.com/docs/context/rules",
+  "verdict": "ok"
+ },
+ "x_prod_dust": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://dust.tt/",
+  "verdict": "ok"
+ },
+ "x_prod_elastic": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.elastic.co/enterprise-search",
+  "verdict": "ok"
+ },
+ "x_prod_entire": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://entire.com/?redirected_from=entire.io",
+  "verdict": "ok"
+ },
+ "x_prod_fathom": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://fathom.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_fireflies": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://fireflies.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_gemini-enterprise": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://docs.cloud.google.com/gemini/enterprise/docs/overview",
+  "verdict": "ok"
+ },
+ "x_prod_github-copilot-memory": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://docs.github.com/en/copilot/concepts/agents/copilot-memory",
+  "verdict": "ok"
+ },
+ "x_prod_github-copilot-spaces": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://docs.github.com/en/copilot/concepts/context/spaces",
+  "verdict": "ok"
+ },
+ "x_prod_glean": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.glean.com/product/overview",
+  "verdict": "ok"
+ },
+ "x_prod_granola": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.granola.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_guru": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.getguru.com/",
+  "verdict": "ok"
+ },
+ "x_prod_hebbia": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.hebbia.com/",
+  "verdict": "ok"
+ },
+ "x_prod_langfuse": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://langfuse.com/",
+  "verdict": "ok"
+ },
+ "x_prod_langmem": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://langchain-ai.github.io/langmem/",
+  "verdict": "ok"
+ },
+ "x_prod_langsmith": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.langchain.com/langsmith",
+  "verdict": "ok"
+ },
+ "x_prod_letta": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.letta.com/",
+  "verdict": "ok"
+ },
+ "x_prod_limitless-rewind": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.limitless.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_m365-copilot": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.microsoft.com/en-us/microsoft-365-copilot/pricing",
+  "verdict": "ok"
+ },
+ "x_prod_mem0": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://mem0.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_mendable": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.mendable.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_microsoft-recall": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://support.microsoft.com/en-us/windows/retrace-your-steps-with-recall-aa03f8a0-a78b-4b3e-b0a1-2eb8ac48701c",
+  "verdict": "ok"
+ },
+ "x_prod_moveworks": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.moveworks.com/us/en/platform",
+  "verdict": "ok"
+ },
+ "x_prod_notion": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.notion.com/product/ai",
+  "verdict": "ok"
+ },
+ "x_prod_notion-ai": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.notion.com/product/ai",
+  "verdict": "ok"
+ },
+ "x_prod_obsidian": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://obsidian.md/",
+  "verdict": "ok"
+ },
+ "x_prod_onyx": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://onyx.app/",
+  "verdict": "ok"
+ },
+ "x_prod_otter": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://otter.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_perplexity-enterprise": {
+  "code": 403,
+  "status": "ok",
+  "url": "https://www.perplexity.ai/enterprise",
+  "verdict": "blocked"
+ },
+ "x_prod_reflect": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://reflect.app/",
+  "verdict": "ok"
+ },
+ "x_prod_sana": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://sana.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_screenpipe": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://screenpipe.com/",
+  "verdict": "ok"
+ },
+ "x_prod_slack-ai": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://slack.com/features/ai",
+  "verdict": "ok"
+ },
+ "x_prod_supermemory": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://supermemory.ai/",
+  "verdict": "ok"
+ },
+ "x_prod_tana": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://tana.inc/",
+  "verdict": "ok"
+ },
+ "x_prod_vectara": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.vectara.com/",
+  "verdict": "ok"
+ },
+ "x_prod_warp": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.warp.dev/",
+  "verdict": "ok"
+ },
+ "x_prod_writer": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://writer.com/platform/",
+  "verdict": "ok"
+ },
+ "x_prod_zep-graphiti": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.getzep.com/",
+  "verdict": "ok"
+ },
+ "x_sa_ai-act-26": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://artificialintelligenceact.eu/article/26/",
+  "verdict": "ok"
+ },
+ "x_sa_betrvg": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://technologyquotient.freshfields.com/post/102jnt2/eu-ai-act-unpacked-17-the-role-of-employee-representatives",
+  "verdict": "ok"
+ },
+ "x_sa_betrvg-roedl": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://roedl.com/insights/ki-systeme-arbeitsverhaeltnis-betriebsrat",
+  "verdict": "ok"
+ },
+ "x_sa_dir-submit": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://claude.com/docs/connectors/building/submission",
+  "verdict": "ok"
+ },
+ "x_sa_dxt-allow": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://support.claude.com/en/articles/12592343-enabling-and-using-the-desktop-extension-allowlist",
+  "verdict": "ok"
+ },
+ "x_sa_embed-price": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://developers.openai.com/api/docs/models/text-embedding-3-small",
+  "verdict": "ok"
+ },
+ "x_sa_erasure": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://edpb.europa.eu/sites/default/files/article-60-final-decisions/summary/publishable_fr_2019-10_right_to_erasure_ignored_summarypublic.pdf",
+  "verdict": "ok"
+ },
+ "x_sa_glean-cmk": {
+  "code": 403,
+  "status": "snippet",
+  "url": "https://www.theladders.com/job/software-engineer-cloud-infrastructure-glean-san-francisco-ca_88164829",
+  "verdict": "blocked"
+ },
+ "x_sa_glean-dep": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://docs.glean.com/get-started/prepare/about-deployment",
+  "verdict": "ok"
+ },
+ "x_sa_glean-tenancy": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://help.glean.com/en/articles/10093412-glean-deployment-options",
+  "verdict": "ok"
+ },
+ "x_sa_ip-range": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://platform.claude.com/docs/en/api/ip-addresses",
+  "verdict": "ok"
+ },
+ "x_sa_ip-range-issue": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://github.com/anthropics/claude-ai-mcp/issues/422",
+  "verdict": "ok"
+ },
+ "x_sa_ip-range-net": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://claude.com/docs/claude-tag/admins/network-requirements",
+  "verdict": "ok"
+ },
+ "x_sa_local-mcp": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop",
+  "verdict": "ok"
+ },
+ "x_sa_pinecone": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://www.pinecone.io/pricing.md",
+  "verdict": "ok"
+ },
+ "x_sa_rag-leak": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://sol.sbc.org.br/index.php/sbseg_estendido/article/download/44552/44315/",
+  "verdict": "ok"
+ },
+ "x_sec_apple-notary": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution",
+  "verdict": "ok"
+ },
+ "x_sec_auth0-vault": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://auth0.com/docs/secure/call-apis-on-users-behalf/token-vault",
+  "verdict": "ok"
+ },
+ "x_sec_camel": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://arxiv.org/abs/2503.18813",
+  "verdict": "ok"
+ },
+ "x_sec_entra-consent": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent",
+  "verdict": "ok"
+ },
+ "x_sec_gitleaks": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://github.com/gitleaks/gitleaks",
+  "verdict": "ok"
+ },
+ "x_sec_glean-auth": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://developers.glean.com/get-started/authentication",
+  "verdict": "ok"
+ },
+ "x_sec_glean-perms": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://docs.glean.com/security/security-principles",
+  "verdict": "ok"
+ },
+ "x_sec_google-dwd": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://knowledge.workspace.google.com/admin/apps/control-api-access-with-domain-wide-delegation",
+  "verdict": "ok"
+ },
+ "x_sec_limitless": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://9to5mac.com/2025/12/05/rewind-limitless-meta-acquisition/",
+  "verdict": "ok"
+ },
+ "x_sec_mcp-auth": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization",
+  "verdict": "ok"
+ },
+ "x_sec_mcp-sec": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://modelcontextprotocol.io/specification/draft/basic/security_best_practices",
+  "verdict": "ok"
+ },
+ "x_sec_owasp-llm": {
+  "code": 403,
+  "status": "ok",
+  "url": "https://genai.owasp.org/llm-top-10/",
+  "verdict": "blocked"
+ },
+ "x_sec_owasp-llm06": {
+  "code": 403,
+  "status": "ok",
+  "url": "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/",
+  "verdict": "blocked"
+ },
+ "x_sec_owasp-llm08": {
+  "code": 403,
+  "status": "ok",
+  "url": "https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/",
+  "verdict": "blocked"
+ },
+ "x_sec_purview-copilot": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://learn.microsoft.com/en-us/purview/ai-m365-copilot-considerations",
+  "verdict": "ok"
+ },
+ "x_sec_recall-incident": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://www.bankinfosecurity.com/microsoft-recall-again-spills-secrets-a-31083",
+  "verdict": "ok"
+ },
+ "x_sec_recall-ms": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://learn.microsoft.com/en-us/windows/client-management/manage-recall",
+  "verdict": "ok"
+ },
+ "x_sec_rfc8693": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.rfc-editor.org/rfc/rfc8693",
+  "verdict": "ok"
+ },
+ "x_sec_rfc8707": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.rfc-editor.org/rfc/rfc8707",
+  "verdict": "ok"
+ },
+ "x_sec_rfc9700-refresh": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://www.rfc-editor.org/rfc/rfc9700",
+  "verdict": "ok"
+ },
+ "x_sec_slack-rotation": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://docs.slack.dev/authentication/using-token-rotation",
+  "verdict": "ok"
+ },
+ "x_sec_trifecta": {
+  "code": 200,
+  "status": "ok",
+  "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
+  "verdict": "ok"
+ },
+ "x_sec_vec2text": {
+  "code": 200,
+  "status": "snippet",
+  "url": "https://arxiv.org/pdf/2310.06816",
+  "verdict": "ok"
+ },
+ "x_meta_second-brain": {
+  "code": 403,
+  "status": "fetched",
+  "url": "https://medium.com/@AnalyticsAtMeta/how-we-built-an-ai-second-brain-for-60k-knowledge-workers-78c507dd795b",
+  "verdict": "blocked"
+ }
+}

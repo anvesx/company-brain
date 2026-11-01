@@ -1,0 +1,328 @@
+{
+ "so_admin": {
+  "milestone": "M1",
+  "effort_days": 4,
+  "depends_on": [
+   "so_oauth"
+  ],
+  "stack": [
+   {
+    "part": "web",
+    "pick": "FastAPI + Jinja2 templates",
+    "why": "one small server-rendered page; no SPA needed for a diff screen"
+   },
+   {
+    "part": "admin login",
+    "pick": "Keycloak (OIDC) realm role 'brain-admin'",
+    "why": "admin check is a role claim in the ID token; Ory is the alternative; check current docs for the claim path"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16, one row per (tenant_id, app_id) with a version column",
+    "why": "compare-and-set on version stops two admins overwriting each other"
+   },
+   {
+    "part": "catalog",
+    "pick": "YAML file per app in git, loaded at start",
+    "why": "read-only scopes reviewed in pull requests. Do NOT let an app declare its own scopes at runtime"
+   }
+  ],
+  "install": [
+   "pip install fastapi==0.115.* jinja2 psycopg[binary]==3.2.* pyyaml python-jose",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/consent/diff.py : pure set-difference function",
+   "brain/consent/routes.py : GET /consent/{app}, POST /consent/{app}/approve",
+   "brain/consent/catalog/*.yaml : read-only scopes per app",
+   "migrations/010_consent.sql : consent table"
+  ],
+  "schema": "CREATE TABLE consent (\n  tenant_id text NOT NULL,\n  app_id text NOT NULL,\n  mode text NOT NULL CHECK (mode IN ('user','app_only')),\n  approved_scopes text[] NOT NULL,\n  approver_id text NOT NULL,\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  review_due timestamptz NOT NULL,\n  version int NOT NULL DEFAULT 1,\n  PRIMARY KEY (tenant_id, app_id)\n);\nCREATE TABLE consent_audit (\n  id bigserial PRIMARY KEY, tenant_id text, app_id text, actor_id text,\n  decision text, diff_added text[], diff_removed text[], at timestamptz DEFAULT now()\n);",
+  "interface": "POST /consent/{app_id}/approve  body {tenant_id, requested_scopes[], nonce, expected_version}  -> 200 {consent_id, diff_added[], diff_removed[]} | 403 not_admin | 409 stale_version | 422 scope_not_in_catalog",
+  "code": "def decide(catalog, prev, requested, approver, requested_by, admins, mode):\n    # catalog: set of read-only scopes for the app; prev: approved set (empty on first connect)\n    req = set(requested)\n    outside = req - catalog\n    if outside:\n        # reject the whole request, never drop scopes silently\n        return Deny('scope_not_in_catalog', sorted(outside))\n    if approver not in admins:\n        return Deny('not_admin', [])\n    if mode == 'app_only' and approver == requested_by:\n        return Deny('self_approval', [])   # tenant-wide grants need a second person\n    added, removed = req - prev, prev - req\n    return Approve(approved=sorted(req), added=sorted(added), removed=sorted(removed))\n\ndef approve(conn, tenant, app, d, approver, expected_version):\n    # compare-and-set: the tricky part. Two admins can approve at once.\n    cur = conn.execute('''UPDATE consent SET approved_scopes=%s, approver_id=%s,\n          approved_at=now(), review_due=now()+interval '180 days', version=version+1\n          WHERE tenant_id=%s AND app_id=%s AND version=%s''',\n          (d.approved, approver, tenant, app, expected_version))\n    if cur.rowcount == 0:\n        raise StaleVersion()   # second admin must re-read the diff and confirm again\n    audit(conn, tenant, app, approver, 'approve', d.added, d.removed)",
+  "steps": [
+   {
+    "do": "Create the two tables and load the catalog YAML",
+    "done_when": "psql -c '\\d consent' lists 8 columns and the catalog loads 1 app"
+   },
+   {
+    "do": "Write decide() as a pure function with the 4 test cases from the card",
+    "done_when": "pytest tests/test_diff.py -q shows 4 passed"
+   },
+   {
+    "do": "Render the diff page with app name, publisher and a plain sentence per scope",
+    "done_when": "GET /consent/drive shows only the added scopes on a widening"
+   },
+   {
+    "do": "Wire approve with a single-use nonce (10 minute expiry) and compare-and-set",
+    "done_when": "a second POST with the same nonce returns 409 or 403"
+   },
+   {
+    "do": "Release the approved scope set to so_oauth or so_svc only after the row commits",
+    "done_when": "no token row exists in the vault before approve"
+   },
+   {
+    "do": "Add the 180 day review_due job that flags consent for re-approval",
+    "done_when": "a row with review_due in the past appears in the flagged list"
+   }
+  ],
+  "config": {
+   "CONSENT_SESSION_TTL_S": "900 // card default: voids the request after 15 minutes",
+   "APPROVAL_NONCE_TTL_S": "600 // single use, bound to the admin session",
+   "REVIEW_EVERY_DAYS": "180 // re-approve prompt",
+   "ADMIN_ROLE_CLAIM": "realm_access.roles // check the real claim path in your OIDC provider"
+  },
+  "verify": [
+   "pytest tests/test_diff.py -q  # 4 passed (first connect, widening, write scope refused, expired link)",
+   "curl -s -X POST localhost:8000/consent/drive/approve -d '{\"requested_scopes\":[\"files.write\"]}'  # 422 scope_not_in_catalog"
+  ],
+  "pitfalls": [
+   "Dropping unknown scopes silently makes the screen lie: reject the whole request instead",
+   "Vendor renames a scope and it looks like new access: keep an alias map in the catalog",
+   "Approver equals requester on a tenant-wide grant: enforce a second person in code, not in policy text"
+  ]
+ },
+ "so_oauth": {
+  "milestone": "M0",
+  "effort_days": 6,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "grant",
+    "pick": "Authorization code grant with PKCE (RFC 6749), via authlib",
+    "why": "the library handles state and code exchange; do not hand-roll redirects"
+   },
+   {
+    "part": "encryption",
+    "pick": "AES-256-GCM through the Python cryptography package, one data key per record",
+    "why": "envelope encryption as the card says"
+   },
+   {
+    "part": "key service",
+    "pick": "AWS KMS (one CMK per tenant) or HashiCorp Vault Transit",
+    "why": "KMS wraps the data key; the DB never sees a plain key. Do NOT use one global key"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "one ciphertext row per (tenant, user, app)"
+   }
+  ],
+  "install": [
+   "pip install authlib==1.3.* cryptography boto3 psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "docker run -d -p 4566:4566 localstack/localstack  # local KMS for tests"
+  ],
+  "layout": [
+   "brain/vault/store.py : put_token, get_token",
+   "brain/vault/crypto.py : seal and open with the KMS-wrapped data key",
+   "brain/vault/refresh.py : scheduled refresh with jitter",
+   "migrations/011_vault.sql : the vault table"
+  ],
+  "schema": "CREATE TABLE vault (\n  tenant_id text NOT NULL,\n  user_id text NOT NULL,\n  app_id text NOT NULL,\n  wrapped_dek bytea NOT NULL,\n  ciphertext bytea NOT NULL,\n  nonce bytea NOT NULL,\n  expires_at timestamptz NOT NULL,\n  version int NOT NULL DEFAULT 1,\n  PRIMARY KEY (tenant_id, user_id, app_id)\n);",
+  "interface": "def get_access_token(tenant_id: str, user_id: str, app_id: str) -> AccessToken  # {token, expires_at, scopes}; raises NotConnected | Revoked",
+  "code": "import os\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\n\ndef seal(kms, tenant, user, app, token_json: bytes):\n    # fresh data key per record; KMS wraps it under the tenant key\n    dek = AESGCM.generate_key(bit_length=256)\n    nonce = os.urandom(12)\n    aad = f'{tenant}|{user}|{app}'.encode()   # binds the ciphertext to its owner\n    ct = AESGCM(dek).encrypt(nonce, token_json, aad)\n    wrapped = kms.encrypt(KeyId=f'alias/brain-{tenant}', Plaintext=dek)['CiphertextBlob']\n    return wrapped, ct, nonce\n\ndef open_(kms, tenant, user, app, wrapped, ct, nonce):\n    dek = kms.decrypt(CiphertextBlob=wrapped, KeyId=f'alias/brain-{tenant}')['Plaintext']\n    aad = f'{tenant}|{user}|{app}'.encode()\n    try:\n        return AESGCM(dek).decrypt(nonce, ct, aad)  # wrong owner => InvalidTag\n    finally:\n        dek = None   # drop the reference; never log it\n\ndef next_refresh(expires_at, now, rnd):\n    # refresh 300 s early, jitter +-60 s so a thousand tokens do not refresh together\n    return expires_at - 300 + rnd.uniform(-60, 60)",
+  "steps": [
+   {
+    "do": "Create the vault table and one KMS key alias per test tenant",
+    "done_when": "psql shows vault with 8 columns; aws kms list-aliases shows alias/brain-t1"
+   },
+   {
+    "do": "Write seal and open_ with the owner as associated data",
+    "done_when": "unit test round-trips a token"
+   },
+   {
+    "do": "Prove cross-tenant reads fail: decrypt tenant A row with tenant B inputs",
+    "done_when": "test expects InvalidTag"
+   },
+   {
+    "do": "Implement the callback route: check state, exchange code, seal, store",
+    "done_when": "one real or mocked callback creates 1 vault row"
+   },
+   {
+    "do": "Add the refresh job (300 s early, 60 s jitter) and mark Revoked on invalid_grant",
+    "done_when": "a forced expiry produces a new expires_at"
+   },
+   {
+    "do": "Check no plaintext token in logs or DB",
+    "done_when": "grep of logs and a pg_dump for the test token finds 0 matches"
+   }
+  ],
+  "config": {
+   "KMS_KEY_ALIAS_PREFIX": "alias/brain- // one key per tenant",
+   "REFRESH_SKEW_S": "300 // card default",
+   "REFRESH_JITTER_S": "60 // spreads refresh load",
+   "DEK_CACHE_S": "60 // in-process only, never shared",
+   "KEK_ROTATION_DAYS": "365 // card default"
+  },
+  "verify": [
+   "pytest tests/test_vault.py -q  # round trip passes, cross-tenant decrypt raises InvalidTag",
+   "psql -c \"select count(*) from vault where ciphertext::text like '%ya29%'\"  # 0"
+  ],
+  "pitfalls": [
+   "Reusing a nonce with the same data key breaks GCM: a fresh key and a random 12 byte nonce per record",
+   "Leaving out the associated data lets a row be copied to another user and still decrypt",
+   "Logging the token response during debugging leaks the crown jewel: redact the token fields in the HTTP client log"
+  ]
+ },
+ "so_svc": {
+  "milestone": "M0",
+  "effort_days": 3,
+  "depends_on": [
+   "so_oauth"
+  ],
+  "stack": [
+   {
+    "part": "grant type",
+    "pick": "Client credentials or vendor domain-wide delegation, per app",
+    "why": "what exists differs per vendor; check current docs for each app"
+   },
+   {
+    "part": "catalog",
+    "pick": "YAML read-only scope catalog shared with so_admin",
+    "why": "one source of truth for allowed scopes"
+   },
+   {
+    "part": "token store",
+    "pick": "Reuse the so_oauth vault code",
+    "why": "do NOT write a second encryption path"
+   },
+   {
+    "part": "audit",
+    "pick": "Postgres append-only table",
+    "why": "one row per issue with purpose and caller"
+   }
+  ],
+  "install": [
+   "pip install pyyaml psycopg[binary]==3.2.* httpx",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/vault/app_only.py : issue_app_token",
+   "brain/vault/purpose.py : the allowed purpose set",
+   "migrations/012_token_audit.sql : audit table"
+  ],
+  "schema": "CREATE TABLE token_audit (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  app_id text NOT NULL,\n  token_class text NOT NULL CHECK (token_class IN ('app_only','user_obo')),\n  purpose text NOT NULL,\n  caller text NOT NULL,\n  issued_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def issue_app_token(tenant_id: str, app_id: str, purpose: str, caller: str) -> AppToken  # {token, expires_at, scopes, token_class='app_only'}; raises PurposeDenied | ScopeOutsideCatalog",
+  "code": "ALLOWED = {'sync', 'sweep', 'acl_sync', 'backfill'}\nDENIED = {'query', 'answer'}\n\ndef issue_app_token(vault, catalog, consents, audit, tenant, app, purpose, caller):\n    # the tricky part: a user question must never run on the all-seeing app token\n    if purpose in DENIED or purpose not in ALLOWED:\n        audit(tenant, app, 'app_only', purpose, caller, ok=False)\n        raise PurposeDenied(purpose)\n    consent = consents.get(tenant, app)          # approved by an admin in so_admin\n    if consent is None or consent.mode != 'app_only':\n        raise NotConsented(tenant, app)\n    readonly = set(catalog.read_only_scopes(app))\n    requested = set(consent.approved_scopes)\n    if requested - readonly:                      # catalog drifted after approval\n        raise ScopeOutsideCatalog(sorted(requested - readonly))\n    tok = vault.get_or_refresh(tenant, '__app__', app, scopes=sorted(requested & readonly))\n    audit(tenant, app, 'app_only', purpose, caller, ok=True)\n    return AppToken(tok.token, tok.expires_at, sorted(requested & readonly), 'app_only')",
+  "steps": [
+   {
+    "do": "Create token_audit and load the catalog",
+    "done_when": "table exists and catalog returns scopes for 1 app"
+   },
+   {
+    "do": "Write issue_app_token with the purpose check first",
+    "done_when": "tests for query and answer raise PurposeDenied"
+   },
+   {
+    "do": "Reuse the vault with a fixed user id '__app__' for app tokens",
+    "done_when": "one vault row appears after the first issue"
+   },
+   {
+    "do": "Add the catalog drift check against the consent row",
+    "done_when": "test with an extra scope raises ScopeOutsideCatalog"
+   },
+   {
+    "do": "Audit every call, allowed or denied",
+    "done_when": "token_audit row count equals the number of calls in the test"
+   }
+  ],
+  "config": {
+   "ALLOWED_PURPOSES": "sync,sweep,acl_sync,backfill // card default",
+   "TOKEN_LIFETIME": "vendor default, usually about 1 hour // refreshed by the vault",
+   "CATALOG_REVIEW_DAYS": "180 // card default"
+  },
+  "verify": [
+   "pytest tests/test_app_only.py -q  # purpose denied for query and answer, issued for sync",
+   "psql -c \"select purpose,count(*) from token_audit group by 1\"  # one row per purpose used in tests"
+  ],
+  "pitfalls": [
+   "Caller passes purpose as a free string and typos fall through: allow-list, never deny-list only",
+   "Sharing the app token with the query path hands every user the admin's view: check purpose before touching the vault",
+   "Catalog edited after approval silently widens access: re-check the intersection on every issue"
+  ]
+ },
+ "so_obo": {
+  "milestone": "M2",
+  "effort_days": 6,
+  "depends_on": [
+   "so_oauth",
+   "so_svc"
+  ],
+  "stack": [
+   {
+    "part": "exchange",
+    "pick": "RFC 8693 token exchange at the app's token endpoint; Microsoft on-behalf-of flow for Microsoft apps",
+    "why": "audience set with RFC 8707 resource; check each vendor's docs for support"
+   },
+   {
+    "part": "brain token issuer",
+    "pick": "Keycloak (token exchange feature, check current docs) or Ory Hydra",
+    "why": "issues the user's brain token that is the subject token"
+   },
+   {
+    "part": "HTTP",
+    "pick": "httpx with a 3 s timeout",
+    "why": "card default; fail fast"
+   },
+   {
+    "part": "cache",
+    "pick": "in-process TTLCache (cachetools)",
+    "why": "never write per-user tokens to a shared store; Do NOT use Redis for this"
+   }
+  ],
+  "install": [
+   "pip install httpx cachetools authlib==1.3.*",
+   "docker run -d -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/obo/exchange.py : exchange()",
+   "brain/obo/breaker.py : failure circuit breaker",
+   "tests/test_obo.py : audience and expiry cases"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"ExchangeRequest\",\n  \"type\": \"object\",\n  \"required\": [\"tenant_id\",\"user_id\",\"app_id\",\"resource_uri\",\"scopes\",\"subject_token\"],\n  \"properties\": {\n    \"tenant_id\": {\"type\":\"string\"}, \"user_id\": {\"type\":\"string\"}, \"app_id\": {\"type\":\"string\"},\n    \"resource_uri\": {\"type\":\"string\",\"format\":\"uri\"},\n    \"scopes\": {\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":1},\n    \"subject_token\": {\"type\":\"string\"}\n  }\n}",
+  "interface": "async def exchange(req: ExchangeRequest) -> UserAppToken  # {token, audience, expires_at, scopes, user_id}; raises NotConnected | Revoked | UpstreamDown",
+  "code": "import time\n_cache = {}   # key -> (token, exp); TTL is per entry, so a plain dict with a check\n\nasync def exchange(req, vault, http, breaker, now=time.time):\n    key = (req.user_id, req.app_id, req.resource_uri, tuple(sorted(req.scopes)))\n    hit = _cache.get(key)\n    if hit and hit[1] > now():\n        return hit[0]\n    if not vault.is_connected(req.tenant_id, req.user_id, req.app_id):\n        raise NotConnected()\n    if breaker.open(req.app_id):\n        raise UpstreamDown()\n    r = await http.post(vault.token_endpoint(req.app_id), timeout=3.0, data={\n        'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange',\n        'subject_token': req.subject_token,\n        'subject_token_type': 'urn:ietf:params:oauth:token-type:access_token',\n        'resource': req.resource_uri,          # RFC 8707 audience binding\n        'scope': ' '.join(req.scopes)})\n    if r.status_code != 200:\n        breaker.fail(req.app_id)\n        raise Revoked() if r.json().get('error') == 'invalid_grant' else UpstreamDown()\n    body = r.json()\n    tok = UserAppToken(body['access_token'], req.resource_uri,\n                       now() + body['expires_in'], req.scopes, req.user_id)\n    ttl = min(body['expires_in'] - 60, 300)    # tricky part: cap the cache, keep a 60 s margin\n    _cache[key] = (tok, now() + ttl)\n    return tok",
+  "steps": [
+   {
+    "do": "Stand up a test issuer that supports token exchange",
+    "done_when": "a curl exchange returns a token with the requested audience"
+   },
+   {
+    "do": "Write exchange() with the audience and scopes in the request",
+    "done_when": "unit test sees resource set on the outgoing call"
+   },
+   {
+    "do": "Add the cache with ttl min(expiry minus 60 s, 300 s)",
+    "done_when": "second call inside the ttl makes 0 upstream calls"
+   },
+   {
+    "do": "Add the breaker: 5 failures in 30 s opens for 60 s",
+    "done_when": "6th call in a failing test returns UpstreamDown without a network call"
+   },
+   {
+    "do": "Prove a token for resource A is refused at resource B",
+    "done_when": "integration test gets 401 at the wrong audience"
+   },
+   {
+    "do": "Audit each exchange without logging the token",
+    "done_when": "audit row has user and app, grep for the token finds 0"
+   }
+  ],
+  "config": {
+   "EXCHANGE_TIMEOUT_S": "3 // card default",
+   "CACHE_TTL_CAP_S": "300 // short enough that revocation bites fast",
+   "EXPIRY_MARGIN_S": "60 // never hand out a nearly dead token",
+   "BREAKER": "5 fails / 30 s, open 60 s // card default"
+  },
+  "verify": [
+   "pytest tests/test_obo.py -q  # audience bound, cache hit, breaker open, all pass",
+   "grep -r \"subject_token\" logs/ | wc -l  # 0"
+  ],
+  "pitfalls": [
+   "Forwarding the user's brain token to the app is token passthrough, which the MCP spec forbids: always exchange",
+   "Caching by user only returns a token for the wrong app or scope: key on all four fields",
+   "Treating invalid_grant as a transient error retries forever: map it to Revoked and ask the user to reconnect"
+  ]
+ }
+}

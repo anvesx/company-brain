@@ -1,0 +1,399 @@
+{
+ "op_lag": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_fresh"
+  ],
+  "stack": [
+   {
+    "part": "metrics",
+    "pick": "OpenTelemetry SDK with Prometheus",
+    "why": "gauges per (tenant, source); check current docs for exporter setup"
+   },
+   {
+    "part": "quantiles",
+    "pick": "Python statistics plus a sliding window; t-digest if volume is high",
+    "why": "exact sorted buffer is fine under about 100k changes per window"
+   },
+   {
+    "part": "alerts",
+    "pick": "Alertmanager or the observability stack's alert rules",
+    "why": "pages on the burn, not on single samples"
+   },
+   {
+    "part": "do not pick",
+    "pick": "average lag",
+    "why": "one stuck document hides inside a healthy mean; use p95"
+   }
+  ],
+  "install": [
+   "pip install opentelemetry-sdk opentelemetry-exporter-prometheus psycopg[binary]",
+   "docker run -d --name prom -p 9090:9090 prom/prometheus"
+  ],
+  "layout": [
+   "brain/ops/lag.py : window, percentile and alert rule",
+   "brain/ops/lag_targets.sql : target table",
+   "tests/test_lag.py : percentile and silence tests"
+  ],
+  "schema": "CREATE TABLE lag_target (\n  tenant_id text NOT NULL,\n  source text NOT NULL,\n  target_s int NOT NULL,\n  PRIMARY KEY (tenant_id, source)\n);\nCREATE TABLE lag_sample (\n  tenant_id text NOT NULL,\n  source text NOT NULL,\n  ts timestamptz NOT NULL,\n  p50_s real, p95_s real, max_s real, n int NOT NULL,\n  PRIMARY KEY (tenant_id, source, ts)\n);",
+  "interface": "def record_change(tenant: str, source: str, source_modified_at: float, indexed_at: float) -> None\ndef tick(now: float) -> list[Alert]  # every 60 s; Alert(source, lag_p95_s, target_s, burn)",
+  "code": "import math, collections\n\nWIN = 900  # 15 min window of samples\n\nclass LagMonitor:\n    def __init__(self, targets):\n        self.win = collections.defaultdict(collections.deque)  # (tenant, source) -> deque[(t, lag)]\n        self.last_event = {}\n        self.over = collections.defaultdict(int)               # consecutive minutes over 2x target\n        self.targets = targets\n\n    def record_change(self, tenant, source, modified_at, indexed_at, now):\n        lag = max(0.0, indexed_at - modified_at)\n        self.win[(tenant, source)].append((now, lag))\n        self.last_event[(tenant, source)] = now\n\n    def tick(self, now):\n        alerts = []\n        for key, dq in self.win.items():\n            while dq and dq[0][0] < now - WIN:\n                dq.popleft()\n            target = self.targets[key]\n            if not dq:\n                # Tricky part: no samples is not zero lag. Silence past 2x target is itself an alert.\n                if now - self.last_event.get(key, 0) > 2 * target:\n                    alerts.append(Alert(key, None, target, \"silent\"))\n                continue\n            lags = sorted(l for _, l in dq)\n            p95 = lags[math.ceil(0.95 * len(lags)) - 1]\n            self.over[key] = self.over[key] + 1 if p95 > 2 * target else 0\n            if self.over[key] >= 5:\n                alerts.append(Alert(key, p95, target, p95 / target))\n        return alerts",
+  "steps": [
+   {
+    "do": "Create the target and sample tables",
+    "done_when": "\\dt shows lag_target and lag_sample"
+   },
+   {
+    "do": "Compute lag from the source's own modified time",
+    "done_when": "unit test: modified 10:00:00, indexed 10:00:42 gives lag 42"
+   },
+   {
+    "do": "Implement the sliding window and p95",
+    "done_when": "test: 100 lags 1..100 give p95 95"
+   },
+   {
+    "do": "Add silence detection from the heartbeat",
+    "done_when": "test: no events for 2x target raises a silent alert"
+   },
+   {
+    "do": "Export gauges to Prometheus every 60 s",
+    "done_when": "curl localhost:9464/metrics shows brain_lag_p95_seconds with tenant and source labels"
+   },
+   {
+    "do": "Send alerts to the connector health breaker",
+    "done_when": "test: 5 minutes over 2x target calls op_health once"
+   }
+  ],
+  "config": {
+   "WINDOW_S": "900 // enough samples for a stable p95",
+   "ALERT_MULT": "2 // alert at twice the stated target",
+   "ALERT_MINUTES": "5 // ignore blips",
+   "SAMPLE_KEEP_DAYS": "30 // matches the card's retention"
+  },
+  "verify": [
+   "pytest tests/test_lag.py -q  # all passed",
+   "curl -s localhost:9464/metrics | grep brain_lag_p95  # one line per source"
+  ],
+  "pitfalls": [
+   "Using the delivery time instead of the source modified time hides the source's own delay. Symptom: lag always looks tiny",
+   "A quiet source reports no samples and looks perfect. Symptom: a broken webhook goes unnoticed for days; the silence rule catches it",
+   "Clock differences between the app and the indexer produce negative lag; clamp at zero and log the offset"
+  ]
+ },
+ "op_audit": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_ptr",
+   "op_cov"
+  ],
+  "stack": [
+   {
+    "part": "sampling",
+    "pick": "Python random with a fixed seed per run, stored with the report",
+    "why": "a run can be repeated exactly"
+   },
+   {
+    "part": "live checks",
+    "pick": "the connector's on-behalf-of call from so_obo",
+    "why": "the audit must see what a user sees"
+   },
+   {
+    "part": "estimator",
+    "pick": "Chapman capture-recapture in plain Python",
+    "why": "no library needed; the formula is two lines"
+   },
+   {
+    "part": "do not pick",
+    "pick": "the Lincoln-Petersen form",
+    "why": "it divides by zero when no capture overlaps; Chapman adds one to each term"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] numpy",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/ops/audit.py : sample, probe, estimate",
+   "brain/ops/chapman.py : estimator and interval",
+   "migrations/050_audit.sql : report table",
+   "tests/test_chapman.py : estimator tests"
+  ],
+  "schema": "CREATE TABLE audit_report (\n  run_id uuid PRIMARY KEY,\n  tenant_id text NOT NULL,\n  source text NOT NULL,\n  seed bigint NOT NULL,\n  exist_rate real, version_match_rate real, access_match_rate real,\n  n1 int, n2 int, m int, n_hat real, coverage real,\n  ci95_low real, ci95_high real,\n  missing_ids text[] NOT NULL DEFAULT '{}',\n  ran_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def run_audit(tenant_id: str, source: str, n_pointer: int = 200, n_app: int = 200, seed: int | None = None) -> AuditReport",
+  "code": "import math, random\n\ndef chapman(n1, n2, m):\n    n_hat = (n1 + 1) * (n2 + 1) / (m + 1) - 1\n    var = (n1 + 1) * (n2 + 1) * (n1 - m) * (n2 - m) / ((m + 1) ** 2 * (m + 2))\n    se = math.sqrt(max(var, 0.0))\n    return n_hat, n_hat - 1.96 * se, n_hat + 1.96 * se\n\ndef run_audit(db, app, tenant, source, n_pointer, n_app, seed):\n    rng = random.Random(seed)\n    ptrs = db.sample_pointers(tenant, source, n_pointer, rng)          # stratified by type and date\n    exist = ver = acc = 0\n    missing = []\n    for p in ptrs:\n        r = app.stat(p.uri)                                            # live call, test user token\n        if r is None:\n            missing.append(p.doc_id); continue\n        exist += 1\n        ver += (r.version == p.version)\n        acc += (r.can_read == p.acl_says_readable)\n    captured = app.random_probe(n_app, rng)                            # capture 1: independent of the index\n    n1 = len(captured)\n    in_index = sum(db.has_pointer(tenant, c.uri) for c in captured)    # m = recaptured\n    n2 = db.live_count(tenant, source)\n    # Tricky part: random probes are not truly uniform, so treat N_hat as a floor-ish estimate and keep the interval.\n    n_hat, lo, hi = chapman(n1, n2, in_index)\n    return dict(exist_rate=exist / len(ptrs), version_match_rate=ver / max(exist, 1),\n                access_match_rate=acc / max(exist, 1), n_hat=n_hat, coverage=n2 / n_hat,\n                ci95_low=n2 / hi, ci95_high=n2 / lo, missing_ids=missing)",
+  "steps": [
+   {
+    "do": "Create the report table",
+    "done_when": "\\d audit_report lists the columns"
+   },
+   {
+    "do": "Write chapman() and test it",
+    "done_when": "chapman(100,100,50) returns about 199.5"
+   },
+   {
+    "do": "Sample pointers stratified by type and date",
+    "done_when": "sample over 200 rows covers every type present in the fixture"
+   },
+   {
+    "do": "Check existence, version and access live for each sampled pointer",
+    "done_when": "a planted deleted doc shows up in missing_ids"
+   },
+   {
+    "do": "Run random probes and count how many are already indexed",
+    "done_when": "report has n1, n2 and m filled"
+   },
+   {
+    "do": "Store the seed and report; send missing ids to op_cov",
+    "done_when": "same seed gives the same sample on re-run"
+   }
+  ],
+  "config": {
+   "N_POINTER": "200 // gives about +/- 7 points at 95% on a rate near 50%",
+   "N_APP": "200 // enough overlap for a stable estimate",
+   "AUDIT_CRON": "0 3 * * * // nightly per source",
+   "TEST_USER": "audit-bot // a normal user, never an admin"
+  },
+  "verify": [
+   "pytest tests/test_chapman.py -q  # all passed",
+   "python -m brain.ops.audit --tenant t1 --source drive --seed 7  # prints coverage and a 95% interval"
+  ],
+  "pitfalls": [
+   "Probing with the same search the index uses makes the two captures dependent, so coverage looks better than it is. Use random date windows and random words",
+   "m = 0 gives a huge estimate; report the interval and widen the sample",
+   "Auditing with an admin token hides access mismatches"
+  ]
+ },
+ "op_cov": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_ptr",
+   "ch_sweep",
+   "op_health"
+  ],
+  "stack": [
+   {
+    "part": "count calls",
+    "pick": "each connector's cheap count endpoint, where one exists",
+    "why": "no list-all scan needed; check each app's current docs"
+   },
+   {
+    "part": "registry",
+    "pick": "Postgres 16 count with a partial index on live rows",
+    "why": "excludes tombstones in one query"
+   },
+   {
+    "part": "scheduler",
+    "pick": "Temporal schedule or cron, hourly",
+    "why": "same engine as the sync jobs"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a full listing to count",
+    "why": "burns rate limit; use it only as the sweep fallback"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] httpx",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/ops/coverage.py : count compare and status",
+   "migrations/051_coverage.sql : coverage table",
+   "tests/test_coverage.py : allowance tests"
+  ],
+  "schema": "CREATE TABLE coverage_row (\n  tenant_id text NOT NULL,\n  source text NOT NULL,\n  obj_type text NOT NULL,\n  app_count bigint,\n  index_count bigint NOT NULL,\n  gap bigint,\n  allowed_gap bigint,\n  status text NOT NULL CHECK (status IN ('ok','gap','no_count_api')),\n  at timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX ptr_live_idx ON pointer(tenant_id, source, obj_type) WHERE deleted_at IS NULL;",
+  "interface": "def check_coverage(tenant_id: str, source: str, obj_type: str) -> CoverageRow  # status gap also sends a sweep request to ch_sweep",
+  "code": "def check_coverage(db, app, bus, tenant, source, obj_type, window):\n    index_count = db.count_live(tenant, source, obj_type)          # tombstones excluded\n    if not app.has_count_api(obj_type):\n        return db.save(tenant, source, obj_type, None, index_count, None, None, \"no_count_api\")\n    app_count = app.count(obj_type)\n    created, deleted = db.changes_in_window(tenant, source, obj_type, window)\n    gap = app_count - index_count\n    # Tricky part: changes in flight make a nonzero gap normal. Allow for them, plus 0.2 percent and a floor of 10.\n    allowed = max(10, int(0.002 * app_count) + created + deleted)\n    status = \"gap\" if abs(gap) > allowed else \"ok\"\n    row = db.save(tenant, source, obj_type, app_count, index_count, gap, allowed, status)\n    if status == \"gap\":\n        # positive gap: documents we never indexed. negative gap: ghosts we failed to delete.\n        bus.send(\"ch_sweep\", {\"tenant\": tenant, \"source\": source, \"type\": obj_type,\n                              \"mode\": \"missing\" if gap > 0 else \"ghosts\"})\n    return row",
+  "steps": [
+   {
+    "do": "Create the coverage table and partial index",
+    "done_when": "\\d coverage_row exists; EXPLAIN on the live count uses ptr_live_idx"
+   },
+   {
+    "do": "Implement count_live excluding tombstones",
+    "done_when": "fixture with 5 live and 2 deleted returns 5"
+   },
+   {
+    "do": "Call the app count endpoint per type",
+    "done_when": "fixture app with 100 docs returns 100"
+   },
+   {
+    "do": "Add the change-window allowance",
+    "done_when": "gap of 8 with 8 creates in the window gives ok"
+   },
+   {
+    "do": "Send a sweep request on gap",
+    "done_when": "fixture with 40 missing sends one ch_sweep message with mode missing"
+   },
+   {
+    "do": "Mark sources with no count API honestly",
+    "done_when": "status no_count_api, never a false ok"
+   }
+  ],
+  "config": {
+   "ALLOWED_PCT": "0.002 // 0.2 percent of the app count",
+   "ALLOWED_FLOOR": "10 // small sources never alert on 1 or 2",
+   "CHECK_CRON": "0 * * * * // hourly per source and type",
+   "WINDOW_S": "3600 // look-back for in-flight changes"
+  },
+  "verify": [
+   "pytest tests/test_coverage.py -q  # all passed",
+   "psql -c \"select status,count(*) from coverage_row group by 1\"  # ok, gap and no_count_api counts"
+  ],
+  "pitfalls": [
+   "Comparing counts that include trashed items in the app but not in the index gives a permanent gap. Match the definition of live on both sides",
+   "Reporting ok when the app has no count call hides blind spots; keep the no_count_api status",
+   "A count match does not prove the same documents: it can hide one missing and one ghost. The audit card covers that"
+  ]
+ },
+ "op_health": {
+  "milestone": "M1",
+  "effort_days": 4,
+  "depends_on": [
+   "op_lag",
+   "ch_wf",
+   "pl_obs"
+  ],
+  "stack": [
+   {
+    "part": "breaker",
+    "pick": "a small state machine in Python stored in Postgres",
+    "why": "needs to survive restarts and be visible to the workflow engine"
+   },
+   {
+    "part": "pause hook",
+    "pick": "Temporal signal or schedule pause (check current docs)",
+    "why": "pauses the connector workflow without killing it"
+   },
+   {
+    "part": "repair task",
+    "pick": "a ticket created through your tracker's API",
+    "why": "humans fix credentials and scopes"
+   },
+   {
+    "part": "do not pick",
+    "pick": "retry-forever loops",
+    "why": "a dead token burns the source's rate limit and hides the outage"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] temporalio",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/ops/health.py : buckets, burn rate and breaker",
+   "migrations/052_breaker.sql : breaker state and log",
+   "tests/test_breaker.py : state transition tests"
+  ],
+  "schema": "CREATE TABLE breaker (\n  tenant_id text NOT NULL,\n  source text NOT NULL,\n  state text NOT NULL CHECK (state IN ('closed','open','half_open')),\n  since timestamptz NOT NULL DEFAULT now(),\n  probe_ok int NOT NULL DEFAULT 0,\n  PRIMARY KEY (tenant_id, source)\n);\nCREATE TABLE breaker_log (\n  tenant_id text, source text, from_state text, to_state text, burn5 real, at timestamptz DEFAULT now()\n);",
+  "interface": "def on_outcome(tenant: str, source: str, status: int, retry_after_s: float | None) -> None\ndef evaluate(tenant: str, source: str, now: float) -> str  # returns the new state",
+  "code": "SLO = 0.99\n\ndef burn(buckets, now, secs):\n    ok = err = 0\n    for ts, o, e in buckets:\n        if ts >= now - secs:\n            ok += o; err += e\n    n = ok + err\n    return (err / n) / (1 - SLO) if n else 0.0, n\n\ndef on_outcome(b, now, status, retry_after):\n    # Tricky part: a 429 or a 5xx with Retry-After is the source asking us to slow down, not a failure.\n    if status == 429 or (status >= 500 and retry_after):\n        b.pause_until = now + (retry_after or 60)\n        return\n    minute = int(now // 60) * 60\n    b.add(minute, ok=status < 400, err=status >= 400)\n\ndef evaluate(b, now):\n    r5, n5 = burn(b.buckets, now, 300)\n    if b.state == \"closed\" and r5 > 10 and n5 >= 20:\n        b.state = \"open\"; pause_workflow(b.key); open_repair_task(b.key, b.last_error)\n    elif b.state == \"open\" and now - b.since > b.cool_s:\n        b.state = \"half_open\"; b.probe_ok = 0\n    elif b.state == \"half_open\":\n        if b.last_probe_ok:\n            b.probe_ok += 1\n            if b.probe_ok >= 3:\n                b.state = \"closed\"; resume_workflow(b.key)\n        else:\n            b.state = \"open\"\n    return b.state",
+  "steps": [
+   {
+    "do": "Create breaker and log tables",
+    "done_when": "\\d breaker lists 5 columns"
+   },
+   {
+    "do": "Bucket outcomes by minute and ignore 429 and Retry-After 5xx",
+    "done_when": "test: 100 calls of 429 leave the burn at 0"
+   },
+   {
+    "do": "Compute the 5 minute and 1 hour burn",
+    "done_when": "test: 30 calls with 3 errors at SLO 0.99 gives burn 10"
+   },
+   {
+    "do": "Open the breaker when burn is over 10 with at least 20 calls",
+    "done_when": "test: breaker moves to open and pause_workflow is called once"
+   },
+   {
+    "do": "Add half_open probes and close after 3 successes",
+    "done_when": "test: 3 good probes close it; 1 bad probe reopens it"
+   },
+   {
+    "do": "Open one repair task per open event",
+    "done_when": "tracker stub receives exactly one task with last_success_at"
+   }
+  ],
+  "config": {
+   "SLO": "0.99 // per connector, set lower for flaky apps",
+   "BURN_OPEN": "10 // fast burn trigger",
+   "MIN_CALLS": "20 // avoids opening on 2 failed calls",
+   "COOL_S": "300 // wait before probing",
+   "PROBES_TO_CLOSE": "3 // as in the card"
+  },
+  "verify": [
+   "pytest tests/test_breaker.py -q  # all passed",
+   "psql -c \"select state from breaker where source='drive'\"  # closed on a healthy fixture"
+  ],
+  "pitfalls": [
+   "Counting 429s as errors opens the breaker during every backfill. Symptom: connector flaps open and closed",
+   "Pausing without a repair task: it stays paused for weeks. Always open the task on open",
+   "Breaker state in memory is lost on restart and the connector floods a source that was open"
+  ]
+ },
+ "op_beat": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_fresh",
+   "ch_bus"
+  ],
+  "stack": [
+   {
+    "part": "counters",
+    "pick": "Postgres counts per interval",
+    "why": "Simple, queryable, small"
+   },
+   {
+    "part": "do not pick",
+    "pick": "scanning pointers to count them",
+    "why": "Counting must not read content or scale with the index"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/ops/beat.py",
+   "tests/test_beat.py"
+  ],
+  "schema": "{\"app\":\"str\",\"path\":\"str\",\"interval\":\"ts\",\"count\":\"int\"}",
+  "interface": "def check(app, path, now) -> State  # ok, quiet or stalled",
+  "code": "def check(db, app, path, now):\n    lo = max(FLOOR, db.quantile(app, path, now.hour, now.weekday(), q=0.05, weeks=4))\n    last = db.counts(app, path, last=2)\n    if len(last) == 2 and all(c < lo for c in last) and not in_maintenance(app, now):\n        request_sweep(app, path); return \"stalled\"\n    return \"quiet\" if last and last[-1] < lo else \"ok\"",
+  "steps": [
+   {
+    "do": "Write counters at the bus and the writer",
+    "done_when": "both counts exist"
+   },
+   {
+    "do": "Compute the baseline",
+    "done_when": "weekend dips are in the baseline"
+   },
+   {
+    "do": "Add two-miss hysteresis",
+    "done_when": "one low interval is only quiet"
+   },
+   {
+    "do": "Add the sweep request and maintenance flag",
+    "done_when": "stall triggers a sweep"
+   }
+  ],
+  "config": {
+   "INTERVAL_MIN": "15",
+   "MISSES": "2",
+   "FLOOR": "1"
+  },
+  "verify": [
+   "pytest tests/test_beat.py -q  # all passed",
+   "python -m brain.ops.beat --simulate stall  # prints stalled and a sweep request"
+  ],
+  "pitfalls": [
+   "Counting backfills into the baseline",
+   "No maintenance flag, so planned work pages people"
+  ]
+ }
+}

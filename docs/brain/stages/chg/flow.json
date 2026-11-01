@@ -1,0 +1,1164 @@
+{
+ "group": {
+  "line": "A partitioned log keeps each document's events in order, compare-and-set drops stale ones, durable workflows retry and resume, and tombstones, backfill, cursors and a dead-letter queue keep it honest.",
+  "dumb": "Every change becomes a small note on a conveyor belt. Notes about the same document stay in order, and old or repeated notes are thrown away. A careful worker handles each note, and if it fails it tries again a few times, then parks the note where a person can look. Deletes are handled first and fastest, and the bookmark only moves when the work is safely saved."
+ },
+ "comps": {
+  "ch_bus": {
+   "line": "Partitioned append-only log keyed by (tenant, doc), at-least-once delivery\npartition = hash(tenant_id, doc_id) mod P ; commit offset after apply",
+   "dumb": "All change notes go onto one long belt that is split into lanes. A note's lane is picked from its tenant and document, so two notes about the same document always share a lane and stay in order. A worker marks a note as done only after handling it, so a crash means it sees the note again, never that it loses it.",
+   "inn": "Events from ch_hook, ch_delta, ch_cdc, ch_sweep, ch_fill and so_norm: envelope {uri, app, tenant, kind, version, content_hash, modified_at, acl_ref} plus {lane 'live' or 'backfill'}.",
+   "out": "Ordered events per partition to ch_dedupe and to ll_sub subscribers; consumer offsets per group.",
+   "store": "The log itself: envelopes only, never document bodies, retained 7 days (default, design) so a bug fix can replay. Offsets stored per consumer group.",
+   "fail": "A producer write that is not acknowledged is retried 3 times over 2 s, then the producer returns an error to its caller (the receiver then answers 503). A lost partition replica is replaced from the other 2 of 3 copies (design); a consumer that crashes restarts at its last committed offset.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "The log engine (Kafka, Redpanda or a database-backed queue) is not chosen; the choice depends on the volume at the first tenant.",
+   "prop": "Proposal: one ordered buffer between fast producers and rate-limited workers lets each side run at its own pace and makes replay possible.",
+   "deep": {
+    "purpose": "Decouple producers from consumers, keep events for one document in order, and make every event replayable for 7 days.",
+    "expected": [
+     "Events for one (tenant, doc) always land in the same partition in arrival order",
+     "Backfill traffic never delays live events because they use separate lanes (t_t45)",
+     "A consumer can rewind to any offset inside the retention window"
+    ],
+    "not_expected": [
+     "It does not drop duplicates; at-least-once means duplicates are normal and ch_dedupe removes them",
+     "It does not hold document bodies or secrets",
+     "It does not give global ordering, only per-document ordering"
+    ],
+    "algorithm": {
+     "name": "Partitioned append-only log with keyed ordering",
+     "formula": "partition = hash(tenant_id || doc_id) mod P ; delivery = at-least-once ; order = per partition",
+     "steps": [
+      "Compute the partition from the tenant and document id so the key never splits",
+      "Append the envelope and wait for acknowledgement from 2 of 3 replicas (design)",
+      "Consumers read in offset order and commit the offset only after ch_dedupe finishes",
+      "Keep live and backfill as separate topics with separate consumer groups and separate rate shares",
+      "Expire segments after 7 days"
+     ],
+     "params": {
+      "P": "64 partitions per lane (default; tune to peak events per second)",
+      "retention": "7 days (design; long enough for a weekend outage)",
+      "replication": "3 copies, ack 2 (design)",
+      "per_connector_queue": "one queue and token bucket per (tenant, connector), t_t48"
+     }
+    },
+    "math": {
+     "definitions": [
+      "P: number of partitions",
+      "r: peak events per second",
+      "s: skew factor of the busiest key group, at least 1",
+      "m: events one consumer applies per second"
+     ],
+     "formula_full": "load_per_partition = s * r / P ; consumers_needed = ceil(s * r / (P * m)) * P",
+     "derivation": "Hashing spreads keys evenly, so the average partition sees r / P events per second. Hot tenants raise the busiest partition by a skew factor.",
+     "worked_example": "r = 5,000 events/s, P = 64, s = 3: busiest partition 3 * 5,000 / 64 = 234 events/s. If one consumer applies m = 100 events/s, that partition needs 3 consumers in a group, but a partition allows one consumer, so P is raised to 192 or the apply path is sped up.",
+     "complexity": "O(1) append and O(1) read per event; partition lookup is a hash.",
+     "failure_modes": [
+      "Hot key (one doc edited constantly): same partition by design; ch_dedupe collapses repeats and coalescing in the producer limits it",
+      "Too few partitions cap parallelism: raise P with a new generation of the topic and drain the old one"
+     ],
+     "calibration": "Pick P so the busiest partition runs under 60% of one consumer at the 7-day peak; review monthly."
+    },
+    "alternatives": [
+     {
+      "name": "Per-document queues",
+      "why_rejected": "Millions of queues; ordering by hash on a partitioned log gets the same guarantee."
+     },
+     {
+      "name": "Direct call from producer to worker",
+      "why_rejected": "No buffer when an app rate-limits us; a backlog would block the receiver."
+     }
+    ],
+    "security": [
+     "Cross-tenant read: a consumer must not see another tenant's events; tenant id is in every key and topic ACLs and consumer credentials are per lane, with row policy as a second check at ch_dedupe",
+     "Forged event injection by a compromised producer: producers hold write-only credentials per connector and the envelope carries the connector id, checked at read",
+     "Sensitive data in the log: envelopes hold ids, versions and hashes only; bodies never enter, so the 7-day retention holds no content",
+     "Poison event crashing consumers in a loop: bounded retries downstream then parked in ch_dlq"
+    ],
+    "performance": {
+     "slo": "p95 under 100 ms from append to first consumer read; 5,000 events/s sustained (design target)",
+     "complexity": "O(1) per event",
+     "scaling": "At 10x (50,000 events/s) the partition count and consumer groups scale out; the first limit is the number of partitions, solved by a new topic generation."
+    },
+    "edge_cases": [
+     "Empty lane: consumers idle, no error",
+     "Duplicate events: expected, removed by ch_dedupe",
+     "Huge envelope above 64 KB: rejected at append; only ids belong in it",
+     "Concurrent producers for the same document: both land in one partition in append order",
+     "Partition leader loss: failover to a replica, producers retry within the 2 s budget",
+     "Clock skew: ordering is by offset, never by timestamp",
+     "New app joins: it needs only a producer credential and a lane key, and its envelope comes from the connector manifest (so_sdk) or the MCP bridge (so_mcp) through so_norm"
+    ],
+    "tests": [
+     {
+      "name": "per-document order",
+      "given": "three versions (1, 2, 3) of one doc appended by two producers",
+      "expect": "read in append order from one partition"
+     },
+     {
+      "name": "crash replay",
+      "given": "consumer applies offset 100 and dies before commit",
+      "expect": "restart reads offset 100 again, ch_dedupe drops the duplicate"
+     },
+     {
+      "name": "lane isolation",
+      "given": "backfill lane holds 1,000,000 events, live lane gets 1",
+      "expect": "the live event is read within 100 ms"
+     },
+     {
+      "name": "retention",
+      "given": "offset 8 days old",
+      "expect": "gone; consumer asking for it is told to resync via ch_sweep"
+     }
+    ],
+    "cost_levers": [
+     "7-day retention and ids-only envelopes keep storage tiny",
+     "Coalesce repeated events for one document before append"
+    ],
+    "feedback_events": [
+     "Consumer lag and replays per consumer group feed partition-count and retention tuning"
+    ],
+    "analytics_events": [
+     {
+      "name": "bus.appended",
+      "fields": [
+       "tenant_id",
+       "lane",
+       "partition",
+       "bytes"
+      ],
+      "when": "per append"
+     },
+     {
+      "name": "bus.lag",
+      "fields": [
+       "lane",
+       "partition",
+       "consumer_group",
+       "events",
+       "seconds"
+      ],
+      "when": "every 15 s"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_debezium",
+      "name": "Debezium",
+      "take": "Ships changes into Kafka-style logs, the transport model we use"
+     }
+    ],
+    "industry": "Notion uses Kafka consumers for live edits and a separate batch path for onboarding (t_t45); per-connector queues are a common pattern because limits differ (t_t48).",
+    "refs": [
+     "t_t45",
+     "t_t48",
+     "t_t49",
+     "r_debezium"
+    ]
+   }
+  },
+  "ch_dedupe": {
+   "line": "Compare-and-set on (doc_id, source_version): apply only if newer than stored\nUPDATE ... WHERE doc_id = :d AND version < :v",
+   "dumb": "Because notes can arrive twice or out of order, we check each one against what we already know about the document. If the note is about a version we already have, or an older one, we throw it away. If it is newer, we let it through. This makes it safe to repeat any note any number of times.",
+   "inn": "Ordered event per document key from ch_bus {uri, tenant, kind, version, content_hash, modified_at}; stored {version, content_hash, deleted_at} for the document from ix_ptr; tombstone floor version from ch_tomb.",
+   "out": "Events that beat the stored version to ch_wf; events that fail validation or repeat failures to ch_dlq; a drop counter per reason.",
+   "store": "Reads ix_ptr row version and tombstone floor. Writes only the idempotency record {tenant, doc_id, version} with a 7-day TTL (design); the version itself is written later by ch_wf with the same compare-and-set.",
+   "fail": "If ix_ptr is unavailable the event is retried 5 times with backoff 200 ms to 3 s, then parked in ch_dlq with class 'store_unavailable'. A lost compare-and-set race (another worker wrote first) is re-read once and decided again.",
+   "req": "Requirement: 'Ingest documents and messages; answer with citations; respect source permissions'",
+   "hard": "Some apps give etags that are not ordered; the tie-break uses modified_at then content hash, and per-app version semantics need a table.",
+   "prop": "Proposal: delta replays and duplicate pushes are normal (t_t55, t_t05), so apply must be safe to repeat and safe to reorder.",
+   "deep": {
+    "purpose": "Make processing idempotent and order-safe, so duplicates, replays and out-of-order arrivals never overwrite newer state.",
+    "expected": [
+     "The same event applied twice changes state once",
+     "An older version arriving after a newer one is dropped",
+     "A delete event with a version at least the stored one wins, and an older event cannot resurrect the document"
+    ],
+    "not_expected": [
+     "It does not fetch content or compute hashes of bodies",
+     "It does not retry failed work; ch_wf does",
+     "It does not need a lock across documents"
+    ],
+    "algorithm": {
+     "name": "Version compare-and-set",
+     "formula": "apply(e) iff e.version > stored.version (or e.modified_at > stored.modified_at when versions are not ordered) and e.version > tombstone_floor",
+     "steps": [
+      "Read stored version and tombstone floor for (tenant, doc_id)",
+      "If the app's versions are ordered numbers, compare them; if they are etags, compare modified_at and then content_hash inequality",
+      "If the event is not newer, drop it and count the reason (duplicate or stale)",
+      "If newer, pass it to ch_wf; the final write repeats the compare-and-set so a race cannot lose",
+      "Record the idempotency key so a replay in the next 7 days is dropped in O(1)"
+     ],
+     "params": {
+      "idempotency_ttl": "7 days (design; equals bus retention)",
+      "race_rereads": "1 (design)",
+      "tombstone_floor_retention": "30 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "v_e: event version",
+      "v_s: stored version",
+      "f: tombstone floor",
+      "d: duplicate rate of the source"
+     ],
+     "formula_full": "apply iff v_e > max(v_s, f); work_saved = d / (1 + d) of events dropped",
+     "derivation": "A strictly greater version means the event has information the store lacks. Equal means seen, lower means stale. Duplicates are therefore dropped at one indexed read each.",
+     "worked_example": "Stored v = 7. Arrivals in order: v8, v8, v6, v9. v8 applies (8 > 7); second v8 drops (8 > 8 is false); v6 drops; v9 applies. Two of four events reach ch_wf. If a delete with version 9 sets floor 9, a late v8 is dropped because 8 > 9 is false.",
+     "complexity": "O(1) indexed lookup per event, no scans.",
+     "failure_modes": [
+      "Source versions reset (app restore from backup): versions go backward; the event is held in ch_dlq class 'version_regression' for an operator, who can accept a reset epoch",
+      "Etag with no order and equal modified_at: compare content_hash, apply on difference to be safe, since a repeat apply is idempotent"
+     ],
+     "calibration": "Watch the drop ratio per app; a stale-drop rate above 5% for an app with ordered versions points to a producer fault."
+    },
+    "alternatives": [
+     {
+      "name": "Distributed lock per document",
+      "why_rejected": "Adds a lock service and a failure mode; compare-and-set needs only the row."
+     },
+     {
+      "name": "Exactly-once delivery",
+      "why_rejected": "Not achievable end to end across an external app; at-least-once plus idempotent apply gives the same result."
+     }
+    ],
+    "security": [
+     "Replay of an old event to roll back a document: the tombstone floor and version compare drop it",
+     "Version inflation by a malicious app user setting a huge version to block later real changes: versions are bounded to the stored plus a sanity ceiling (design) and the sweep re-lists real versions",
+     "Cross-tenant version collision: the key is (tenant, doc_id), never doc_id alone",
+     "Idempotency table growth as a denial of service: TTL of 7 days and a per-tenant cap"
+    ],
+    "performance": {
+     "slo": "p95 under 5 ms per event (design); 5,000 events/s per cluster",
+     "complexity": "O(1) per event",
+     "scaling": "At 10x (50,000 events/s) the ix_ptr read path is the limit; the idempotency check runs first from a cache and partitions by tenant."
+    },
+    "edge_cases": [
+     "Missing stored row: treated as version 0, first event applies",
+     "Duplicate within the same second: idempotency key drops it",
+     "Event with null version: modified_at used; if both null, held in ch_dlq class 'no_version'",
+     "Delete then create with the same id: create needs a version above the floor",
+     "Concurrent events for one doc on two workers: the partition guarantees one reader, the final compare-and-set guards anyway",
+     "Clock skew: not used when versions are ordered; modified_at compares only the app's own timestamps",
+     "Unicode ids: compared as bytes after NFC normalisation by so_norm"
+    ],
+    "tests": [
+     {
+      "name": "idempotent apply",
+      "given": "stored v7; events v8, v8",
+      "expect": "one apply, one duplicate drop"
+     },
+     {
+      "name": "stale drop",
+      "given": "stored v9; event v6",
+      "expect": "dropped, reason stale"
+     },
+     {
+      "name": "no resurrection",
+      "given": "tombstone floor 9; late event v8",
+      "expect": "dropped"
+     },
+     {
+      "name": "race",
+      "given": "two workers both read v7 and write v8 and v9",
+      "expect": "final stored version is 9"
+     }
+    ],
+    "cost_levers": [
+     "Dropping duplicates early saves a fetch and an embedding per repeat",
+     "Content hash equality skips re-derivation when only metadata moved"
+    ],
+    "feedback_events": [
+     "Drop reasons per app expose producers that replay too often"
+    ],
+    "analytics_events": [
+     {
+      "name": "dedupe.decision",
+      "fields": [
+       "tenant_id",
+       "app",
+       "decision",
+       "reason"
+      ],
+      "when": "per event"
+     },
+     {
+      "name": "dedupe.version_regression",
+      "fields": [
+       "tenant_id",
+       "app",
+       "stored",
+       "event"
+      ],
+      "when": "on a version going backward"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Microsoft and GitHub both document replays and redelivery, so idempotent apply keyed by id and version is the standard answer (t_t55, t_t05).",
+    "refs": [
+     "t_t55",
+     "t_t05",
+     "t_t02",
+     "t_t04"
+    ]
+   }
+  },
+  "ch_wf": {
+   "line": "Durable workflow: bounded retries, resumable cursor, per-source concurrency cap\ndelay = min(300 s, 2 s * 2^n) with jitter; max 6 attempts",
+   "dumb": "This is the worker that actually processes each change. It saves its progress after every step, so if the machine dies it carries on from the last step instead of starting over. If an app is slow or says 'too many requests', it waits and tries again a few times with longer pauses. After the last try it parks the note for a person.",
+   "inn": "Events that beat the stored version from ch_dedupe; operator replays from ch_dlq; pause and stop orders from op_health and gv_kill; rate budgets from so_rate.",
+   "out": "Pointer upsert to ix_ptr, derive request {uri, version} to ix_fetch, delete events to ch_tomb, ACL refresh orders to ac_src, cursor commit to ch_cursor, exhausted events to ch_dlq.",
+   "store": "Workflow history in the durable engine (ids, versions and step results only, no bodies or tokens); cursor and watermark in ch_cursor. Workflow id is (tenant, app, stream) so a stream has one owner.",
+   "fail": "Each step retries up to 6 attempts with delays of about 2, 4, 8, 16 and 32 s (62 s total before jitter), honouring Retry-After when the app sends it (t_t06, t_t08). After 6 failed attempts the event goes to ch_dlq with the error class and history. A worker crash resumes from the last completed step with no repeat of finished steps.",
+   "req": "Requirement: 'run 24x7 with retries'",
+   "hard": "Temporal is a style reference; the engine choice, the cluster run cost and the history size limit are open.",
+   "prop": "Proposal: long syncs fail midway all the time; resuming from a checkpoint beats restarting (t_t10).",
+   "deep": {
+    "purpose": "Run each change through upsert, derive and permission refresh as a resumable, rate-limited, bounded-retry workflow so nothing is lost or repeated.",
+    "expected": [
+     "A crash resumes at the last completed step with no duplicate side effects",
+     "Concurrent work per source never exceeds its rate budget",
+     "An event that keeps failing ends in ch_dlq after the retry bound, not in an endless loop"
+    ],
+    "not_expected": [
+     "It does not decide freshness; ch_dedupe already filtered stale events",
+     "It does not store document bodies in history",
+     "It does not retry forever"
+    ],
+    "algorithm": {
+     "name": "Durable execution with exponential backoff, jitter and cursor checkpoints",
+     "formula": "delay_n = min(cap, base * 2^n) * U(0.5, 1.0) ;  attempts <= 6 ;  concurrency <= budget share",
+     "steps": [
+      "Take a slot from the per-(tenant, app) concurrency limit set by so_rate",
+      "Run the steps in order: upsert pointer, request derive, refresh access list, each an idempotent activity keyed by (doc_id, version)",
+      "On a retryable error wait the backoff or the app's Retry-After, whichever is longer",
+      "After the last step commit cursor and watermark with the events (ch_cursor)",
+      "After 6 attempts send the event and its history to ch_dlq"
+     ],
+     "params": {
+      "base": "2 s (default)",
+      "cap": "300 s (default)",
+      "max_attempts": "6 (design; tune from DLQ rate)",
+      "concurrency": "per (tenant, app) from the rate budget, t_t48",
+      "history_limit": "continue-as-new after 10,000 events per run (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: attempt number starting at 0",
+      "base, cap: backoff seconds",
+      "U: random jitter factor",
+      "S: sum of delays"
+     ],
+     "formula_full": "S = sum_{n=0}^{4} min(cap, base*2^n) = base*(2^5 - 1) when cap not reached",
+     "derivation": "Doubling waits give a slow app time to recover while the total wait stays bounded. Jitter spreads retries so many workflows do not hit the app at the same instant.",
+     "worked_example": "base 2 s, 6 attempts, 5 waits: 2 + 4 + 8 + 16 + 32 = 62 s before jitter; with U between 0.5 and 1.0 the total is between 31 s and 62 s. A Jira 429 with Retry-After 90 s overrides the 2 s step and waits 90 s.",
+     "complexity": "O(steps) per event; history grows O(events) per run, reset by continue-as-new.",
+     "failure_modes": [
+      "Retry storm after an app outage: jitter plus the concurrency cap stop it",
+      "Hourly quota exhausted: Jira blocks until the next UTC hour (t_t06), so the workflow sleeps to that time instead of retrying"
+     ],
+     "calibration": "If more than 1% of events reach the DLQ with transient errors, raise attempts to 8 and the cap to 600 s."
+    },
+    "alternatives": [
+     {
+      "name": "Plain queue worker with retry count",
+      "why_rejected": "Loses position on a crash and cannot resume a long multi-step job (t_t10)."
+     },
+     {
+      "name": "Cron script per connector",
+      "why_rejected": "No history, no resumption, no per-source concurrency control."
+     }
+    ],
+    "security": [
+     "Secret in workflow history: history is durable and readable by operators; activities fetch tokens from so_oauth by reference and history holds ids only",
+     "Confused deputy: a workflow for tenant A must never use tenant B's token; the workflow id and the token reference carry the tenant and the activity checks it",
+     "Poison event retrying forever to exhaust budget: attempts bounded at 6 and then parked",
+     "Operator replay abuse: replay needs an operator role and writes an audit record"
+    ],
+    "performance": {
+     "slo": "p95 under 2 s per event from apply to pointer upsert when the app is healthy (design)",
+     "complexity": "O(steps) per event",
+     "scaling": "At 10x event rate the durable engine's history writes limit; shard by tenant namespace and keep history small by storing ids only."
+    },
+    "edge_cases": [
+     "App outage of 2 h: retries stop at 6 attempts and events go to ch_dlq; replay after recovery",
+     "Worker killed mid-step: resumes at that step; the step is idempotent",
+     "Duplicate event reaching it: the final compare-and-set makes it a no-op",
+     "Huge event burst for one stream: concurrency cap queues the rest",
+     "Partial failure (pointer written, derive failed): derive retries alone; pointer stays at the new version, flagged unverified until derived",
+     "Clock skew: uses engine time for timers, never the app's clock",
+     "Pause order from op_health: finishes the current step and holds the rest"
+    ],
+    "tests": [
+     {
+      "name": "resume after crash",
+      "given": "worker killed after the pointer upsert step",
+      "expect": "restart runs derive next and does not repeat the upsert"
+     },
+     {
+      "name": "bounded retries",
+      "given": "app returns 500 for every call",
+      "expect": "6 attempts over about 62 s then one event in ch_dlq with the history"
+     },
+     {
+      "name": "retry-after honoured",
+      "given": "429 with Retry-After 90",
+      "expect": "next call not before 90 s"
+     },
+     {
+      "name": "concurrency cap",
+      "given": "cap 5, 20 events ready",
+      "expect": "never more than 5 app calls in flight"
+     }
+    ],
+    "cost_levers": [
+     "Skip derive when content_hash is unchanged",
+     "Per-source caps avoid paying for throttled calls"
+    ],
+    "feedback_events": [
+     "DLQ rate and retry counts per app tune max_attempts and caps"
+    ],
+    "analytics_events": [
+     {
+      "name": "wf.step",
+      "fields": [
+       "tenant_id",
+       "app",
+       "step",
+       "attempt",
+       "outcome",
+       "ms"
+      ],
+      "when": "per step"
+     },
+     {
+      "name": "wf.exhausted",
+      "fields": [
+       "tenant_id",
+       "app",
+       "error_class",
+       "attempts"
+      ],
+      "when": "when parked"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Durable execution with retries and long-running state; the style we adopt"
+     }
+    ],
+    "industry": "Anthropic built resume-from-checkpoint after restarting from scratch proved too costly (t_t10).",
+    "refs": [
+     "t_t10",
+     "t_t06",
+     "t_t08",
+     "t_t48",
+     "r_temporal"
+    ]
+   }
+  },
+  "ch_fill": {
+   "line": "Priority crawl: recent, shared and popular first; paced to half the quota\nscore = 0.5 * recency + 0.3 * shared + 0.2 * popular",
+   "dumb": "When an app is first connected there may be millions of items. We do not crawl in a random order. We start with the newest, most shared and most viewed items, so search is useful within minutes. We also use only half of the app's request allowance, so live changes are never held up by the big first crawl.",
+   "inn": "Connect event and capability descriptor for a new app, request share from ch_sched, listing pages with {object_id, modified_at, shared_count, view_count}.",
+   "out": "Backfill batch {uri, rank} on the backfill lane of ch_bus; progress watermark to ch_cursor.",
+   "store": "Reads app listings. Writes a crawl frontier {stream, next_page_token, ranked queue head} and the watermark through ch_cursor; no document text.",
+   "fail": "On a 429 it waits Retry-After and halves its pace for 10 min. If a page fails 3 times it skips it and records the gap for op_cov, then continues. A crash resumes from the saved frontier; after 24 h with no progress it pages op_health.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Slack and similar live-only sources get pointers via live search, not a crawl (t_t07, t_t13); the popularity signal is missing in many apps and falls back to recency.",
+   "prop": "Proposal: a first crawl can take hours (t_t08); ordering by value makes search useful before it ends, on a lane that cannot slow live sync (t_t45).",
+   "deep": {
+    "purpose": "Make search useful early by crawling the most valuable items first, at a pace that leaves the live path untouched.",
+    "expected": [
+     "The top 10% by score is indexed before the rest",
+     "Live events keep their freshness while a backfill runs",
+     "Progress is visible as a coverage percentage and resumable after a stop"
+    ],
+    "not_expected": [
+     "It does not copy document text; it lists and sends pointers to the bus",
+     "It does not exceed its share of the rate budget",
+     "It does not backfill live-only sources such as Slack text"
+    ],
+    "algorithm": {
+     "name": "Priority-ordered frontier with paced crawl",
+     "formula": "score = w_r * exp(-age_days / 30) + w_s * min(1, ln(1 + shared) / ln(101)) + w_p * min(1, ln(1 + views) / ln(101)) ; rate <= 0.5 * quota",
+     "steps": [
+      "List the app's top-level containers and fetch their metadata page by page",
+      "Score each item and push to a priority queue; crawl in descending score",
+      "Send ranked batches to the backfill lane of ch_bus",
+      "Pace requests so use stays at or under half the hourly quota (t_t06 estimate)",
+      "Write the progress watermark with each batch so a restart resumes"
+     ],
+     "params": {
+      "w_r_w_s_w_p": "0.5, 0.3, 0.2 (default; tune against which items users ask about first)",
+      "recency_half_scale": "30 days (default)",
+      "quota_share": "0.5 (estimate from t_t06; tune)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "w_r, w_s, w_p: weights summing to 1",
+      "age_days: days since last modified",
+      "shared: people with access",
+      "views: recent views",
+      "Q: hourly request quota",
+      "c: cost per object in quota points"
+     ],
+     "formula_full": "objects_per_hour = 0.5 * Q / c ; crawl_hours = N / objects_per_hour",
+     "derivation": "Recency decays exponentially, sharing and popularity grow slowly with a log so one huge number cannot dominate. Pacing at half the quota leaves the other half for live traffic and sweeps.",
+     "worked_example": "Doc A: 2 days old, shared with 40, 10 views: recency = exp(-2/30) = 0.935; shared = ln41/ln101 = 0.805; popular = ln11/ln101 = 0.520; score = 0.5*0.935 + 0.3*0.805 + 0.2*0.520 = 0.813. Doc B: 400 days old, private (1 person), no views: 0.5*0 + 0.3*0.150 + 0 = 0.045. A crawls first. Pace: a Jira tenant with 200 users has about 100,000 + 10*200 = 102,000 points/h (t_t06); half is 51,000; at an assumed 2 points per object (the identity-read price in t_t06) that is 25,500 objects/h, so 500,000 objects take 19.6 h.",
+     "complexity": "O(N log N) for the priority queue over N items, O(N / page) requests.",
+     "failure_modes": [
+      "Weights favour recency so old but important policy documents wait: expose a manual pin list",
+      "Popularity unavailable: weight set to 0 and the remainder renormalised"
+     ],
+     "calibration": "After 2 weeks, compare the crawl rank of items users actually retrieved; move weights so 80% of retrieved items sit in the top 20% by score."
+    },
+    "alternatives": [
+     {
+      "name": "Crawl in listing order",
+      "why_rejected": "Hours before anything useful is searchable."
+     },
+     {
+      "name": "Full speed crawl",
+      "why_rejected": "Exhausts hourly quotas and starves live sync (t_t09)."
+     }
+    ],
+    "security": [
+     "Backfill reading more than the connector should: it uses the same scoped token as live sync and skips containers the admin excluded",
+     "Quota starvation of a customer's own users by the crawl: hard 50% share and 10 min backoff after any 429",
+     "Poisoned metadata (huge shared counts to jump the queue): counts are capped by the log scale and the first crawl visits everything eventually",
+     "Cross-tenant frontier mix-up: frontier state keyed by (tenant, app, stream)"
+    ],
+    "performance": {
+     "slo": "top 10% indexed within 1 h of connect for an app of 100,000 objects (design)",
+     "complexity": "O(N log N) ordering, N / page requests",
+     "scaling": "At 10x objects the quota, not our compute, is the limit (t_t08); the crawl takes longer, and coverage is shown to the admin."
+    },
+    "edge_cases": [
+     "Empty app: finishes at once with coverage 100%",
+     "Huge item (a 2 GB file): pointer only, body fetched later on demand",
+     "Duplicate listing of the same object across pages: ch_dedupe drops it",
+     "Object changed during the crawl: live event arrives first and wins by version",
+     "Partial failure: skipped pages recorded as gaps for op_cov",
+     "Unicode names: ids used for ordering ties, never names",
+     "Item with no timestamps: ranked at the bottom"
+    ],
+    "tests": [
+     {
+      "name": "priority order",
+      "given": "Doc A score 0.813 and Doc B 0.045",
+      "expect": "A batch sent before B"
+     },
+     {
+      "name": "quota share",
+      "given": "hourly quota 102,000, share 0.5",
+      "expect": "no more than 51,000 points used in the hour"
+     },
+     {
+      "name": "resume",
+      "given": "crawler killed at page 40 of 100",
+      "expect": "restart at page 40, ranks preserved"
+     },
+     {
+      "name": "live not delayed",
+      "given": "backfill running at full pace and a live event arrives",
+      "expect": "live event applied within the live SLO"
+     }
+    ],
+    "cost_levers": [
+     "Skip containers the admin excluded",
+     "Defer low-score items by days if the quota is tight"
+    ],
+    "feedback_events": [
+     "Which items users retrieve first retunes the score weights"
+    ],
+    "analytics_events": [
+     {
+      "name": "fill.progress",
+      "fields": [
+       "tenant_id",
+       "app",
+       "crawled",
+       "total_estimate",
+       "coverage_pct"
+      ],
+      "when": "every 1,000 objects"
+     },
+     {
+      "name": "fill.throttled",
+      "fields": [
+       "tenant_id",
+       "app",
+       "retry_after_s"
+      ],
+      "when": "on 429"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Initial full sync then incremental is its default model; we add priority order"
+     }
+    ],
+    "industry": "Notion runs an offline batch path for onboarding apart from the live path (t_t45); Notion's own API limits make big backfills slow by design (t_t08).",
+    "refs": [
+     "t_t45",
+     "t_t06",
+     "t_t08",
+     "t_t09",
+     "t_t07",
+     "t_t13",
+     "r_airbyte"
+    ]
+   }
+  },
+  "ch_tomb": {
+   "line": "Delete or access removal soft-deletes the pointer now, purges derived data later\nseconds to hide, 24 h to purge",
+   "dumb": "When a document is deleted, or a person loses access, we hide it from search straight away. We cannot trust that old search entries disappear on their own, so we also queue a cleanup that removes everything made from that document. We keep a small marker for a while so a late, old message cannot bring the document back.",
+   "inn": "Delete or access-removed event {uri, reason} from ch_wf (Graph '@removed' with reason, Drive removed items, t_t02, t_t04).",
+   "out": "Soft-delete flag on ix_ptr, purge order to ix_gc, tombstone {uri, tenant, reason, at} to gv_erase, floor version to ch_dedupe.",
+   "store": "Writes the tombstone row {tenant, uri, reason, at, floor_version} for 30 days (design) and the purge job status. Reads nothing else.",
+   "fail": "If the soft delete fails it retries 5 times over 10 s, and the document is hidden by the search filter on the next ACL cache refresh at the latest; a purge that fails retries hourly for 24 h and then pages an operator. Soft delete always runs before purge.",
+   "req": "Requirement: 'Ingest documents and messages; answer with citations; respect source permissions'",
+   "hard": "Soft-deleted vectors can persist in raw index files (t_t17, low confidence); hard delete must be proven by a probe test after compaction.",
+   "prop": "Proposal: stale hits on deleted or newly forbidden documents are the worst failure of an index, so hide first and clean after.",
+   "deep": {
+    "purpose": "Remove a deleted or no-longer-accessible document from search at once and from every derived store within a bound.",
+    "expected": [
+     "The document stops appearing in search within seconds of the event being applied",
+     "Vectors, postings, snippets and access rows are purged within 24 h and verified",
+     "A late stale event cannot resurrect the document"
+    ],
+    "not_expected": [
+     "It does not delete anything in the source app",
+     "It does not remove the pointer row itself on the first step, only marks it",
+     "It does not handle a person's permission change without a delete; that goes through ac_src and ac_store"
+    ],
+    "algorithm": {
+     "name": "Two-phase delete: soft delete now, queued purge, tombstone floor",
+     "formula": "hidden_at = event_applied_at + t_soft ; purged_at <= hidden_at + 24 h ; floor = event.version",
+     "steps": [
+      "Set deleted_at and the reason on the ix_ptr row; the search pre-filter excludes it from then on",
+      "Write the tombstone with the floor version and send it to ch_dedupe",
+      "Queue purge of vectors, postings, snippets and ACL rows through ix_gc and gv_erase",
+      "After purge, run a probe query for the document's text and check zero hits using a strong read (t_t57)",
+      "Keep the tombstone 30 days to block resurrection, then drop it"
+     ],
+     "params": {
+      "t_soft": "under 5 s p95 (design)",
+      "purge_deadline": "24 h (design; tune to the tenant's legal terms)",
+      "tombstone_retention": "30 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "t_event: source delete time",
+      "t_lag: delivery lag of the change path",
+      "t_soft: soft delete apply time",
+      "t_purge: purge window"
+     ],
+     "formula_full": "exposure_window = t_lag + t_soft ; erasure_total = t_lag + t_soft + t_purge",
+     "derivation": "A deleted document stays findable only while the change has not arrived and been applied. After that it is hidden, and later erased inside the purge window.",
+     "worked_example": "Worst case on a Graph driveItem webhook path: t_lag 6 h (t_t01), t_soft 5 s, t_purge 24 h: hidden after 6 h 5 s, fully erased after 30 h 5 s. With a delta poll at 30 s the exposure window shrinks to about 35 s, which is why deletes also trigger an immediate live recheck at read time (ac_live).",
+     "complexity": "O(chunks of the document) purge operations; one indexed write for the soft delete.",
+     "failure_modes": [
+      "Soft-deleted vectors remain in index files (t_t17): compaction plus a probe test per purge",
+      "Tombstone dropped too early and a late event resurrects the document: retention 30 days exceeds the 7-day replay window"
+     ],
+     "calibration": "Test with 100 deletes per week: all must hit zero results by the probe; any miss shortens the purge deadline and adds compaction."
+    },
+    "alternatives": [
+     {
+      "name": "Hard delete immediately",
+      "why_rejected": "Purge across several stores cannot be instant, and a failure midway leaves orphans with no record."
+     },
+     {
+      "name": "Rely on the next sweep to find deletes",
+      "why_rejected": "The exposure window would be a week."
+     }
+    ],
+    "security": [
+     "Zombie hit: a deleted or forbidden document still being returned; control is the soft-delete flag in the pre-filter plus the live recheck at read time",
+     "Resurrection by replayed event: the floor version in ch_dedupe blocks any event at or below it",
+     "Tombstone as a leak: it holds uri, reason and time only, not content or title",
+     "Erasure bypass through copies: derived embeddings are treated as personal data (t_t15, t_t16) and purged with the rest, and per-tenant keys allow crypto-shredding as a last resort (t_t17)"
+    ],
+    "performance": {
+     "slo": "soft delete p95 under 5 s after the event is applied; purge complete within 24 h",
+     "complexity": "O(chunks) per document",
+     "scaling": "At 10x deletes (a mass delete of 1M items) the soft delete stays one write each; purge is batched and paced so it does not starve search."
+    },
+    "edge_cases": [
+     "Delete of an unknown document: tombstone still written so a late create below the floor is dropped",
+     "Trash then restore in the source: a newer version above the floor un-hides the pointer and re-derives",
+     "Bulk delete of 1M objects: soft delete first in batches of 10,000, purge paced",
+     "Permission removed but document alive: reason 'access_removed' hides it for that audience through the ACL path and keeps the pointer for others",
+     "Duplicate delete event: second is a no-op",
+     "Concurrent delete and update: higher version wins; equal version delete wins",
+     "Clock skew: floor uses source version, not time"
+    ],
+    "tests": [
+     {
+      "name": "hidden fast",
+      "given": "delete event applied at T",
+      "expect": "search for the document returns zero hits by T + 5 s"
+     },
+     {
+      "name": "no resurrection",
+      "given": "tombstone floor 9, late event v8",
+      "expect": "dropped, document stays hidden"
+     },
+     {
+      "name": "hard delete probe",
+      "given": "purge complete for a document with 40 chunks",
+      "expect": "probe query returns 0 hits on a strong read"
+     },
+     {
+      "name": "restore",
+      "given": "delete floor 9 then restore with v10",
+      "expect": "pointer visible again after derive"
+     }
+    ],
+    "cost_levers": [
+     "Purge in batches off-peak",
+     "Soft delete is one write; the expensive work is deferred"
+    ],
+    "feedback_events": [
+     "Probe failures after purge feed compaction frequency and the purge deadline"
+    ],
+    "analytics_events": [
+     {
+      "name": "tomb.applied",
+      "fields": [
+       "tenant_id",
+       "app",
+       "reason",
+       "chunks",
+       "ms"
+      ],
+      "when": "on soft delete"
+     },
+     {
+      "name": "tomb.purged",
+      "fields": [
+       "tenant_id",
+       "uri_hash",
+       "stores",
+       "probe_hits",
+       "ms"
+      ],
+      "when": "after purge and probe"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Graph delta returns '@removed' with a reason and Drive returns removed items when asked (t_t02, t_t04); Microsoft lets admins disconnect and remove indexed content (t_t12).",
+    "refs": [
+     "t_t02",
+     "t_t04",
+     "t_t17",
+     "t_t57",
+     "t_t15",
+     "t_t16",
+     "t_t01",
+     "t_t12"
+    ]
+   }
+  },
+  "ch_cursor": {
+   "line": "Transactional {stream, cursor, watermark}, committed with the events it covers\nfenced by epoch; lag = now - watermark",
+   "dumb": "This is the bookmark box. For each stream of changes it remembers how far we have read and how far everything is safely saved. The bookmark and the events it covers are written together, so they can never disagree. A counter on each bookmark stops an old, slow worker from overwriting a newer one.",
+   "inn": "Cursor commits from ch_wf {tenant, app, stream, cursor, watermark, epoch}; log positions from ch_cdc; backfill watermarks from ch_fill.",
+   "out": "Resume point {stream, cursor, epoch} to ch_delta; last full listing time to ch_sweep; watermark to op_lag.",
+   "store": "A relational table {tenant, app, stream, cursor, watermark, epoch, updated_at} and an outbox table of events, written in one transaction (outbox pattern, our design); cursors encrypted at rest.",
+   "fail": "A commit that loses the epoch check is rejected and the stale worker stops; the transaction retries 3 times over 1 s on a deadlock. If the table is down, pollers stop for up to 5 min and alert op_health, and nothing advances, so nothing is lost.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Whether the outbox relay is a polling loop or a log tail of the table is open; watermark rules for streams with many partitions need real traffic to tune.",
+   "prop": "Proposal: a cursor moved before its events are safe loses changes; committing both in one transaction is the only way to rule that out (t_t04).",
+   "deep": {
+    "purpose": "Guarantee that a saved position never gets ahead of the events it covers, and that only one worker owns a stream at a time.",
+    "expected": [
+     "After any crash the cursor and the events agree",
+     "A stale worker with an old epoch cannot move the cursor",
+     "Lag per stream is available as now minus the watermark"
+    ],
+    "not_expected": [
+     "It does not poll or fetch",
+     "It does not decide when a cursor is too old; the app does (410)",
+     "It does not hold document content"
+    ],
+    "algorithm": {
+     "name": "Transactional outbox with epoch fencing and watermark",
+     "formula": "commit iff epoch_in = epoch_stored ; watermark = min over partitions of last committed event time",
+     "steps": [
+      "Open a transaction; check epoch_in equals the stored epoch",
+      "Insert the batch of events into the outbox and update the cursor and watermark in the same transaction",
+      "Commit; a relay publishes outbox rows to ch_bus and marks them sent",
+      "On takeover, increment the epoch so the old owner's later commits fail",
+      "Compute lag as now minus watermark and expose it"
+     ],
+     "params": {
+      "epoch_bump": "on every ownership change",
+      "outbox_retention": "24 h after sent (design)",
+      "relay_batch": "500 rows or 100 ms (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "w_i: last committed event time of partition i",
+      "W: stream watermark",
+      "lag: seconds behind the source"
+     ],
+     "formula_full": "W = min_i(w_i) ; lag = now - W",
+     "derivation": "The stream is only as caught up as its slowest partition, so the watermark is the minimum. Anything older than W is fully applied.",
+     "worked_example": "Partitions committed at 12:00:05, 12:00:09 and 12:00:03: W = 12:00:03. At 12:00:30, lag = 27 s. A freshness alert at 3 times a 60 s SLA fires at lag 180 s (t_t54).",
+     "complexity": "O(1) per commit plus O(P) for the watermark minimum.",
+     "failure_modes": [
+      "Relay crash between commit and publish: outbox rows stay unsent and the relay resumes, giving duplicates that ch_dedupe drops",
+      "Two workers with the same epoch from a bug: the compare-and-set on epoch allows one commit and rejects the other"
+     ],
+     "calibration": "Alert at 3 times the connector SLA (t_t54); review the multiple after a month of false alarms."
+    },
+    "alternatives": [
+     {
+      "name": "Save the cursor in the poller's memory or a file",
+      "why_rejected": "A crash moves it out of step with the events."
+     },
+     {
+      "name": "Write events and cursor to two stores",
+      "why_rejected": "No atomic commit across two stores."
+     }
+    ],
+    "security": [
+     "Cursor theft or tampering: an attacker who edits a cursor could skip or replay; cursors are encrypted at rest and bound to (tenant, stream, epoch)",
+     "Zombie worker overwrite after a network partition: epoch fencing rejects it",
+     "Cross-tenant read of positions: row-level policy on tenant id plus tenant in the key",
+     "Cursor contents leak (some cursors embed ids): never written to logs, redacted in traces"
+    ],
+    "performance": {
+     "slo": "commit p95 under 20 ms (design)",
+     "complexity": "O(1) per commit",
+     "scaling": "At 10x streams the table is small (about 200 bytes per stream); the outbox write rate is the limit and the table is partitioned by tenant."
+    },
+    "edge_cases": [
+     "Empty batch: cursor still advances, no outbox rows",
+     "Duplicate commit of the same batch: the compare-and-set on cursor makes it a no-op",
+     "Huge batch of 100,000 events: split into commits of 5,000 with the cursor updated only on the last",
+     "Concurrent pollers for one stream: fenced by epoch",
+     "Partial failure after outbox insert: transaction rolls back as a whole",
+     "Clock skew: watermark uses the source's event times, never the local clock for ordering",
+     "Reset after 410: cursor cleared, epoch bumped"
+    ],
+    "tests": [
+     {
+      "name": "crash consistency",
+      "given": "process killed between the events write and the commit",
+      "expect": "neither cursor nor events changed"
+     },
+     {
+      "name": "epoch fence",
+      "given": "old worker with epoch 3 commits after takeover at epoch 4",
+      "expect": "rejected"
+     },
+     {
+      "name": "watermark minimum",
+      "given": "partitions at 12:00:05, 12:00:09, 12:00:03",
+      "expect": "watermark 12:00:03"
+     }
+    ],
+    "cost_levers": [
+     "Tiny table, one write per batch rather than per event"
+    ],
+    "feedback_events": [
+     "Lag alerts per stream feed the connector SLA values"
+    ],
+    "analytics_events": [
+     {
+      "name": "cursor.committed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "stream",
+       "events",
+       "lag_s",
+       "epoch"
+      ],
+      "when": "on each commit"
+     },
+     {
+      "name": "cursor.fenced",
+      "fields": [
+       "tenant_id",
+       "stream",
+       "stale_epoch"
+      ],
+      "when": "when a commit is rejected"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_dlt",
+      "name": "dlt",
+      "take": "Stores incremental state with the load, the same idea of state tied to data"
+     },
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Per-stream state messages committed after records are written"
+     }
+    ],
+    "industry": "Drive's guidance is to save the page token only after the batch commits (t_t04); Anthropic checkpoints agent state to resume (t_t10).",
+    "refs": [
+     "t_t04",
+     "t_t10",
+     "t_t54",
+     "t_t02",
+     "r_dlt",
+     "r_airbyte"
+    ]
+   }
+  },
+  "ch_dlq": {
+   "line": "Parked events with error class, retry history and one-click replay\nreplay <= 10% of rate budget; kept 30 days",
+   "dumb": "When a change cannot be handled after several tries, we do not throw it away or keep trying forever. We park it here with the reason it failed and a log of every try. A person can look, fix the cause, and replay it with one click. Replay is slowed down so it cannot swamp the app.",
+   "inn": "Events from ch_dedupe and ch_wf {event envelope, error_class, attempts, history[{at, error, ms}]}.",
+   "out": "Replay of a chosen event or batch to ch_wf; depth by error class to op_health.",
+   "store": "Rows {tenant, event envelope, error_class, attempts, history, parked_at, state} for 30 days (design). Envelopes carry ids only, with no document bodies.",
+   "fail": "If the park write fails the event stays on the bus and the consumer retries 3 times over 5 s, then pauses the partition rather than dropping it. A replay that fails again returns the event to the queue with the history extended; after 3 replays it is marked 'needs engineering'.",
+   "req": "Requirement: 'run 24x7 with retries'",
+   "hard": "Error classes are a starting list (transient exhausted, poison, permission denied, not found, version regression); real traffic will add more.",
+   "prop": "Proposal: a lossless place for failures with a safe replay path keeps a sync pipeline from silently losing events.",
+   "deep": {
+    "purpose": "Keep every unprocessable event visible and replayable, so a failure is a queue item with a cause, not a silent loss.",
+    "expected": [
+     "Every event that exhausts retries appears here with its history",
+     "A replay after the fix applies the event once",
+     "Depth by error class triggers an alert before it becomes a backlog"
+    ],
+    "not_expected": [
+     "It does not retry automatically; replay is deliberate",
+     "It does not store document bodies",
+     "It does not hide poison events; they are flagged to engineering"
+    ],
+    "algorithm": {
+     "name": "Classified parking queue with throttled replay",
+     "formula": "replay_rate <= share * budget ; alert iff depth(class) > threshold",
+     "steps": [
+      "Receive a failed event with class, attempts and history",
+      "Persist it and update the depth counters by class",
+      "Alert when depth exceeds the threshold or any poison event appears",
+      "On replay, check the class's cause is cleared, then resend to ch_wf under the replay rate cap",
+      "After success mark resolved; after 30 days expire"
+     ],
+     "params": {
+      "retention": "30 days (design)",
+      "replay_share": "10% of the app's request budget (design)",
+      "alert_depth": "0.5% of the last 24 h event count or 1 poison event (design; tune)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "N: parked events to replay",
+      "budget: requests per second for the app",
+      "share: fraction of budget replay may use"
+     ],
+     "formula_full": "replay_time = N / (share * budget)",
+     "derivation": "Replay is capped to a share of the app's budget so recovery never starves live sync.",
+     "worked_example": "N = 12,000 events, budget 5 req/s, share 0.10: rate 0.5 per s, so 12,000 / 0.5 = 24,000 s, about 6.7 h. At 25% share the recovery takes 2.7 h.",
+     "complexity": "O(1) per park and per replay; counters are O(classes).",
+     "failure_modes": [
+      "Mass parking after an app outage: bulk replay by class with the throttle",
+      "Replay loop on an unfixable event: capped at 3 replays then flagged"
+     ],
+     "calibration": "Raise the replay share during off-peak hours only after live lag stays under SLA for 1 week."
+    },
+    "alternatives": [
+     {
+      "name": "Drop events after retries",
+      "why_rejected": "Loses data without a trace."
+     },
+     {
+      "name": "Infinite retry",
+      "why_rejected": "One poison event blocks a partition and burns the app's quota."
+     }
+    ],
+    "security": [
+     "Sensitive data in a parked event: envelopes hold ids and error text only, and error text is scrubbed of tokens and urls with credentials",
+     "Operator replay abuse or replay of another tenant's event: replay needs an operator role, is tenant-scoped and audited",
+     "Poison event used as a denial of service: it parks after the retry bound and cannot block its partition",
+     "Replay used to roll back state: replay goes through ch_dedupe so old versions are dropped"
+    ],
+    "performance": {
+     "slo": "park write p95 under 20 ms (design); replay starts within 1 min of the operator's click",
+     "complexity": "O(1) per event",
+     "scaling": "At 10x events the queue stays small if the DLQ rate stays under 0.5%; if not, the root cause is fixed rather than the queue sized."
+    },
+    "edge_cases": [
+     "Empty queue: nothing to show, alert disarmed",
+     "Duplicate park of the same event: keyed by (tenant, uri, version), second is merged into the history",
+     "Huge history of 1,000 tries: capped to the last 50 entries",
+     "Concurrent replay clicks: second is rejected while the first is running",
+     "Partial failure on replay: remaining events stay parked",
+     "Unicode in error text: stored as UTF-8 and escaped on display",
+     "Expiry while parked: operator warned 3 days before the 30-day limit"
+    ],
+    "tests": [
+     {
+      "name": "park with history",
+      "given": "event fails 6 attempts",
+      "expect": "one DLQ row with 6 history entries and its class"
+     },
+     {
+      "name": "throttled replay",
+      "given": "12,000 parked, share 10%, budget 5 req/s",
+      "expect": "replay rate no higher than 0.5 per s"
+     },
+     {
+      "name": "replay once",
+      "given": "a replay of an event already applied",
+      "expect": "dropped by ch_dedupe, state resolved"
+     },
+     {
+      "name": "poison alert",
+      "given": "one event with class poison",
+      "expect": "alert raised within 1 min"
+     }
+    ],
+    "cost_levers": [
+     "Throttled replay avoids burst API cost",
+     "30-day expiry bounds storage"
+    ],
+    "feedback_events": [
+     "Operator resolutions label the error class and tune retry bounds"
+    ],
+    "analytics_events": [
+     {
+      "name": "dlq.parked",
+      "fields": [
+       "tenant_id",
+       "app",
+       "error_class",
+       "attempts"
+      ],
+      "when": "on park"
+     },
+     {
+      "name": "dlq.replayed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "count",
+       "outcome"
+      ],
+      "when": "on replay"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Failed workflow runs are inspectable and resettable, the model for replay"
+     }
+    ],
+    "industry": "Per-app queues with independent limits keep one failing API from blocking others (t_t48); Stacksync advises adaptive throttling after quota loss (t_t09).",
+    "refs": [
+     "t_t48",
+     "t_t09",
+     "t_t10",
+     "r_temporal"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "ch_bus",
+   "b": "op_lag",
+   "l": "consumer lag",
+   "k": "d",
+   "d": "Lag {lane, partition, consumer_group, events, seconds}",
+   "x": 1
+  },
+  {
+   "a": "ch_dedupe",
+   "b": "ix_ptr",
+   "l": "version check",
+   "k": "n",
+   "d": "Read {tenant, doc_id} to get stored version and deleted_at for the compare-and-set"
+  },
+  {
+   "a": "ch_wf",
+   "b": "op_lag",
+   "l": "applied timestamp",
+   "k": "d",
+   "d": "Last applied source time {tenant, app, stream, applied_modified_at} for lag = now - applied",
+   "x": 1
+  },
+  {
+   "a": "ch_fill",
+   "b": "op_cov",
+   "l": "crawl progress",
+   "k": "d",
+   "d": "Progress {tenant, app, crawled, total_estimate, gaps[]} for the coverage estimate",
+   "x": 1
+  },
+  {
+   "a": "ch_fill",
+   "b": "ch_sched",
+   "l": "backfill usage",
+   "k": "n",
+   "d": "Requests used {tenant, app, requests_per_s} so live polling keeps its share"
+  },
+  {
+   "a": "ch_tomb",
+   "b": "ix_gc",
+   "l": "purge order",
+   "k": "s",
+   "d": "Purge job {uri, tenant, stores[vectors, postings, snippets, acl]} after the soft delete",
+   "x": 1
+  },
+  {
+   "a": "ch_tomb",
+   "b": "ch_dedupe",
+   "l": "tombstone floor",
+   "k": "s",
+   "d": "Floor {tenant, doc_id, floor_version} so older events cannot resurrect the document",
+   "x": 1
+  },
+  {
+   "a": "ch_cursor",
+   "b": "ch_sweep",
+   "l": "last full listing",
+   "k": "n",
+   "d": "Time and digest root {stream, last_sweep_at} so the sweep knows its age"
+  },
+  {
+   "a": "ch_cursor",
+   "b": "op_lag",
+   "l": "watermark",
+   "k": "d",
+   "d": "Watermark {tenant, app, stream, watermark} per stream",
+   "x": 1
+  },
+  {
+   "a": "ch_dlq",
+   "b": "op_health",
+   "l": "dlq depth",
+   "k": "d",
+   "d": "Depth {tenant, app, error_class, count, oldest_age_s} by class",
+   "x": 1
+  }
+ ]
+}

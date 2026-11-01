@@ -1,0 +1,310 @@
+{
+ "cl_meta": {
+  "milestone": "M2",
+  "effort_days": 2,
+  "depends_on": [
+   "ll_mcp"
+  ],
+  "stack": [
+   {
+    "part": "MCP server framework",
+    "pick": "FastMCP (Python), pin the version you test; check current docs for its auth hooks",
+    "why": "serves the MCP route; the two metadata routes are plain ASGI routes beside it"
+   },
+   {
+    "part": "sign-in server",
+    "pick": "Keycloak or Ory Hydra",
+    "why": "already serves RFC 8414 metadata; we only point at it"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a hand-written OAuth server inside the brain",
+    "why": "token and key handling is the part that gets broken; use a standard server"
+   }
+  ],
+  "install": [
+   "pip install fastmcp starlette uvicorn httpx pytest",
+   "docker run -d --name kc -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/auth/discovery.py : the 401 challenge and the protected resource document",
+   "brain/auth/selfcheck.py : startup comparison of resource and issuer",
+   "tests/test_discovery.py : 401 header and document tests"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"required\": [\"resource\", \"authorization_servers\"],\n  \"properties\": {\n    \"resource\": {\"type\": \"string\", \"format\": \"uri\"},\n    \"authorization_servers\": {\"type\": \"array\", \"items\": {\"type\": \"string\", \"format\": \"uri\"}, \"minItems\": 1},\n    \"scopes_supported\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"bearer_methods_supported\": {\"type\": \"array\", \"items\": {\"enum\": [\"header\"]}}\n  }\n}",
+  "interface": "GET /.well-known/oauth-protected-resource -> 200 application/json (document above)\nAny /mcp request without a valid token -> 401, header: WWW-Authenticate: Bearer resource_metadata=\"<https URL of the document>\"",
+  "code": "from starlette.responses import JSONResponse\nfrom starlette.routing import Route\n\nRESOURCE = os.environ['MCP_RESOURCE_URL']      # exactly what clients type\nISSUER = os.environ['OIDC_ISSUER_URL']\nMETA_URL = RESOURCE.rsplit('/', 1)[0] + '/.well-known/oauth-protected-resource'\n\nasync def protected_resource(request):\n    return JSONResponse(\n        {'resource': RESOURCE,\n         'authorization_servers': [ISSUER],\n         'scopes_supported': ['brain.read'],\n         'bearer_methods_supported': ['header']},\n        headers={'Cache-Control': 'max-age=300'})\n\ndef challenge():\n    # one generic 401 body: never say why the token failed\n    return JSONResponse(\n        {'error': 'unauthorized'}, status_code=401,\n        headers={'WWW-Authenticate': f'Bearer resource_metadata=\"{META_URL}\"'})\n\nasync def selfcheck(client):\n    doc = (await client.get(META_URL)).json()\n    assert doc['resource'] == RESOURCE, 'resource mismatch'\n    meta = (await client.get(ISSUER.rstrip('/') + '/.well-known/oauth-authorization-server')).json()\n    assert meta['issuer'].rstrip('/') == ISSUER.rstrip('/'), 'issuer mismatch'\n    assert meta.get('code_challenge_methods_supported') == ['S256'], 'S256 only'\n\nroutes = [Route('/.well-known/oauth-protected-resource', protected_resource)]",
+  "steps": [
+   {
+    "do": "Set MCP_RESOURCE_URL and OIDC_ISSUER_URL, add the protected resource route",
+    "done_when": "curl -s $MCP_RESOURCE_URL/../.well-known/oauth-protected-resource returns JSON with your resource"
+   },
+   {
+    "do": "Add the 401 challenge to the MCP route for requests without a valid bearer",
+    "done_when": "curl -si -X POST $MCP_RESOURCE_URL shows 401 and a WWW-Authenticate line with resource_metadata"
+   },
+   {
+    "do": "Restrict the sign-in server to S256 in its client settings",
+    "done_when": "the sign-in server metadata lists only S256"
+   },
+   {
+    "do": "Add the startup self-check and fail the process if it raises",
+    "done_when": "starting with a wrong issuer exits non-zero with 'issuer mismatch'"
+   },
+   {
+    "do": "Connect a real client (Claude Code with claude mcp add, or Cursor) to the URL",
+    "done_when": "the client opens a browser sign-in without any auth setting typed by hand"
+   }
+  ],
+  "config": {
+   "MCP_RESOURCE_URL": "https://brain.example.com/mcp // exact string clients use and the aud in tokens",
+   "OIDC_ISSUER_URL": "https://login.example.com/realms/brain // must equal the iss claim",
+   "META_CACHE_SECONDS": "300 // short so an issuer change spreads in 5 minutes"
+  },
+  "verify": [
+   "pytest tests/test_discovery.py -q  # 3 passed",
+   "curl -si -X POST $MCP_RESOURCE_URL | grep -i www-authenticate  # shows resource_metadata=https://"
+  ],
+  "pitfalls": [
+   "Resource URL differs by a trailing slash from the aud claim: every call 401s; compare exact strings in the self-check",
+   "Putting the document behind the auth check: clients cannot read it and never reach the sign-in; keep it public",
+   "Claude Code reads a JSON entry with a url but no type as stdio and rejects it (clients.json); test the config you hand out"
+  ]
+ },
+ "cl_reg": {
+  "milestone": "M2",
+  "effort_days": 4,
+  "depends_on": [
+   "cl_meta"
+  ],
+  "stack": [
+   {
+    "part": "sign-in server",
+    "pick": "Keycloak (check current docs for metadata document support and its version) or Ory Hydra",
+    "why": "if neither supports client ID metadata documents in your version, put the resolver in a small service in front of authorize"
+   },
+   {
+    "part": "HTTP client",
+    "pick": "httpx with a custom transport that resolves DNS first and checks the address",
+    "why": "the fetch must block private addresses after resolution, not before"
+   },
+   {
+    "part": "do not pick",
+    "pick": "following redirects on the metadata fetch",
+    "why": "a redirect can point at an internal address and bypass the check"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary] pydantic pytest",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/auth/clients.py : resolve(client_id, redirect_uri)",
+   "brain/auth/fetch_guard.py : safe metadata fetch",
+   "migrations/020_oauth_client.sql : client table",
+   "config/static_clients.json : fixed clients such as a Slack-style host"
+  ],
+  "schema": "CREATE TABLE oauth_client (\n  client_id text PRIMARY KEY,\n  kind text NOT NULL CHECK (kind IN ('cimd','dcr','static')),\n  issuer text NOT NULL,\n  redirect_uris text[] NOT NULL,\n  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','blocked')),\n  doc_expires_at timestamptz,\n  first_seen timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "async def resolve_client(client_id: str, redirect_uri: str) -> ClientRecord  # raises InvalidClient",
+  "code": "import ipaddress, socket\nfrom urllib.parse import urlparse\n\nMAX_BYTES = 5120\n\ndef _public(host):\n    for info in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP):\n        ip = ipaddress.ip_address(info[4][0])\n        if ip.is_private or ip.is_link_local or ip.is_loopback or ip.is_reserved:\n            return False\n    return True\n\nasync def resolve_client(db, http, static, client_id, redirect_uri):\n    if client_id.startswith('https://'):\n        u = urlparse(client_id)\n        if not _public(u.hostname):\n            raise InvalidClient('blocked address')\n        r = await http.get(client_id, timeout=3, follow_redirects=False)\n        if len(r.content) > MAX_BYTES:\n            raise InvalidClient('too large')\n        doc = r.json()\n        if doc.get('client_id') != client_id:\n            raise InvalidClient('id mismatch')\n        uris, kind = doc.get('redirect_uris', []), 'cimd'\n    else:\n        row = await db.fetchrow('select redirect_uris, kind, status from oauth_client where client_id=$1', client_id)\n        row = row or static.get(client_id)\n        if not row or row['status'] != 'active':\n            raise InvalidClient('unknown client')\n        uris, kind = row['redirect_uris'], row['kind']\n    if redirect_uri not in uris:        # exact match, no prefixes\n        raise InvalidClient('redirect not listed')\n    return ClientRecord(client_id, kind, uris)",
+  "steps": [
+   {
+    "do": "Create the oauth_client table and load static_clients.json",
+    "done_when": "select count(*) from oauth_client shows the static rows"
+   },
+   {
+    "do": "Write the fetch guard with timeout, size cap, no redirects and a public-address check after DNS",
+    "done_when": "unit test for http://169.254.169.254/ raises InvalidClient with no outbound call"
+   },
+   {
+    "do": "Write resolve_client for the three kinds",
+    "done_when": "three unit tests pass, one per kind"
+   },
+   {
+    "do": "Rate limit the registration endpoint to 20 per IP per hour",
+    "done_when": "the 21st POST in an hour returns 429"
+   },
+   {
+    "do": "Cache fetched documents for min(Cache-Control, 3600 s)",
+    "done_when": "two sign-ins within a minute cause one outbound fetch (check access log)"
+   },
+   {
+    "do": "Sign in with Codex or ChatGPT using a metadata URL, and with Claude Code using registration",
+    "done_when": "both complete and show the right kind in the table or log"
+   }
+  ],
+  "config": {
+   "CIMD_FETCH_TIMEOUT_S": "3 // a client page that is slow is not a good sign",
+   "CIMD_MAX_BYTES": "5120 // metadata documents are small JSON",
+   "DCR_RATE_PER_IP_HOUR": "20 // tune from abuse logs",
+   "STATIC_CLIENTS_FILE": "config/static_clients.json // Slack-style hosts need a fixed id and redirects"
+  },
+  "verify": [
+   "pytest tests/test_clients.py -q  # 6 passed",
+   "curl -s -X POST $ISSUER/register -d '{\"redirect_uris\":[\"http://127.0.0.1:1/cb\"]}'  # check current docs for the exact registration path; expect 201 with client_id"
+  ],
+  "pitfalls": [
+   "Checking the hostname before DNS resolution: a public name can resolve to a private address; check the resolved IP",
+   "Prefix match on redirect_uri lets an attacker add a path or subdomain; compare exact strings (loopback port rule: check the spec)",
+   "Treating a dynamic client_id as valid at any issuer; store and check the issuer with it"
+  ]
+ },
+ "cl_aud": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "cl_meta",
+   "cl_reg"
+  ],
+  "stack": [
+   {
+    "part": "JWT verify",
+    "pick": "PyJWT 2.x with cryptography, algorithms limited to ES256 or RS256",
+    "why": "never accept alg none or a list the token chooses"
+   },
+   {
+    "part": "sign-in server",
+    "pick": "Keycloak or Ory Hydra; check current docs for the resource indicator (RFC 8707) setting in your version",
+    "why": "the audience must be set at issue time from the resource parameter"
+   },
+   {
+    "part": "do not pick",
+    "pick": "skipping the aud check because the issuer is trusted",
+    "why": "tokens for other services from the same issuer would work here"
+   }
+  ],
+  "install": [
+   "pip install 'pyjwt[crypto]' httpx pytest",
+   "pip install fastmcp"
+  ],
+  "layout": [
+   "brain/auth/verify.py : verify_bearer(token) -> Principal",
+   "brain/auth/jwks.py : cached key set with refresh on unknown kid",
+   "tests/test_aud.py : audience, expiry, skew tests"
+  ],
+  "schema": "{\n  \"iss\": \"https://login.example.com/realms/brain\",\n  \"sub\": \"user id\",\n  \"aud\": [\"https://brain.example.com/mcp\"],\n  \"exp\": 1790000000,\n  \"scope\": \"brain.read\",\n  \"tenant_id\": \"t_123\"\n}",
+  "interface": "def verify_bearer(authorization_header: str | None) -> Principal  # raises Unauthorized; never returns on a bad token",
+  "code": "import hashlib, base64, hmac, jwt\n\nRESOURCE = os.environ['MCP_RESOURCE_URL']\nISSUER = os.environ['OIDC_ISSUER_URL']\nSKEW = 30\n\ndef s256(verifier: str) -> str:\n    d = hashlib.sha256(verifier.encode('ascii')).digest()\n    return base64.urlsafe_b64encode(d).rstrip(b'=').decode()\n\ndef pkce_ok(stored_challenge: str, verifier: str) -> bool:\n    return hmac.compare_digest(s256(verifier), stored_challenge)\n\ndef verify_bearer(header, jwks):\n    if not header or not header.startswith('Bearer '):\n        raise Unauthorized()\n    token = header[7:]\n    kid = jwt.get_unverified_header(token).get('kid')\n    key = jwks.get(kid)                      # refetches once on unknown kid\n    claims = jwt.decode(\n        token, key, algorithms=['ES256', 'RS256'],\n        audience=RESOURCE, issuer=ISSUER, leeway=SKEW,\n        options={'require': ['exp', 'aud', 'iss', 'sub']})\n    if 'brain.read' not in claims.get('scope', '').split():\n        raise Unauthorized()\n    return Principal(claims['sub'], claims.get('tenant_id'))",
+  "steps": [
+   {
+    "do": "Configure the sign-in server to set aud from the resource parameter and accept S256 only",
+    "done_when": "a test token decoded at jwt.io shows aud equal to the MCP URL"
+   },
+   {
+    "do": "Write verify_bearer with the key cache",
+    "done_when": "valid token returns a Principal in a unit test"
+   },
+   {
+    "do": "Add negative tests for wrong aud, expired, bad signature, alg none",
+    "done_when": "pytest shows 4 failures raised as Unauthorized"
+   },
+   {
+    "do": "Add the PKCE check in the authorize and token path (or enable it in the server)",
+    "done_when": "a token request with a wrong verifier returns invalid_grant"
+   },
+   {
+    "do": "Confirm iss appears in the authorization redirect (check your sign-in server's setting)",
+    "done_when": "browser redirect URL contains iss= equal to the metadata issuer"
+   }
+  ],
+  "config": {
+   "MCP_RESOURCE_URL": "https://brain.example.com/mcp // the only accepted audience",
+   "JWT_LEEWAY_SECONDS": "30 // clock skew",
+   "ACCESS_TOKEN_TTL_SECONDS": "900 // short life limits a stolen token",
+   "JWKS_REFRESH_SECONDS": "600 // plus refresh on unknown kid"
+  },
+  "verify": [
+   "pytest tests/test_aud.py -q  # 8 passed",
+   "curl -s -H \"Authorization: Bearer $OTHER_AUD_TOKEN\" -X POST $MCP_RESOURCE_URL -o /dev/null -w '%{http_code}'  # 401"
+  ],
+  "pitfalls": [
+   "Passing audience=None to the decoder to 'make it work': tokens for any service pass; keep audience set",
+   "Allowing the token header to pick the algorithm: pin the algorithms list",
+   "Logging the Authorization header: scrub it in the access log"
+  ]
+ },
+ "cl_consent": {
+  "milestone": "M4",
+  "effort_days": 4,
+  "depends_on": [
+   "ll_mcp",
+   "so_oauth",
+   "so_admin"
+  ],
+  "stack": [
+   {
+    "part": "MCP server",
+    "pick": "FastMCP (Python); check current docs for its elicitation call and the 2026-07-28 multi round-trip form",
+    "why": "elicitation reply shape changed between spec versions"
+   },
+   {
+    "part": "state signing",
+    "pick": "Python hmac with a 32-byte server key from a secret store",
+    "why": "state must not be forgeable or guessable"
+   },
+   {
+    "part": "consent page",
+    "pick": "one server-rendered page behind the sign-in session",
+    "why": "no script needed; fewer ways to leak the link"
+   },
+   {
+    "part": "do not pick",
+    "pick": "form-mode elicitation for any key or password",
+    "why": "the MCP docs say form mode is never for secrets"
+   }
+  ],
+  "install": [
+   "pip install fastmcp jinja2 psycopg[binary]",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/consent/state.py : sign and verify state",
+   "brain/consent/page.py : consent route",
+   "brain/consent/elicit.py : build the url-mode request and the fallback text",
+   "migrations/021_pending_link.sql : pending link table"
+  ],
+  "schema": "CREATE TABLE pending_link (\n  state text PRIMARY KEY,\n  user_id text NOT NULL,\n  tenant_id text NOT NULL,\n  source_id text NOT NULL,\n  expires_at timestamptz NOT NULL,\n  used boolean NOT NULL DEFAULT false\n);\nCREATE INDEX ON pending_link (user_id, source_id);",
+  "interface": "async def require_link(user_id: str, tenant_id: str, source_id: str) -> ElicitUrl | None  # None when already linked",
+  "code": "import hmac, hashlib, secrets, time\n\nKEY = os.environ['CONSENT_STATE_KEY'].encode()\nTTL = 600\n\ndef make_state(user_id, source_id):\n    nonce = secrets.token_urlsafe(16)\n    exp = int(time.time()) + TTL\n    body = f'{user_id}|{source_id}|{nonce}|{exp}'\n    sig = hmac.new(KEY, body.encode(), hashlib.sha256).hexdigest()\n    return f'{body}|{sig}'\n\nasync def require_link(db, vault, user_id, tenant_id, source_id):\n    if await vault.has_link(user_id, source_id):\n        return None\n    row = await db.fetchrow(\n        'select state from pending_link where user_id=$1 and source_id=$2 and not used and expires_at>now()',\n        user_id, source_id)\n    state = row['state'] if row else make_state(user_id, source_id)\n    if not row:\n        await db.execute(\n            \"insert into pending_link values ($1,$2,$3,$4, now()+interval '10 minutes', false)\",\n            state, user_id, tenant_id, source_id)\n    url = f'https://{HOST}/connect?state={state}'\n    return ElicitUrl(mode='url', url=url, message=f'Link {source_id} to continue')\n\nasync def complete(db, session_user, state):\n    uid = state.split('|')[0]\n    if uid != session_user:                # the tricky part: bind to the signed-in user\n        raise Forbidden()\n    n = await db.execute('update pending_link set used=true where state=$1 and not used and expires_at>now()', state)\n    if n != 'UPDATE 1':\n        raise Expired()",
+  "steps": [
+   {
+    "do": "Create the pending_link table and the state functions",
+    "done_when": "unit test makes a state and verifies it, and a tampered state fails"
+   },
+   {
+    "do": "Build the consent route that requires the signed-in user and starts the source OAuth",
+    "done_when": "opening the link as the right user redirects to the source app's login"
+   },
+   {
+    "do": "Return a url-mode elicitation from the search tool when a source is unlinked",
+    "done_when": "a client that supports elicitation shows the link prompt"
+   },
+   {
+    "do": "Add the plain-text fallback for clients without elicitation",
+    "done_when": "a client without support gets the link in the tool result text"
+   },
+   {
+    "do": "Add the once-per-hour cap per user and source",
+    "done_when": "second prompt inside an hour reuses the pending state"
+   },
+   {
+    "do": "Test accept, decline and cancel",
+    "done_when": "decline returns partial results plus a note naming the source"
+   }
+  ],
+  "config": {
+   "CONSENT_STATE_KEY": "secret-store reference // 32 random bytes, rotate quarterly (design)",
+   "CONSENT_STATE_TTL_S": "600 // time for an app login and two-factor prompt",
+   "CONSENT_PROMPT_CAP_PER_HOUR": "1 // fights approval fatigue"
+  },
+  "verify": [
+   "pytest tests/test_consent.py -q  # 7 passed",
+   "curl -si \"https://$HOST/connect?state=bad\"  # 400 or 403, no source redirect"
+  ],
+  "pitfalls": [
+   "State not tied to the session user: a pasted link links the victim's app to the attacker's account; check user_id equals the session user",
+   "Reading the 2025-11-25 elicitation shape for a client on the 2026-07-28 spec: check current docs and test both",
+   "Putting the source token in the state or the URL: only an opaque state travels; tokens stay in the vault"
+  ]
+ }
+}

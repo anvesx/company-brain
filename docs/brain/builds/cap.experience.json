@@ -1,0 +1,311 @@
+{
+ "cp_exp": {
+  "milestone": "M5",
+  "effort_days": 5,
+  "depends_on": [
+   "cp_hook",
+   "pl_gw"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "small model through the gateway with JSON schema",
+    "why": "Cited six-field output"
+   },
+   {
+    "part": "do not pick",
+    "pick": "drafting from an unreviewed shared zone",
+    "why": "Drafts stay in the owner's personal zone"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/capture/experience.py",
+   "tests/test_experience.py"
+  ],
+  "schema": "{\"situation\":\"Field\",\"decision\":\"Field\",\"reason\":\"Field\",\"exception\":\"Field\",\"outcome\":\"Field\"}",
+  "interface": "def draft_card(ctx, case) -> Card | None  # None when fewer than 3 usable passages",
+  "code": "def draft_card(gw, ctx, case):\n    ps = fetch_passages(ctx.owner_token, case)                  # only what the owner may read\n    if len(ps) < 3:\n        return None\n    out = gw.json(model=SMALL, schema=CardOut, prompt=render(ps))\n    ids = {p.id for p in ps}\n    for name, f in out.fields():\n        if not f.passage_ids or not set(f.passage_ids) <= ids:\n            setattr(out, name, Field.empty())                  # uncited means blank\n    return save_draft(ctx.owner, out)",
+  "steps": [
+   {
+    "do": "Write the schema and prompt",
+    "done_when": "validates"
+   },
+   {
+    "do": "Blank uncited fields",
+    "done_when": "invented reason becomes empty"
+   },
+   {
+    "do": "Save only to the personal zone",
+    "done_when": "draft is not visible to others"
+   },
+   {
+    "do": "Skip small cases",
+    "done_when": "2 passages gives None"
+   }
+  ],
+  "config": {
+   "MIN_PASSAGES": "3 // fewer gives no draft",
+   "RETRY": "1 // one retry then queue for the owner",
+   "DRAFT_ZONE": "personal // never a shared zone"
+  },
+  "verify": [
+   "pytest tests/test_experience.py -q  # all passed",
+   "python -m brain.capture.experience --case samples/incident.json  # six fields, cited or blank"
+  ],
+  "pitfalls": [
+   "Drafting from sources the owner cannot read",
+   "Saving a draft to a shared zone"
+  ]
+ },
+ "cp_lib": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "zn_promote",
+   "ix_cat"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres table per library type",
+    "why": "Small, reviewed, owned entries"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a wiki with free edit",
+    "why": "No owner, reviewer or review date"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/capture/library.py",
+   "tests/test_library.py"
+  ],
+  "schema": "{\"id\":\"str\",\"library\":\"enum6\",\"owner\":\"str\",\"reviewer\":\"str\",\"reviewed_at\":\"date\",\"zone\":\"str\",\"fields\":\"object\",\"sources\":[\"pointer\"]}",
+  "interface": "def publish(card: Card, library: str, reviewer: str) -> Entry",
+  "code": "def publish(db, card, library, reviewer):\n    assert library in LIBRARIES and reviewer != card.owner or card.owner_is_reviewer_ok\n    row = db.insert(\"entries\", id=new_id(), library=library, owner=card.owner, reviewer=reviewer, reviewed_at=today(), zone=card.zone, fields=card.fields, sources=card.sources)\n    catalog.add(row)                                           # ix_cat gets type, owner, period\n    return row\n\ndef rank(entry, base, interval=180):\n    age = (today() - entry.reviewed_at).days\n    return base * 0.5 ** max(0, (age - interval) / interval)",
+  "steps": [
+   {
+    "do": "Create the table and six library types",
+    "done_when": "unknown library is rejected"
+   },
+   {
+    "do": "Add publish with reviewer",
+    "done_when": "entry has owner and reviewer"
+   },
+   {
+    "do": "Add decay by review age",
+    "done_when": "400-day entry ranks lower"
+   },
+   {
+    "do": "Add the broken-source notice",
+    "done_when": "unresolved pointer notifies the owner"
+   }
+  ],
+  "config": {
+   "REVIEW_INTERVAL_DAYS": "180 // design",
+   "DECAY_HALF_AT": "2x interval // design",
+   "LIBRARIES": "decision cases, rules of thumb, exceptions, checklists, vocabulary, who-knows-what"
+  },
+  "verify": [
+   "pytest tests/test_library.py -q  # all passed",
+   "psql brain_dev -c 'select library,count(*) from entries group by 1'  # six or fewer rows"
+  ],
+  "pitfalls": [
+   "Publishing a draft without the owner's yes",
+   "Ranking stale entries equal to fresh ones"
+  ]
+ },
+ "cp_probe": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "cp_exp",
+   "ix_fetch"
+  ],
+  "stack": [
+   {
+    "part": "tools",
+    "pick": "connector read-only tools",
+    "why": "scoped by the contributor's token"
+   },
+   {
+    "part": "model",
+    "pick": "small model through the gateway",
+    "why": "one claim per call"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/capture/probe.py",
+   "tests/test_probe.py"
+  ],
+  "schema": "{\"claim_id\":\"str\",\"result\":\"support|narrow|revise|unsupported|unchecked\",\"pointer\":\"str\"}",
+  "interface": "def probe_draft(ctx, draft, budget=6) -> list[ProbeResult]",
+  "code": "def probe_draft(ctx, draft, budget=6):\n    out = []\n    for c in draft.claims:\n        if budget == 0:\n            out.append(ProbeResult(c.id, 'unchecked')); continue\n        r = ctx.read_only_tool(c.source, c.test)   # contributor token\n        budget -= 1\n        out.append(classify(c, r))\n    return out",
+  "steps": [
+   {
+    "do": "Write the probe tool list as read only",
+    "done_when": "a write call is refused"
+   },
+   {
+    "do": "Add the claim classifier",
+    "done_when": "stale name gives revise"
+   },
+   {
+    "do": "Add the 6 call budget",
+    "done_when": "7th claim is unchecked"
+   },
+   {
+    "do": "Log every probe call",
+    "done_when": "log lists each call and result"
+   }
+  ],
+  "config": {
+   "PROBE_BUDGET": "6 // read calls per draft",
+   "IDENTITY": "contributor // never a service account",
+   "MODE": "read_only // enforced by connector scope"
+  },
+  "verify": [
+   "pytest tests/test_probe.py -q  # all passed",
+   "python -m brain.capture.probe --draft samples/draft.json  # one result per claim"
+  ],
+  "pitfalls": [
+   "Running probes as a service identity",
+   "Letting a probe write"
+  ]
+ },
+ "cp_dup": {
+  "milestone": "M5",
+  "effort_days": 2,
+  "depends_on": [
+   "cp_probe",
+   "cp_lib"
+  ],
+  "stack": [
+   {
+    "part": "search",
+    "pick": "the case library search",
+    "why": "tag prefilter then nearest five"
+   },
+   {
+    "part": "model",
+    "pick": "small model through the gateway",
+    "why": "mark the draft against each neighbour"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/capture/dup.py",
+   "tests/test_dup.py"
+  ],
+  "schema": "{\"mark\":\"new|duplicate|clarify|conflict\",\"neighbours\":\"list\"}",
+  "interface": "def check_dup(ctx, draft) -> DupMark  # new, duplicate, clarify or conflict, with neighbour links",
+  "code": "def check_dup(ctx, draft):\n    near = ctx.library.nearest(draft, k=5, tags=draft.tags)\n    if not near:\n        return DupMark('new', [])\n    return ctx.gw.json(model=SMALL, schema=DupMark, prompt=render(draft, near))",
+  "steps": [
+   {
+    "do": "Add the nearest five search",
+    "done_when": "five cards returned"
+   },
+   {
+    "do": "Add the mark",
+    "done_when": "duplicate gets a link"
+   },
+   {
+    "do": "Never delete a match",
+    "done_when": "the card is still there"
+   },
+   {
+    "do": "Return the marks to the review screen",
+    "done_when": "duplicate and conflict show with links"
+   }
+  ],
+  "config": {
+   "NEIGHBOURS": "5 // cards compared",
+   "AUTO_DELETE": "false // the owner decides",
+   "MIN_SIM": "0.3 // enforced"
+  },
+  "verify": [
+   "pytest tests/test_dup.py -q  # all passed",
+   "python -m brain.capture.dup --draft samples/draft.json  # prints the mark"
+  ],
+  "pitfalls": [
+   "Using a card the contributor cannot see",
+   "Deleting on a duplicate mark"
+  ]
+ },
+ "cp_trust": {
+  "milestone": "M5",
+  "effort_days": 2,
+  "depends_on": [
+   "cp_dup"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "tier and evidence list per card"
+   },
+   {
+    "part": "rule",
+    "pick": "plain Python function",
+    "why": "no model call"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/capture/tier.py",
+   "tests/test_tier.py"
+  ],
+  "schema": "ALTER TABLE card ADD COLUMN tier text DEFAULT 'prediction';\nALTER TABLE card ADD COLUMN evidence jsonb;",
+  "interface": "def tier_for(cases, clean_cycles, contradicted) -> str",
+  "code": "def tier_for(cases, clean_cycles, contradicted):\n    if contradicted:\n        return 'prediction'\n    if clean_cycles >= ANCHOR_CYCLES:\n        return 'anchor'\n    return 'core' if len({c.contributor for c in cases}) >= CORE_CASES else 'prediction'",
+  "steps": [
+   {
+    "do": "Add the tier column",
+    "done_when": "\\d card shows tier"
+   },
+   {
+    "do": "Write tier_for",
+    "done_when": "3 independent cases gives core"
+   },
+   {
+    "do": "Count one contributor once",
+    "done_when": "3 from one person gives prediction"
+   },
+   {
+    "do": "Notify the owner on a demotion",
+    "done_when": "demoted card sends one notice"
+   }
+  ],
+  "config": {
+   "CORE_CASES": "3 // independent contributors",
+   "ANCHOR_CYCLES": "10 // clean review cycles",
+   "ON_CONTRADICTION": "demote // one level and tell the owner"
+  },
+  "verify": [
+   "pytest tests/test_tier.py -q  # all passed",
+   "python -m brain.capture.tier --card 123  # prints the tier and evidence"
+  ],
+  "pitfalls": [
+   "Counting one contributor three times",
+   "Promoting on approval alone"
+  ]
+ }
+}

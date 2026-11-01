@@ -1,0 +1,460 @@
+{
+ "ac_filter": {
+  "milestone": "M2",
+  "effort_days": 8,
+  "depends_on": [
+   "ac_store",
+   "ac_grp",
+   "ac_neg"
+  ],
+  "stack": [
+   {
+    "part": "engine",
+    "pick": "Postgres 16 with pgvector and a GIN index on principals",
+    "why": "Research repos note pointers, ACL rows and vectors join in one query; filter applies inside the scan"
+   },
+   {
+    "part": "exact fallback",
+    "pick": "pgvector exact scan on the allowed set",
+    "why": "Brute force over a small allowed set beats a filtered ANN that loses recall"
+   },
+   {
+    "part": "later",
+    "pick": "OpenSearch document-level security or Vespa when scale needs it",
+    "why": "Named in research as the scale step; check current docs before migrating"
+   },
+   {
+    "part": "do not pick",
+    "pick": "post-filter on the top k alone",
+    "why": "It leaks candidate counts and starves recall; techniques research marks this as the wrong default"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install psycopg[binary] pgvector"
+  ],
+  "layout": [
+   "brain/acl/filter/compile.py : principal set to a filter object",
+   "brain/acl/filter/search.py : strategy choice and query",
+   "tests/test_filter.py : empty set matches nothing, revoked removed",
+   "tests/test_leak_canary.py : planted forbidden documents"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"AclFilter\",\n  \"type\": \"object\",\n  \"required\": [\"tenant_id\", \"principals\", \"acl_version\", \"match_nothing\"],\n  \"properties\": {\n    \"tenant_id\": {\"type\": \"string\"},\n    \"principals\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}, \"maxItems\": 1000},\n    \"group_refs\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"acl_version\": {\"type\": \"integer\"},\n    \"match_nothing\": {\"type\": \"boolean\"}\n  }\n}",
+  "interface": "def compile_filter(ctx: RequestContext) -> AclFilter  # pass the same AclFilter to lexical, vector and cache-key code",
+  "code": "BRUTE_FORCE_S = 0.01\nCAP = 1000\n\ndef compile_filter(db, neg, ctx):\n    if not ctx.tenant_id or not ctx.principals:\n        return AclFilter(ctx.tenant_id, [], [], 0, match_nothing=True)   # fail closed\n    groups = [r[0] for r in db.execute(\n        \"SELECT group_id FROM user_groups WHERE tenant_id=%s AND user_id=%s\", (ctx.tenant_id, ctx.user_id))]\n    p = set(ctx.principals) | set(groups)\n    p -= neg.revoked(ctx.tenant_id)                  # subtract revoked before anything else\n    if ctx.agent_scope is not None:\n        p &= ctx.agent_scope                         # an agent never exceeds its scope\n    if not p:\n        return AclFilter(ctx.tenant_id, [], [], ctx.acl_version, match_nothing=True)\n    refs = []\n    if len(p) > CAP:                                 # collapse to group references\n        refs, p = sorted(p)[CAP:], set(sorted(p)[:CAP])\n    return AclFilter(ctx.tenant_id, sorted(p), refs, ctx.acl_version, match_nothing=False)\n\ndef search(db, f, qvec, k, stats):\n    if f.match_nothing:\n        return []\n    s = stats.selectivity(f)                         # allowed chunks / total chunks\n    if s < BRUTE_FORCE_S:                            # tricky part: tiny allowed set, scan exactly\n        sql = (\"SELECT chunk_id FROM chunk c JOIN object_acl a USING (tenant_id, doc_id) \"\n               \"WHERE c.tenant_id=%s AND a.principals && %s ORDER BY c.embedding <=> %s LIMIT %s\")\n        db.execute(\"SET LOCAL enable_indexscan = off\")   # force the exact scan over the allowed rows\n    else:\n        sql = (\"SELECT chunk_id FROM chunk c JOIN object_acl a USING (tenant_id, doc_id) \"\n               \"WHERE c.tenant_id=%s AND a.principals && %s ORDER BY c.embedding <=> %s LIMIT %s\")\n        db.execute(\"SET LOCAL hnsw.iterative_scan = relaxed_order\")   # check current docs for the pgvector version\n    return db.execute(sql, (f.tenant_id, f.principals, qvec, k)).fetchall()",
+  "steps": [
+   {
+    "do": "Compile the filter object from a request context",
+    "done_when": "unit test with no principals returns match_nothing=true"
+   },
+   {
+    "do": "Subtract revoked principals",
+    "done_when": "test with one revoked group removes it from the list"
+   },
+   {
+    "do": "Run vector search with the predicate inside the query",
+    "done_when": "EXPLAIN shows the principals && condition in the scan"
+   },
+   {
+    "do": "Add the selectivity check and exact path",
+    "done_when": "fixture with 0.5% allowed uses the exact path"
+   },
+   {
+    "do": "Pass the filter to lexical search and the cache key",
+    "done_when": "one filter object id appears in all three call logs"
+   },
+   {
+    "do": "Plant 5 forbidden documents and query as another user",
+    "done_when": "leak canary test returns 0 of the 5"
+   }
+  ],
+  "config": {
+   "BRUTE_FORCE_SELECTIVITY": "0.01 // under 1% scan exactly",
+   "PRINCIPAL_CAP": "1000 // larger sets collapse to group references",
+   "PRINCIPAL_CACHE_TTL_S": "30 // revocations bypass it",
+   "FAIL_MODE": "closed // empty or missing input matches nothing"
+  },
+  "verify": [
+   "pytest tests/test_filter.py tests/test_leak_canary.py -q  # all passed, canary leak count 0",
+   "psql -c 'EXPLAIN select 1' | grep -c principals  # query plan includes the predicate"
+  ],
+  "pitfalls": [
+   "Filtering after ranking returns fewer than k results and leaks that forbidden documents exist: symptom is short result lists for narrow users",
+   "A filter built from a stale group snapshot misses a new member: key the cache by acl_version",
+   "Missing tenant id in the filter lets one tenant search another: the compile step must refuse it"
+  ]
+ },
+ "ac_live": {
+  "milestone": "M2",
+  "effort_days": 7,
+  "depends_on": [
+   "ac_filter",
+   "ac_neg",
+   "ac_audit"
+  ],
+  "stack": [
+   {
+    "part": "concurrency",
+    "pick": "Python asyncio with httpx.AsyncClient",
+    "why": "N parallel checks with a per-call timeout; no thread pool needed"
+   },
+   {
+    "part": "tokens",
+    "pick": "Audience-bound per-user tokens from the connector layer",
+    "why": "The research notes the MCP spec forbids token passthrough; check current docs per app"
+   },
+   {
+    "part": "decision cache",
+    "pick": "Redis with 30 s TTL",
+    "why": "Short positive cache only; a revocation signal clears it"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a service account for the recheck",
+    "why": "It would allow what the user cannot see; the check must use the user's token"
+   }
+  ],
+  "install": [
+   "pip install httpx redis",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/acl/live/recheck.py : parallel check with timeout and fail closed",
+   "brain/acl/live/backfill.py : bounded extra rounds",
+   "tests/test_recheck.py : timeout denies, 4xx denies, backfill capped"
+  ],
+  "schema": "CREATE TABLE recheck_decision (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  principal_id text NOT NULL,\n  doc_id text NOT NULL,\n  app text NOT NULL,\n  status text NOT NULL CHECK (status IN ('allowed','denied','timeout','error')),\n  latency_ms integer NOT NULL,\n  decided_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "async def recheck_top(ctx: RequestContext, results: list[Result], timeout_s: float = 0.8) -> list[Result]  # only results the source explicitly allowed",
+  "code": "import asyncio\n\nasync def recheck_top(ctx, results, neg, tokens, connector, audit, timeout_s=0.8):\n    async def one(r):\n        if neg.is_revoked(ctx.tenant_id, r.principal_path):\n            return r, \"denied\"                        # no source call for a revoked scope\n        try:\n            tok = await tokens.get(ctx.user_id, r.app)   # audience-bound, per user\n            ok = await asyncio.wait_for(connector.can_open(r.app, r.source_id, tok), timeout_s)\n            return r, \"allowed\" if ok is True else \"denied\"\n        except asyncio.TimeoutError:\n            return r, \"timeout\"\n        except Exception:\n            return r, \"error\"\n    pairs = await asyncio.gather(*(one(r) for r in results))\n    shown = [r for r, s in pairs if s == \"allowed\"]   # tricky part: only an explicit allow shows\n    for r, s in pairs:\n        await audit.write(ctx, r, s)\n    return shown\n\nasync def with_backfill(ctx, ranker, **kw):\n    out, dropped_total, rnd = [], 0, 0\n    batch = ranker.next(10)\n    while True:\n        shown = await recheck_top(ctx, batch, **kw)\n        out += shown\n        dropped = len(batch) - len(shown)\n        if dropped <= 3 or rnd >= 2:\n            return out\n        rnd += 1\n        batch = ranker.next(10)",
+  "steps": [
+   {
+    "do": "Define can_open on one connector against a fixture app",
+    "done_when": "fixture returns allow and deny for two ids"
+   },
+   {
+    "do": "Write the parallel check with an 800 ms timeout",
+    "done_when": "a stub that sleeps 2 s returns status timeout in under 1 s"
+   },
+   {
+    "do": "Deny on 4xx, 5xx and timeout",
+    "done_when": "three failing stubs yield 0 shown results"
+   },
+   {
+    "do": "Add the decision cache with a 30 s TTL",
+    "done_when": "second identical check in 10 s makes 0 source calls"
+   },
+   {
+    "do": "Add bounded backfill",
+    "done_when": "more than 3 drops triggers at most 2 extra rounds in a test"
+   },
+   {
+    "do": "Write one audit row per decision",
+    "done_when": "audit table gains N rows for N results"
+   }
+  ],
+  "config": {
+   "RECHECK_N": "10 // matches the reranker output",
+   "PER_CHECK_TIMEOUT_MS": "800 // tune per app from measured p95",
+   "DECISION_CACHE_TTL_S": "30 // short positive cache only",
+   "MAX_BACKFILL_ROUNDS": "2 // bounds source calls"
+  },
+  "verify": [
+   "pytest tests/test_recheck.py -q  # all passed",
+   "grep -c 'status=timeout' logs/recheck.log  # matches the stub's timeout count"
+  ],
+  "pitfalls": [
+   "Treating a timeout as allow exposes data when an app is slow: symptom is a leak that only appears under load",
+   "Caching allow for minutes outlives a revocation: keep 30 s and clear on ac_neg signals",
+   "Unbounded backfill turns one query into dozens of source calls and hits rate limits"
+  ]
+ },
+ "ac_neg": {
+  "milestone": "M2",
+  "effort_days": 4,
+  "depends_on": [
+   "ac_store"
+  ],
+  "stack": [
+   {
+    "part": "shared store",
+    "pick": "Redis 7 hash with a sorted index by revoked_at",
+    "why": "Fast reads, simple expiry; durable copy in Postgres"
+   },
+   {
+    "part": "push channel",
+    "pick": "Redis pub/sub (or NATS if already deployed)",
+    "why": "One invalidation reaches every query node in milliseconds"
+   },
+   {
+    "part": "durable copy",
+    "pick": "Postgres 16 table",
+    "why": "Redis loses data on restart; rebuild from Postgres at boot"
+   },
+   {
+    "part": "do not pick",
+    "pick": "TTL-only expiry as the whole design",
+    "why": "Push is what makes revocation take seconds; TTL is the backstop"
+   }
+  ],
+  "install": [
+   "pip install redis psycopg[binary]",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/acl/revoke/store.py : write, publish, retire",
+   "brain/acl/revoke/node.py : in-memory copy, 5 s pull, subscribe",
+   "migrations/024_revocation.sql : durable table",
+   "tests/test_revoke.py : push, missed push, retire"
+  ],
+  "schema": "CREATE TABLE revocation (\n  tenant_id text NOT NULL,\n  principal_id text NOT NULL,\n  scope text NOT NULL,\n  revoked_at timestamptz NOT NULL DEFAULT now(),\n  until_version bigint NOT NULL,\n  PRIMARY KEY (tenant_id, principal_id, scope)\n);",
+  "interface": "def revoke(tenant_id: str, principal_id: str, scope: str, until_version: int) -> None  # and node.revoked(tenant_id) -> set[str]",
+  "code": "import time, json, threading\n\nclass Node:\n    def __init__(self, redis, db, pull_s=5):\n        self.r, self.db, self.pull_s = redis, db, pull_s\n        self.local, self.last = {}, 0.0\n\n    def _pull(self):\n        rows = self.db.execute(\"SELECT tenant_id, principal_id, scope, until_version FROM revocation\").fetchall()\n        self.local = {(t, p, s): v for t, p, s, v in rows}\n        self.last = time.monotonic()\n\n    def revoked(self, tenant):\n        if time.monotonic() - self.last > self.pull_s:   # tricky part: a missed push self-heals in 5 s\n            self._pull()\n        return {p for (t, p, s) in self.local if t == tenant}\n\n    def listen(self):\n        ps = self.r.pubsub()\n        ps.subscribe(\"revoke\")\n        for m in ps.listen():\n            if m[\"type\"] == \"message\":\n                d = json.loads(m[\"data\"])\n                self.local[(d[\"tenant\"], d[\"principal\"], d[\"scope\"])] = d[\"until_version\"]\n                self.last = time.monotonic()\n\ndef revoke(db, redis, tenant, principal, scope, until_version):\n    db.execute('''INSERT INTO revocation(tenant_id,principal_id,scope,until_version) VALUES (%s,%s,%s,%s)\n                  ON CONFLICT (tenant_id,principal_id,scope) DO UPDATE SET until_version=EXCLUDED.until_version, revoked_at=now()''',\n               (tenant, principal, scope, until_version))\n    redis.publish(\"revoke\", json.dumps({\"tenant\": tenant, \"principal\": principal, \"scope\": scope, \"until_version\": until_version}))\n\ndef retire(db, tenant, scope, applied_version):\n    db.execute(\"DELETE FROM revocation WHERE tenant_id=%s AND scope=%s AND until_version <= %s\", (tenant, scope, applied_version))",
+  "steps": [
+   {
+    "do": "Create the revocation table",
+    "done_when": "\\d revocation lists 5 columns"
+   },
+   {
+    "do": "Write revoke with insert and publish",
+    "done_when": "a subscriber receives the message in under 100 ms in a test"
+   },
+   {
+    "do": "Write the node with a 5 s pull",
+    "done_when": "with pub/sub off, a new revoke appears within 5 s"
+   },
+   {
+    "do": "Wire ac_filter and ac_live to node.revoked",
+    "done_when": "a revoked principal is absent from the compiled filter"
+   },
+   {
+    "do": "Retire on acl.applied at or past until_version",
+    "done_when": "row count drops to 0 after the applied event"
+   },
+   {
+    "do": "Alert on rows older than 24 h",
+    "done_when": "a seeded old row triggers the alert"
+   }
+  ],
+  "config": {
+   "LOCAL_TTL_S": "5 // seconds-long exposure target",
+   "PULL_INTERVAL_S": "5 // backstop when push fails",
+   "RETENTION_CAP_H": "24 // older entries alert, the list should have converged",
+   "CHANNEL": "revoke // pub/sub channel name"
+  },
+  "verify": [
+   "pytest tests/test_revoke.py -q  # all passed",
+   "redis-cli publish revoke '{}'  # returns the subscriber count, 1 or more"
+  ],
+  "pitfalls": [
+   "Relying on push alone leaves a node blind after a reconnect: symptom is one node still showing revoked content, so keep the 5 s pull",
+   "Retiring entries by time instead of by acl_version re-enables access before the list converges",
+   "Not telling qr_cache leaves cached results for the revoked user"
+  ]
+ },
+ "ac_audit": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ac_store"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 append-only table with a trigger that blocks UPDATE and DELETE",
+    "why": "Tamper resistance you can test; no extra service"
+   },
+   {
+    "part": "hash",
+    "pick": "SHA-256 from Python hashlib",
+    "why": "Standard; the chain is the proof, not the store"
+   },
+   {
+    "part": "export",
+    "pick": "OpenTelemetry logs exporter to the shared audit sink",
+    "why": "Named standalone pick for observability; check current docs for the log exporter status"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a mutable application log table",
+    "why": "Anyone with write access can rewrite history; the chain would not detect it without the trigger"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] opentelemetry-sdk",
+   "psql -c 'select 1'"
+  ],
+  "layout": [
+   "brain/acl/audit/append.py : canonicalise, chain, buffer",
+   "brain/acl/audit/verify.py : recompute chain, report first break",
+   "migrations/025_audit.sql : table and no-update trigger",
+   "tests/test_audit_chain.py : tamper and gap detection"
+  ],
+  "schema": "CREATE TABLE access_audit (\n  tenant_id text NOT NULL,\n  seq bigint NOT NULL,\n  row_json jsonb NOT NULL,\n  prev_hash text NOT NULL,\n  row_hash text NOT NULL,\n  at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, seq)\n);\nCREATE FUNCTION audit_immutable() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'audit rows are append-only'; END $$ LANGUAGE plpgsql;\nCREATE TRIGGER audit_no_change BEFORE UPDATE OR DELETE ON access_audit FOR EACH ROW EXECUTE FUNCTION audit_immutable();",
+  "interface": "def append_audit(tenant_id: str, record: dict) -> int  # returns seq; verify_chain(tenant_id) -> int | None is the first broken seq",
+  "code": "import hashlib, json\n\ndef canonical(rec):\n    return json.dumps(rec, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=True)\n\ndef salted(salt, text):\n    return hashlib.sha256((salt + text).encode()).hexdigest()\n\ndef append_audit(db, salt, tenant, rec):\n    rec = dict(rec)\n    rec[\"query\"] = salted(salt, rec[\"query\"])        # no raw query text in the log\n    rec[\"objects\"] = [salted(salt, u) for u in rec[\"objects\"]]\n    with db.transaction():\n        row = db.execute(\"SELECT seq, row_hash FROM access_audit WHERE tenant_id=%s ORDER BY seq DESC LIMIT 1 FOR UPDATE\",\n                         (tenant,)).fetchone()\n        seq, prev = (row[0] + 1, row[1]) if row else (1, \"0\" * 64)   # tricky part: lock keeps seq gap-free\n        body = canonical(rec)\n        h = hashlib.sha256((prev + body).encode()).hexdigest()\n        db.execute(\"INSERT INTO access_audit(tenant_id,seq,row_json,prev_hash,row_hash) VALUES (%s,%s,%s,%s,%s)\",\n                   (tenant, seq, body, prev, h))\n    return seq\n\ndef verify_chain(db, tenant):\n    prev, expect = \"0\" * 64, 1\n    for seq, body, p, h in db.execute(\"SELECT seq,row_json::text,prev_hash,row_hash FROM access_audit WHERE tenant_id=%s ORDER BY seq\", (tenant,)):\n        if seq != expect or p != prev:\n            return seq\n        if hashlib.sha256((prev + canonical(json.loads(body))).encode()).hexdigest() != h:\n            return seq\n        prev, expect = h, expect + 1\n    return None",
+  "steps": [
+   {
+    "do": "Create the table and the no-change trigger",
+    "done_when": "UPDATE on a row fails with 'audit rows are append-only'"
+   },
+   {
+    "do": "Write canonical and append_audit",
+    "done_when": "3 appends give seq 1, 2, 3 and linked hashes"
+   },
+   {
+    "do": "Salt the query and uri fields",
+    "done_when": "raw query text is absent from row_json in a test"
+   },
+   {
+    "do": "Write verify_chain",
+    "done_when": "clean chain returns None"
+   },
+   {
+    "do": "Tamper a row with the trigger disabled in the test",
+    "done_when": "verify_chain returns that row's seq"
+   },
+   {
+    "do": "Schedule the hourly verify and the OTel export",
+    "done_when": "metric audit_chain_break is 0 on a clean tenant"
+   }
+  ],
+  "config": {
+   "HASH": "sha256 // chain function",
+   "VERIFY_INTERVAL_MIN": "60 // per tenant segment",
+   "BUFFER_ROWS": "10000 // or 60 s, whichever first",
+   "SALT_ENV": "AUDIT_SALT // per tenant, kept in the secret store"
+  },
+  "verify": [
+   "pytest tests/test_audit_chain.py -q  # all passed",
+   "psql -c 'update access_audit set seq=seq'  # ERROR: audit rows are append-only"
+  ],
+  "pitfalls": [
+   "Canonical form that depends on dict order makes every verify fail: sort keys and fix the time zone to UTC",
+   "Concurrent writers without a lock create duplicate seq values: symptom is a primary key error under load",
+   "Logging raw query text puts sensitive questions in the audit sink"
+  ]
+ },
+ "ac_gate": {
+  "milestone": "M3",
+  "effort_days": 3,
+  "depends_on": [
+   "qr_rerank",
+   "ac_neg"
+  ],
+  "stack": [
+   {
+    "part": "gate",
+    "pick": "plain set lookup in Python",
+    "why": "No model, no network, fails closed"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a prompt that tells the model to ignore other users' notes",
+    "why": "A prompt is not a control; the gate is code"
+   }
+  ],
+  "install": [
+   "pip install pytest",
+   "pip install prometheus-client"
+  ],
+  "layout": [
+   "brain/acl/gate.py : ownership gate",
+   "tests/test_gate.py : cross-user, missing owner, agent scope"
+  ],
+  "schema": "{\"chunk_id\":\"str\",\"owner_id\":\"str|null\",\"zone\":\"personal|team|department|company\",\"tenant_id\":\"str\"}",
+  "interface": "def gate(ctx: RequestContext, chunks: list[Chunk]) -> GateResult  # raises nothing; failure returns zero chunks and alarms",
+  "code": "def gate(ctx, chunks):\n    kept, drops = [], Counter()\n    for c in chunks:\n        if c.tenant_id != ctx.tenant or c.zone is None:\n            drops[\"missing_or_tenant\"] += 1; continue\n        if c.zone == \"personal\" and c.owner_id != ctx.user_id:\n            drops[\"other_user\"] += 1; continue\n        if c.zone not in ctx.allowed_zones:\n            drops[\"zone\"] += 1; continue\n        kept.append(c)\n    audit(ctx, len(kept), drops)\n    return GateResult(kept, drops)",
+  "steps": [
+   {
+    "do": "Write gate with the four checks",
+    "done_when": "cross-user chunk is dropped"
+   },
+   {
+    "do": "Fail closed on exception",
+    "done_when": "a thrown error returns no chunks"
+   },
+   {
+    "do": "Write one audit row per query",
+    "done_when": "kept and dropped counts present"
+   },
+   {
+    "do": "Add the hourly drop-rate alarm",
+    "done_when": "rate above 0.1 percent opens an incident"
+   }
+  ],
+  "config": {
+   "ALARM_RATE": "0.001 // 0.1 percent of retrieved chunks per hour",
+   "FAIL_MODE": "closed // missing metadata is a drop",
+   "AUDIT_SINK": "ac_audit // one row per query"
+  },
+  "verify": [
+   "pytest tests/test_gate.py -q  # all passed",
+   "python -m brain.acl.gate --selftest  # drops the planted cross-user chunk and prints dropped=1"
+  ],
+  "pitfalls": [
+   "Taking owner from chunk text instead of index metadata",
+   "Treating a missing owner as public"
+  ]
+ },
+ "ac_lin": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "ac_gate"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "lineage edges and decision log"
+   },
+   {
+    "part": "policy",
+    "pick": "the access list store",
+    "why": "rights per source"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/acl/lineage.py",
+   "tests/test_lineage.py"
+  ],
+  "schema": "CREATE TABLE lineage (card_id text, source_uri text, PRIMARY KEY (card_id, source_uri));\nCREATE TABLE lineage_decision (card_id text, asker text, allowed bool, policy_version bigint, at timestamptz DEFAULT now());",
+  "interface": "def card_visible(ctx, card_id, asker) -> bool",
+  "code": "def card_visible(ctx, card_id, asker):\n    srcs = ctx.lineage.sources(card_id)\n    if not srcs or any(ctx.deleted(s) for s in srcs if not ctx.excluded(card_id, s)):\n        return False                                   # deleted source authorises no one\n    return all(ctx.acl.can_read(asker, s) for s in srcs if not ctx.excluded(card_id, s))",
+  "steps": [
+   {
+    "do": "Record an edge for each source",
+    "done_when": "edges exist after a card is made"
+   },
+   {
+    "do": "Intersect rights",
+    "done_when": "a user who reads only A cannot see the card"
+   },
+   {
+    "do": "Mark stale on a policy change",
+    "done_when": "descendants flagged, none recomputed"
+   },
+   {
+    "do": "Write the unit test for card_visible",
+    "done_when": "tests cover hidden, shown and deleted source"
+   }
+  ],
+  "config": {
+   "RECOMPUTE": "lazy // when a card becomes a candidate",
+   "KEEP_EDGES": "true // after a source is deleted",
+   "DECLASSIFY": "owner // recorded exclusion"
+  },
+  "verify": [
+   "pytest tests/test_lineage.py -q  # all passed",
+   "python -m brain.acl.lineage --card 123 --asker u1  # allowed or denied with the source that blocked"
+  ],
+  "pitfalls": [
+   "Replacing a restriction instead of combining",
+   "Showing a card whose source rights cannot be read"
+  ]
+ }
+}

@@ -1,0 +1,816 @@
+{
+ "group": {
+  "line": "A webhook rings the doorbell, a saved cursor pulls the real changes, a log tail covers databases, an EWMA sets the poll pace, and a hash sweep catches what all of them missed.",
+  "dumb": "Apps tell us about changes in different ways. Some knock on our door, some let us ask 'what changed since last time', and some only let us list everything. We use whichever is cheapest for each app, speed up where things change often, and run a slow full check to find anything the faster paths dropped."
+ },
+ "comps": {
+  "ch_hook": {
+   "line": "Verify HMAC, check timestamp window, answer in under 200 ms, enqueue only\ntag = HMAC-SHA256(secret, ts.body); accept if |now - ts| <= 300 s",
+   "dumb": "When an app sends us a 'something changed' message, the receiver does three quick things. It checks the message came from the app by checking its signature, checks the message is not an old one being replayed, and drops it in a queue. Then it says thanks right away. All the real work happens later, so a slow job never makes the app think we are down and stop sending.",
+   "inn": "HTTP POST {headers{signature, timestamp, delivery_id}, raw_body bytes} per (tenant, app) endpoint. Some apps send an empty body (Drive push) and only a channel token header.",
+   "out": "Enqueued event {app, tenant, object_id, kind, delivery_id, received_at ms} on ch_bus; HTTP 2xx to the app. Rejected requests return 401 and write a counter only.",
+   "store": "Reads the per-connection signing secret from so_oauth by reference (cached 60 s in memory). Writes a delivery-id seen-set in a short-lived cache (24 h TTL, design) and the event onto ch_bus. No body is kept after enqueue.",
+   "fail": "If ch_bus is unreachable the receiver returns 503 after 150 ms so the app redelivers (GitHub redelivers with the same delivery id, t_t05); after 3 consecutive 503 minutes the connector is flagged to op_health and ch_sweep is brought forward. A bad signature returns 401 and is never queued.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Apps differ: Drive push has no signature body, so we rely on a channel token plus the doorbell design; the per-app verification table is still to be written per connector.",
+   "prop": "Proposal: push is the cheapest freshness path, but only if the receiver can never be slowed by our own downstream work.",
+   "deep": {
+    "purpose": "Turn an untrusted inbound HTTP call into a trusted, deduplicated, queued event within 200 ms, without doing any sync work inline.",
+    "expected": [
+     "A valid event is on ch_bus and acknowledged in under 200 ms at p95",
+     "A redelivered event with the same delivery id is acknowledged but not queued twice",
+     "A new app joins by declaring its signature scheme and header names in the connector manifest (so_sdk); apps with their own MCP server use the so_mcp bridge and need no receiver"
+    ],
+    "not_expected": [
+     "It does not fetch the changed object or call the app's API",
+     "It does not trust the body: the body is only a hint of which object to re-read",
+     "It does not decide whether the change is new; ch_dedupe does"
+    ],
+    "algorithm": {
+     "name": "HMAC signature check with replay window and early acknowledge",
+     "formula": "valid = ct_equal(tag, HMAC-SHA256(secret, ts + '.' + body)) and |now - ts| <= W and delivery_id not in seen",
+     "steps": [
+      "Read raw bytes before any JSON parsing, so the signed bytes are the checked bytes",
+      "Recompute the HMAC with the stored secret and compare in constant time",
+      "Reject if the timestamp is outside the window W or the delivery id is already in the seen-set",
+      "Write the envelope to ch_bus and add the delivery id to the seen-set in one step; return 2xx",
+      "On any parse error after the signature passes, queue the raw event as unparsed and still return 2xx"
+     ],
+     "params": {
+      "window_W": "300 s (default; tune down to 120 s once tenant clock skew is measured)",
+      "ack_budget": "200 ms (the pin; GitHub allows 10 s, t_t05)",
+      "seen_set_ttl": "24 h (design; must exceed the app's longest redelivery horizon)",
+      "secret_cache": "60 s (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "W: replay window in seconds",
+      "ts: timestamp the app signed",
+      "r: events per second at the receiver",
+      "tag: the 256-bit signature the app sent"
+     ],
+     "formula_full": "accept iff HMAC(secret, ts.body) = tag and |now - ts| <= W; seen-set size = r * TTL",
+     "derivation": "A replayed message carries a valid tag, so the signature alone cannot stop it. Bounding the age to W and remembering ids for TTL longer than W means a replay is either too old or already seen.",
+     "worked_example": "r = 200 events/s, TTL = 86,400 s: 200 * 86,400 = 17,280,000 ids; at 40 bytes each that is about 691 MB, so the seen-set is kept per tenant and trimmed to 1 h for apps that sign a timestamp (200 * 3,600 * 40 = 28.8 MB). Window check: ts 12:00:00, now 12:04:10 gives 250 s, accepted; now 12:06:00 gives 360 s, rejected.",
+     "complexity": "O(body bytes) for the HMAC, O(1) for the seen-set lookup; under 2 ms for bodies below 256 KB.",
+     "failure_modes": [
+      "Clock skew between app and receiver larger than W rejects good events: alert on a rise in stale-timestamp rejects and widen W per app",
+      "Seen-set lost on restart allows one replay inside W: acceptable because ch_dedupe still drops the stale version"
+     ],
+     "calibration": "Start W at 300 s. After 7 days of traffic, set W to 3 times the p99 observed skew, never below 60 s."
+    },
+    "alternatives": [
+     {
+      "name": "Process the event inline then acknowledge",
+      "why_rejected": "A slow downstream makes the app time out (10 s at GitHub, t_t05) and redeliver, multiplying load."
+     },
+     {
+      "name": "Trust the source IP range instead of a signature",
+      "why_rejected": "Shared cloud ranges let another tenant of the same provider forge events."
+     }
+    ],
+    "security": [
+     "Forged event: an attacker posts a fake 'object changed' to force costly re-reads; control is constant-time HMAC check and rate limit of 50 unauthenticated requests per minute per IP (design), and the body is only a hint",
+     "Replay of a captured valid event: timestamp window plus delivery-id seen-set; a replay that slips through is dropped by ch_dedupe on version",
+     "Timing attack on the compare: constant-time comparison, no early exit on the first differing byte",
+     "Secret in logs: the signature header and secret are redacted by name in the access log"
+    ],
+    "performance": {
+     "slo": "p95 under 50 ms to acknowledge, hard ceiling 200 ms",
+     "complexity": "O(body bytes) per request, stateless apart from the seen-set",
+     "scaling": "At 10x (2,000 events/s) the seen-set write is the limit; shard the set by tenant and run receivers behind a load balancer, since receivers hold no other state."
+    },
+    "edge_cases": [
+     "Empty body (Drive push): no body to sign, validate the channel token header and queue {object_id unknown, kind 'changed'} so ch_delta pulls the real list",
+     "Duplicate delivery id: return 2xx without queueing",
+     "Body larger than 1 MB (default): return 413 and queue nothing; the sweep covers the object",
+     "Unicode in object names: queued as raw bytes in UTF-8, never normalised here",
+     "Subscription expiry: Graph subscriptions expire and need renewal (t_t01), so a missed-notification lifecycle event is queued as kind 'resync' for the stream",
+     "Clock skew: events with ts up to 60 s in the future are accepted, further are rejected"
+    ],
+    "tests": [
+     {
+      "name": "replay outside window",
+      "given": "valid signed event with ts 360 s old, W = 300",
+      "expect": "401, nothing on ch_bus, reject counter +1"
+     },
+     {
+      "name": "duplicate delivery",
+      "given": "same delivery_id posted twice 2 s apart",
+      "expect": "both return 200, exactly one event on ch_bus"
+     },
+     {
+      "name": "downstream down",
+      "given": "ch_bus rejects writes",
+      "expect": "503 within 150 ms, no event lost because the app redelivers"
+     },
+     {
+      "name": "tampered body",
+      "given": "one byte of the body changed after signing",
+      "expect": "401"
+     }
+    ],
+    "cost_levers": [
+     "Receiver does no app API calls, so push events cost compute only",
+     "Coalesce 20 events for the same object within 2 s into one queued event (tune)"
+    ],
+    "feedback_events": [
+     "Reject counters by reason feed op_health and trigger secret-rotation review"
+    ],
+    "analytics_events": [
+     {
+      "name": "webhook.received",
+      "fields": [
+       "tenant_id",
+       "app",
+       "kind",
+       "verified",
+       "ms"
+      ],
+      "when": "on every request"
+     },
+     {
+      "name": "webhook.rejected",
+      "fields": [
+       "tenant_id",
+       "app",
+       "reason"
+      ],
+      "when": "on signature, window or size reject"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_pipedream",
+      "name": "Pipedream",
+      "take": "Its open registry shows per-app webhook trigger conventions we map into the manifest"
+     },
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Handles webhooks and syncs for about 1,000 APIs; a build-or-install comparison point"
+     }
+    ],
+    "industry": "GitHub documents a short response window, queue-based processing and a delivery id on redelivery (t_t05); Microsoft Graph and Google Drive treat push as a signal that must be backed by a pull (t_t01, t_t03).",
+    "refs": [
+     "t_t05",
+     "t_t03",
+     "t_t01",
+     "t_t54",
+     "r_pipedream",
+     "r_nango"
+    ]
+   }
+  },
+  "ch_delta": {
+   "line": "Resume from a saved change cursor and page until the new cursor arrives\ncommit cursor only after the page batch is applied (t_t04)",
+   "dumb": "Some apps keep a numbered bookmark of their change history. We save the bookmark, and next time we ask 'what changed since this bookmark' and get only the new items. We move the bookmark forward only after we have safely handled that batch, so a crash means we repeat a batch instead of losing one. If the app says the bookmark is too old, we start a full listing again.",
+   "inn": "Poll order {tenant, app, stream, interval_s} from ch_sched; stored cursor {stream, cursor, epoch} from ch_cursor.",
+   "out": "Delta page {stream, items[{object_id, kind, version, removed, reason}], next_cursor} sent to ch_bus; removals carry kind 'delete' with the app's reason.",
+   "store": "Reads the cursor from ch_cursor. Writes nothing itself: the next cursor travels with the page and ch_wf commits it with the events (t_t04).",
+   "fail": "A 429 waits for Retry-After, capped at 15 min, then the stream backs off for 2 poll intervals. On a 410 Gone or an expired token (t_t02) it drops the cursor, requests a full resync from ch_sweep and tells ch_cursor to reset. After 5 failed polls in a row it stops and op_health pauses the stream.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Notion, Jira, GitHub, HubSpot, Linear and Figma have no usable delta API in our research, so those streams use list-and-compare through ch_sweep and short polls instead.",
+   "prop": "Proposal: where an app offers a delta feed, reading only changes is the cheapest correct way to stay fresh.",
+   "deep": {
+    "purpose": "Read only what changed since a persisted position, so freshness costs one cheap call per interval instead of a full listing.",
+    "expected": [
+     "After a crash the stream restarts from the last committed cursor and re-reads at most one batch",
+     "A deleted object arrives as a delete event, not as silence",
+     "A cursor the app has expired triggers a full resync with no operator action"
+    ],
+    "not_expected": [
+     "It does not decide how often to poll; ch_sched does",
+     "It does not move the cursor forward on its own; the cursor commit happens with the events",
+     "It does not apply changes or fetch bodies"
+    ],
+    "algorithm": {
+     "name": "Persisted change cursor with commit-after-apply",
+     "formula": "page = changes(cursor); emit(page.items); commit(page.next_cursor) only after emit is durable",
+     "steps": [
+      "Load the stream cursor and epoch from ch_cursor; if none, request the app's start token (Drive getStartPageToken, t_t04)",
+      "Call the change endpoint with the cursor and fetch pages until the app returns the final new cursor",
+      "Emit each item as an event with removed flag and reason (Graph sends @removed, t_t02)",
+      "Hand the final next_cursor to ch_wf so it is committed with the events",
+      "On 410 Gone or sync-state-not-found, discard the cursor and request a full resync (t_t02)"
+     ],
+     "params": {
+      "page_size": "200 items (default; tune to the app's maximum and rate budget)",
+      "cursor_max_gap": "token lifetime / 4, e.g. 42 h for a 7-day token (design from t_t02)",
+      "max_pages_per_poll": "50 (design; the rest waits for the next poll so one stream cannot hog the budget)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "c: changes since the last poll",
+      "p: page size",
+      "R: request budget in requests per second",
+      "T: token lifetime"
+     ],
+     "formula_full": "pages = ceil(c / p); poll_time = pages / R; cursor_safe iff poll_gap <= T / 4",
+     "derivation": "Every page is one request, so cost is proportional to changes, not to library size. Polling at a quarter of the token lifetime leaves room for three missed polls before the token expires.",
+     "worked_example": "c = 1,200, p = 200: pages = 6. With R = 5 req/s the poll takes 1.2 s. With a 7-day directory token (t_t02), the longest allowed gap is 7 d / 4 = 42 h.",
+     "complexity": "O(c / p) requests per poll, O(1) memory per stream.",
+     "failure_modes": [
+      "Cursor replays items (t_t02, t_t55): ch_dedupe drops them by version",
+      "Token expires during an outage: full resync costs a whole listing, so ch_sched caps the gap at T / 4"
+     ],
+     "calibration": "Start with page size at the app maximum. If a poll exceeds 20 s of wall time, halve the page size."
+    },
+    "alternatives": [
+     {
+      "name": "Full listing every interval",
+      "why_rejected": "Cost grows with library size, not with changes; Drive and Graph both offer a cursor instead."
+     },
+     {
+      "name": "Webhook only",
+      "why_rejected": "Graph driveItem notifications can lag up to 6 h and subscriptions expire (t_t01); the cursor is the source of truth."
+     }
+    ],
+    "security": [
+     "Cursor tampering: a forged cursor could skip changes or force a replay; cursors are stored encrypted and bound to (tenant, stream, epoch), and ch_cursor refuses a write with a stale epoch",
+     "Over-broad token: the poller uses the least scope that reads changes, and the delta pull for restricted items returns only items the app token may see; access lists are fetched by ac_src, not here",
+     "Cross-tenant mix-up: each poll order names one tenant and the response is checked to carry that tenant's drive id before emit"
+    ],
+    "performance": {
+     "slo": "p95 under 30 s from a change in the app to its event on ch_bus for polled streams at the base interval",
+     "complexity": "O(c / p) requests per poll",
+     "scaling": "At 10x streams the request budget binds first; ch_sched stretches quiet streams to 6 h, and one poller worker per 500 streams (design) keeps memory flat."
+    },
+    "edge_cases": [
+     "Empty page: the cursor still advances and is committed",
+     "Same object changed 3 times in one batch: the app may list it once or thrice; ch_dedupe keeps the highest version",
+     "Cursor returned with no items for days: counts as healthy; lag is measured by op_lag",
+     "Huge first sync (millions of items): the first listing goes to ch_fill, not here",
+     "Clock skew: ordering uses the app's version, never the local clock",
+     "A shared drive removed from the tenant: the app returns removal events for every item; they flow to ch_tomb"
+    ],
+    "tests": [
+     {
+      "name": "crash mid-batch",
+      "given": "poller dies after emitting page 3 of 6 and before commit",
+      "expect": "restart re-reads from the old cursor, ch_dedupe drops pages 1 to 3, no item lost"
+     },
+     {
+      "name": "410 gone",
+      "given": "app answers 410 for the stored token",
+      "expect": "cursor reset, full resync requested from ch_sweep within 1 poll, no data served stale for longer than one sweep"
+     },
+     {
+      "name": "delete as event",
+      "given": "app returns an item with removed = true, reason 'deleted'",
+      "expect": "event kind delete with reason reaches ch_bus"
+     },
+     {
+      "name": "429 backoff",
+      "given": "app returns 429 with Retry-After 90",
+      "expect": "no call for 90 s, stream interval doubles once"
+     }
+    ],
+    "cost_levers": [
+     "Poll quiet streams every 6 h; the cursor makes an empty poll cost one request",
+     "Use the webhook doorbell to poll only when something happened"
+    ],
+    "feedback_events": [
+     "Resync count per app feeds the cursor_max_gap choice; every 410 lowers it"
+    ],
+    "analytics_events": [
+     {
+      "name": "delta.polled",
+      "fields": [
+       "tenant_id",
+       "stream",
+       "pages",
+       "items",
+       "ms"
+      ],
+      "when": "after each poll"
+     },
+     {
+      "name": "delta.resync",
+      "fields": [
+       "tenant_id",
+       "stream",
+       "reason"
+      ],
+      "when": "on 410 or token expiry"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Per-stream incremental state shows the cursor shape; its destination-first design means we keep the state and discard payloads"
+     },
+     {
+      "ref": "r_dlt",
+      "name": "dlt",
+      "take": "Light incremental-state helper for custom connectors that record only cursors"
+     }
+    ],
+    "industry": "Microsoft Graph delta and Google Drive changes.list both work as persisted cursors with replay possible and 410 as a reset signal (t_t02, t_t04).",
+    "refs": [
+     "t_t02",
+     "t_t04",
+     "t_t55",
+     "t_t01",
+     "r_airbyte",
+     "r_dlt"
+    ]
+   }
+  },
+  "ch_cdc": {
+   "line": "Tail the database transaction log, one record per row change\nrecord = {table, pk, op, lsn, after}; resume at last confirmed lsn",
+   "dumb": "A database writes every change into an internal diary before it applies it. Instead of asking the database 'what changed' over and over, we read that diary like a feed. Each entry tells us which row changed and how. We remember how far we have read, so if we stop we pick up exactly where we left off.",
+   "inn": "Transaction log stream of one database or warehouse (rows grouped by transaction), the saved log position (lsn, the log sequence number) from ch_cursor, and a table allowlist from the connector manifest.",
+   "out": "Change record {table, pk, op, lsn, after} where after holds only allowlisted columns; sent to ch_bus keyed by (tenant, table, pk).",
+   "store": "Reads the confirmed lsn from ch_cursor. Writes nothing of its own. Confirms the lsn back only after ch_wf commits (our inference from Debezium style capture, r_debezium).",
+   "fail": "If the log is unreachable it retries with backoff 1 s, 2 s, 4 s up to 60 s, then pauses and alerts op_health after 10 min. If the log position is gone because the database trimmed it, it falls back to a snapshot through ch_fill and a new start position.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Only for sources that expose a transaction log; SaaS apps cannot be tailed this way, and the choice of Kafka-style transport under it is open.",
+   "prop": "Proposal: company databases and warehouses hold records the brain should point at, and a log tail avoids hammering them with polling queries.",
+   "deep": {
+    "purpose": "Capture row-level changes from databases without polling queries, in commit order, with a resumable position.",
+    "expected": [
+     "Changes arrive in commit order per row",
+     "A restart resumes at the confirmed position, repeating at most the unconfirmed tail",
+     "Only allowlisted tables and columns leave the database"
+    ],
+    "not_expected": [
+     "It does not work for SaaS APIs; those use ch_hook, ch_delta or ch_sweep",
+     "It does not keep a copy of the rows; after values are used to build the pointer and then dropped",
+     "It does not decide which rows matter for search; the manifest allowlist does"
+    ],
+    "algorithm": {
+     "name": "Log-based change data capture with snapshot-then-stream",
+     "formula": "stream(from = confirmed_lsn); emit(change) in log order; confirm(lsn) after downstream commit",
+     "steps": [
+      "On first connect take a consistent snapshot through ch_fill and note the log position at snapshot start",
+      "Open the log stream at that position and read committed transactions in order",
+      "Map each row change to {table, pk, op, lsn, after} using the allowlist",
+      "Emit to ch_bus keyed by (tenant, table, pk) so one row stays in one partition",
+      "Confirm the lsn to the database only after ch_wf has committed the cursor"
+     ],
+     "params": {
+      "max_lag_bytes": "2 GB (default; alert earlier at 500 MB, tune to disk headroom)",
+      "batch": "500 changes or 200 ms, whichever first (design)",
+      "allowlist": "empty by default; nothing is captured until an admin lists tables"
+     }
+    },
+    "math": {
+     "definitions": [
+      "w: database write rate in bytes per second",
+      "d: outage duration in seconds",
+      "L: retained log size on the database"
+     ],
+     "formula_full": "backlog = w * d; safe iff backlog < L",
+     "derivation": "While the tail is down the database keeps log files for it. The log must retain at least the bytes written during the longest outage, or the position is lost.",
+     "worked_example": "w = 2 MB/s, d = 30 min = 1,800 s: backlog = 3.6 GB. With L = 2 GB the position is lost after 1,000 s (about 17 min), so the alert fires at 500 MB (250 s).",
+     "complexity": "O(changes) with one sequential read; no per-table scans.",
+     "failure_modes": [
+      "Unconfirmed position holds log files on the database and can fill its disk: alert on lag bytes and drop the slot after the paging threshold",
+      "Large transaction (millions of rows) floods the bus: cap the batch and emit in chunks"
+     ],
+     "calibration": "Set L to 4 times the worst outage seen in 90 days times the write rate."
+    },
+    "alternatives": [
+     {
+      "name": "Timestamp column polling",
+      "why_rejected": "Misses deletes and rows updated without the column changing, and loads the database."
+     },
+     {
+      "name": "Dual write from application code",
+      "why_rejected": "Needs changes in every source application and can disagree with the database."
+     }
+    ],
+    "security": [
+     "Over-capture: reading the whole log would leak columns nobody approved; the allowlist is applied at the source and unlisted columns never leave",
+     "Credential misuse: the database user has replication and read rights only and is stored in so_oauth, never in the manifest",
+     "Poisoned row text steering a later model: row values are untrusted data and only reach models as quoted content after ix_fetch",
+     "Replication slot abuse as a denial of service: lag alert plus automatic slot drop protects the source disk"
+    ],
+    "performance": {
+     "slo": "p95 under 5 s from commit to event on ch_bus",
+     "complexity": "O(changes) sequential",
+     "scaling": "At 10x write rate, partition by table group and run one tail per group; the limit is bus throughput."
+    },
+    "edge_cases": [
+     "Schema change mid-stream: the record carries the schema version; unknown columns are dropped until the manifest allows them",
+     "Row deleted and re-inserted with the same key: two events, ch_dedupe orders them by lsn",
+     "Transaction rolled back: never appears because only committed transactions are read",
+     "Empty database: only the snapshot marker is emitted",
+     "Binary or large text columns: skipped by default, only the primary key and a content hash travel",
+     "Clock skew: ordering uses lsn, not time"
+    ],
+    "tests": [
+     {
+      "name": "resume after restart",
+      "given": "tail stopped at confirmed lsn 1000 with unconfirmed 1001 to 1010",
+      "expect": "restart emits 1001 to 1010 again, ch_dedupe drops any already applied, none missing"
+     },
+     {
+      "name": "allowlist",
+      "given": "row change in a table not on the allowlist",
+      "expect": "nothing emitted"
+     },
+     {
+      "name": "log trimmed",
+      "given": "stored lsn older than the database retains",
+      "expect": "fallback to snapshot via ch_fill and an alert within 1 min"
+     }
+    ],
+    "cost_levers": [
+     "No polling queries on the source",
+     "Emit only primary keys for large tables and fetch content later on demand"
+    ],
+    "feedback_events": [
+     "Lag alerts and slot drops tune max_lag_bytes per source"
+    ],
+    "analytics_events": [
+     {
+      "name": "cdc.emitted",
+      "fields": [
+       "tenant_id",
+       "source",
+       "table",
+       "op",
+       "lsn"
+      ],
+      "when": "per change batch"
+     },
+     {
+      "name": "cdc.lag",
+      "fields": [
+       "tenant_id",
+       "source",
+       "bytes",
+       "seconds"
+      ],
+      "when": "every 30 s"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_debezium",
+      "name": "Debezium",
+      "take": "Reference for log-based capture; it needs Kafka or similar and covers databases only"
+     }
+    ],
+    "industry": "Debezium turns database logs into ordered change streams for Kafka-style platforms (r_debezium).",
+    "refs": [
+     "r_debezium",
+     "t_t10"
+    ]
+   }
+  },
+  "ch_sweep": {
+   "line": "Slow full listing, per-folder keyed hash digest, re-read only folders that differ\ndigest = H(sorted (id, version) pairs); cadence weekly",
+   "dumb": "Pushes and bookmarks can still miss things: a message gets lost, an app has a bug. So once in a while we list everything in an app and compare it with what we remember. We compare a short fingerprint of each folder, and only open the folders whose fingerprints differ. That finds the missed changes without re-reading every document.",
+   "inn": "Sweep schedule {tenant, app, window} from ch_sched; registry rows {uri, version} from ix_ptr; app listing pages (metadata only, no bodies); gap reports from op_cov.",
+   "out": "Missed-change event {uri, kind, version, reason 'sweep'} to ch_bus for each object whose version differs, is new, or is missing in the app; counts per folder to op_cov.",
+   "store": "Reads ix_ptr versions and listings. Writes a digest per folder {folder_uri, digest, listed_at} in its own small table; never document text.",
+   "fail": "If a listing page fails 3 times it skips that folder, marks the sweep partial and retries it in the next window; a sweep that overruns its window pauses and resumes from the last folder, never restarts. A 429 follows Retry-After and the sweep yields to live traffic.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "Apps without cheap version fields in listings force a body read to hash; per-app listing cost is not yet measured.",
+   "prop": "Proposal: push and cursor paths lose events (t_t54), so a slow independent check is the backstop that makes freshness a measured claim.",
+   "deep": {
+    "purpose": "Find drift between the app and the index by comparing cheap per-folder digests, so only differing subtrees are re-read.",
+    "expected": [
+     "Every object changed or deleted without us hearing is found within one sweep period",
+     "Folders with an unchanged digest cost no content reads",
+     "The sweep never delays live events"
+    ],
+    "not_expected": [
+     "It does not replace push or cursor paths; it runs rarely",
+     "It does not fix anything itself; it emits events through ch_bus",
+     "It does not sweep Slack text, which is queried live and never stored (t_t07, t_t13)"
+    ],
+    "algorithm": {
+     "name": "Keyed hash digest comparison over a folder tree",
+     "formula": "digest(folder) = H_k(sorted [(child_id, child_version)])  ;  differs iff digest(app) != digest(registry)",
+     "steps": [
+      "List a folder's children from the app (ids and versions only)",
+      "Compute the keyed digest and compare with the one computed from the registry for the same folder",
+      "Equal: stop, nothing under it is read; different: list the children and recurse into differing child folders",
+      "For differing leaf folders, diff child ids and versions and emit missed, new and removed events",
+      "Store the new digest and the listing time"
+     ],
+     "params": {
+      "cadence": "weekly per app (default, from t_t55; tune to the app's measured loss rate)",
+      "digest": "64-bit keyed hash (xxHash width as in t_t44, with a per-tenant key so collisions cannot be crafted)",
+      "window": "off-peak 6 h (design), yields to live traffic"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: objects in the app",
+      "p: listing page size",
+      "d: changed objects",
+      "R: request budget in requests per second"
+     ],
+     "formula_full": "list_calls = ceil(n / p); content_reads = d; sweep_time = list_calls / R; false_negative = digests collide = 2^-64 per folder",
+     "derivation": "A listing returns versions cheaply, so the full listing costs n / p requests. Content reads happen only for d differing objects, not n. A 64-bit digest collides with probability 2^-64 per compared folder.",
+     "worked_example": "n = 1,000,000, p = 1,000: 1,000 list calls; at R = 5 req/s that is 200 s. With d = 50 changed objects, 50 content reads instead of 1,000,000. With 10,000 folders, collision chance is about 10,000 / 1.8e19 = 5.4e-16.",
+     "complexity": "O(n / p) list calls plus O(d) reads; memory O(folder depth).",
+     "failure_modes": [
+      "App listing omits version fields: fall back to modified time plus size as the version proxy and accept more re-reads",
+      "Folder with a million children: digest streamed page by page, never held whole"
+     ],
+     "calibration": "Run weekly (t_t55). If a sweep finds more than 0.5% drift, halve the period for that app and open an incident on the webhook path."
+    },
+    "alternatives": [
+     {
+      "name": "Re-read and re-hash every body weekly",
+      "why_rejected": "Cost grows with total content and breaks API quotas (t_t06)."
+     },
+     {
+      "name": "Rely on webhooks and cursors only",
+      "why_rejected": "Lifecycle notices show events are lost as a normal event (t_t54)."
+     }
+    ],
+    "security": [
+     "Hidden change: an attacker who can edit objects might craft a collision so the digest looks unchanged; the digest is keyed per tenant so collisions cannot be pre-computed",
+     "Listing as a data leak: the sweep reads metadata only and runs with the least scope that lists; restricted items stay invisible to it, which matches the app's own view",
+     "Quota exhaustion denial of service: the sweep honours the budget of so_rate and a hard share cap so a sweep cannot starve live sync"
+    ],
+    "performance": {
+     "slo": "1M-object app swept in under 1 h of wall time at 5 req/s plus 50% budget share (design)",
+     "complexity": "O(n / p) list calls, O(d) reads",
+     "scaling": "At 10x objects the listing time dominates (2,000 s at 5 req/s); split by top-level folder across workers within the per-app budget."
+    },
+    "edge_cases": [
+     "Empty folder: digest of the empty list, not an error",
+     "Object moved between folders: appears as delete in one and add in the other; ch_dedupe resolves by version",
+     "Huge folder: paged digest",
+     "Unicode names: ids not names are hashed",
+     "Concurrent edit during the sweep: version captured at listing time, a newer live event wins at ch_dedupe",
+     "App returns a partial listing on error: sweep marks folder partial and never reports its missing children as deleted"
+    ],
+    "tests": [
+     {
+      "name": "missed edit found",
+      "given": "object version 4 in registry, 5 in the app, no event received",
+      "expect": "one event reason sweep with version 5 within the sweep"
+     },
+     {
+      "name": "unchanged subtree",
+      "given": "500 folders with equal digests",
+      "expect": "zero content reads for them"
+     },
+     {
+      "name": "partial listing",
+      "given": "listing page fails 3 times for one folder",
+      "expect": "no delete events for that folder, sweep marked partial"
+     }
+    ],
+    "cost_levers": [
+     "Listing only, no bodies",
+     "Run weekly; shorten only for apps that show drift"
+    ],
+    "feedback_events": [
+     "Drift per app after each sweep adjusts that app's sweep cadence"
+    ],
+    "analytics_events": [
+     {
+      "name": "sweep.completed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "folders",
+       "differing",
+       "emitted",
+       "partial",
+       "ms"
+      ],
+      "when": "at the end of each sweep"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Runs the sweep as a long job that resumes from the last folder after a failure"
+     }
+    ],
+    "industry": "Microsoft recommends a periodic reconciliation scan to find drift between push, delta and the source (t_t55, t_t54); Elastic connectors run scheduled sync jobs (pr_elastic).",
+    "refs": [
+     "t_t55",
+     "t_t54",
+     "t_t44",
+     "t_t06",
+     "r_temporal"
+    ]
+   }
+  },
+  "ch_sched": {
+   "line": "Poll interval from an EWMA of change rate, clamped 30 s to 6 h, capped by budget\ninterval = clamp(k / rate_ewma, 30 s, 6 h)",
+   "dumb": "A busy folder should be checked often and a quiet one rarely. We keep a running average of how often each stream changes, and set the time between checks from that. We never check faster than 30 seconds or slower than 6 hours, and we never spend more of an app's request allowance than we are given.",
+   "inn": "Capability descriptor {webhook, delta, list, acl_api, rate_limits} from so_cap; per-poll counts {stream, changes, window_s} fed back from ch_delta; rate budget share from so_rate.",
+   "out": "Poll order {stream, interval_s} to ch_delta; sweep schedule {tenant, app, window} to ch_sweep.",
+   "store": "Reads and writes per-stream state {stream, ewma_rate, last_poll, next_poll} in the scheduler table.",
+   "fail": "If the state table is unreadable it falls back to a fixed 15 min interval per stream for up to 30 min, then alerts op_health. On a 429 it doubles the interval up to the 6 h ceiling and resets after 2 clean polls.",
+   "req": "Requirement: 'through APIs, webhooks and Model Context Protocol (MCP) servers'",
+   "hard": "The target changes per poll (k) is a single number for all apps; per-app tuning needs measured data.",
+   "prop": "Proposal: fixed polling wastes request quota on quiet streams and lags on busy ones; adapting to measured change rate fixes both.",
+   "deep": {
+    "purpose": "Spend each app's request budget where changes happen, while keeping a hard freshness floor and ceiling.",
+    "expected": [
+     "Busy streams are polled near the 30 s floor and quiet ones near the 6 h ceiling",
+     "Total requests never exceed the budget share the connector holds",
+     "Streams with a working webhook are polled at the slow backstop rate"
+    ],
+    "not_expected": [
+     "It does not fetch anything itself",
+     "It does not choose between webhook and poll; the capability descriptor does",
+     "It does not lower the 30 s floor, even for hot streams"
+    ],
+    "algorithm": {
+     "name": "Exponentially weighted moving average of change rate with clamp",
+     "formula": "rate_new = a * x + (1 - a) * rate_old ;  interval = clamp(k / rate_new, 30 s, 6 h) ;  interval >= cost * streams / budget",
+     "steps": [
+      "After each poll compute x = changes / seconds since the last poll",
+      "Update rate_new with the EWMA",
+      "Compute interval = k / rate_new and clamp to the 30 s to 6 h range",
+      "Raise the interval to the budget floor: cost times streams divided by the request budget",
+      "Apply jitter of plus or minus 10% so streams do not poll in lockstep"
+     ],
+     "params": {
+      "a": "0.3 (default; tune on replay of 30 days of change history)",
+      "k": "5 expected changes per poll (default; tune per app)",
+      "floor_ceiling": "30 s and 6 h (the pin; 6 h matches the Graph driveItem worst latency, t_t01)",
+      "initial_rate": "1 change per hour (default) until 3 polls exist"
+     }
+    },
+    "math": {
+     "definitions": [
+      "a: smoothing weight between 0 and 1",
+      "x: observed change rate in changes per second",
+      "k: target changes per poll",
+      "cost: requests per poll",
+      "budget: requests per second allotted"
+     ],
+     "formula_full": "rate_n = a*x_n + (1-a)*rate_{n-1}; interval = max(clamp(k/rate_n, 30, 21600), cost*streams/budget)",
+     "derivation": "Polling every k / rate seconds yields about k changes per poll, so each request returns useful work. The EWMA forgets old behaviour geometrically, with half-life ln(0.5)/ln(1-a) polls.",
+     "worked_example": "Prior rate 0.005/s, observed 12 changes in 600 s so x = 0.02/s, a = 0.3: rate = 0.3*0.02 + 0.7*0.005 = 0.0095/s; interval = 5 / 0.0095 = 526 s. Quiet stream rate 1e-5/s: 500,000 s clamps to 21,600 s. Hot stream 1/s: 5 s clamps to 30 s. Budget: 200 streams at 1 request and 2 req/s allotted gives a floor of 100 s.",
+     "complexity": "O(1) per stream per poll; scheduler is a priority queue, O(log S) per reschedule for S streams.",
+     "failure_modes": [
+      "A burst raises the rate and it decays slowly: half-life of 1.9 polls at a = 0.3 keeps this short",
+      "All streams in sync cause a thundering herd: 10% jitter",
+      "Rate budget smaller than the floor demands: interval lengthens, lag alert goes to op_lag"
+     ],
+     "calibration": "Replay 30 days of change history offline; pick a and k that minimise mean staleness at equal request count, ship only when staleness drops at least 10%."
+    },
+    "alternatives": [
+     {
+      "name": "Fixed interval for all streams",
+      "why_rejected": "Either wastes quota on quiet streams or lags on busy ones."
+     },
+     {
+      "name": "Push only",
+      "why_rejected": "Subscriptions expire and events are lost (t_t54, t_t03), so some polling always remains."
+     }
+    ],
+    "security": [
+     "Quota exhaustion by a noisy stream starving others: the budget cap is per (tenant, app) so one tenant cannot take another's allowance",
+     "Rate spoofing: an attacker who edits an object in a loop pushes the rate to the 30 s floor; the floor and the budget cap bound the cost",
+     "Schedule state poisoning: state rows are tenant-keyed and written only by the scheduler service"
+    ],
+    "performance": {
+     "slo": "scheduling decision under 1 ms; orders issued within 1 s of due time at p95",
+     "complexity": "O(log S) per reschedule",
+     "scaling": "At 10x streams (say 100,000) the priority queue stays in memory (about 20 MB at 200 bytes per stream); shard by tenant if one node is not enough."
+    },
+    "edge_cases": [
+     "New stream with no history: initial rate default",
+     "Zero changes: rate decays toward 0, interval hits 6 h ceiling",
+     "Clock skew: uses a monotonic clock for durations",
+     "App changes its rate limit: so_cap reports it and the budget floor is recomputed on the next cycle",
+     "Huge burst (10,000 changes in one poll): x capped at 10 times rate_old for one update to avoid a spike (design)",
+     "Paused stream: not scheduled until resumed"
+    ],
+    "tests": [
+     {
+      "name": "quiet stream",
+      "given": "rate 1e-5 per s",
+      "expect": "interval 21,600 s"
+     },
+     {
+      "name": "hot stream",
+      "given": "rate 1 per s",
+      "expect": "interval 30 s"
+     },
+     {
+      "name": "budget floor",
+      "given": "200 streams, 1 request each, budget 2 req/s, rate says 30 s",
+      "expect": "interval 100 s"
+     },
+     {
+      "name": "ewma update",
+      "given": "rate_old 0.005, x 0.02, a 0.3",
+      "expect": "rate_new 0.0095, interval 526 s"
+     }
+    ],
+    "cost_levers": [
+     "Quiet streams cost one request every 6 h",
+     "Webhook-covered streams use the backstop interval only"
+    ],
+    "feedback_events": [
+     "Staleness measured by ch_sweep drift and op_lag feeds the tuning of a and k"
+    ],
+    "analytics_events": [
+     {
+      "name": "sched.decision",
+      "fields": [
+       "tenant_id",
+       "stream",
+       "rate_ewma",
+       "interval_s",
+       "clamped_by"
+      ],
+      "when": "on every reschedule"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Schedules and timers survive restarts, which this scheduler needs"
+     }
+    ],
+    "industry": "Notion's online path targets sub-minute freshness while onboarding runs separately (t_t45); Stacksync advises reserving a slice of long-window quotas for freshness (t_t09).",
+    "refs": [
+     "t_t01",
+     "t_t09",
+     "t_t08",
+     "t_t45",
+     "t_t48",
+     "r_temporal"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "ch_hook",
+   "b": "ch_delta",
+   "l": "doorbell",
+   "k": "d",
+   "d": "Poll hint {stream, object_id, received_at} so the stream is polled now instead of at its next interval"
+  },
+  {
+   "a": "ch_hook",
+   "b": "op_health",
+   "l": "reject counters",
+   "k": "s",
+   "d": "Counts {tenant, app, reason, n} of rejected requests by signature, window and size"
+  },
+  {
+   "a": "ch_delta",
+   "b": "ch_sched",
+   "l": "change rate sample",
+   "k": "d",
+   "d": "Poll result {stream, changes, window_s} used to update the EWMA"
+  },
+  {
+   "a": "ch_delta",
+   "b": "ch_sweep",
+   "l": "full resync request",
+   "k": "n",
+   "d": "Stream {tenant, app, stream, reason 410} whose cursor expired and needs a full listing"
+  },
+  {
+   "a": "ch_cdc",
+   "b": "ch_cursor",
+   "l": "log position",
+   "k": "n",
+   "d": "Highest log position {source, lsn} read so far, to be committed with the events"
+  },
+  {
+   "a": "ch_sweep",
+   "b": "op_cov",
+   "l": "drift counts",
+   "k": "d",
+   "d": "Per folder {folder_uri, listed, differing, partial} after each sweep"
+  },
+  {
+   "a": "ch_sweep",
+   "b": "ch_sched",
+   "l": "drift rate",
+   "k": "d",
+   "d": "Drift fraction {app, differing / listed} used to shorten or lengthen the sweep period"
+  },
+  {
+   "a": "ch_sched",
+   "b": "ch_fill",
+   "l": "backfill budget",
+   "k": "n",
+   "d": "Request share {tenant, app, share} left for backfill after live polling is reserved"
+  }
+ ]
+}

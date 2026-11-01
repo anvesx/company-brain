@@ -1,0 +1,885 @@
+{
+ "group": {
+  "line": "Structured feeds from apps (tickets, chat, docs) kept with their threads, channels and people.",
+  "dumb": "Feeds from apps keep their shape. Chat threads stay whole and are indexed by channel, person and thing discussed."
+ },
+ "comps": {
+  "cf_claude": {
+   "line": "Compliance API pulled on a schedule: order_by=updated_at, after_id cursor, deleted_at tombstones\ntoken bucket 5 requests/s = half of 600 per minute",
+   "dumb": "Claude's company plan has an admin feed that lists every chat and file, newest changes first. We ask it for the changes since the last time we looked, using a bookmark. A deleted chat comes back marked with a deletion time, so we know to remove it. We stay at half the speed limit so other tools using the same key are not starved.",
+   "inn": "Compliance access key from the token vault (so_oauth, used only inside sc_runtime), a saved cursor {updated_at, after_id} per organisation, and a run request from the scheduler (ch_sched).",
+   "out": "Pages of chat and file records {chat_id, user, messages, updated_at, deleted_at} to cf_norm, tagged tool 'claude-web'. Run report {pages, records, tombstones, http_429, ms} to op_health.",
+   "store": "Reads the cursor from the connector state table; writes the new cursor only after cf_norm confirms the page. The access key is never stored here; it is read through the token boundary at call time. No chat text is kept after hand-off.",
+   "fail": "HTTP 429: wait for the retry-after value or 60 s, then resume from the same cursor, up to 5 times, then end the run and raise an alert. HTTP 401 or 403: stop at once and flag the key as invalid; no retry until an owner replaces it. 5xx: retry at 2 s, 8 s, 30 s, then end the run. A page that fails to hand off to cf_norm is not committed and is re-pulled.",
+   "hard": "The page size, the exact calls for message bodies, and which plans are eligible are not confirmed; the eligibility of Team, Pro and consumer plans is inferred, not stated. The organisation's Primary Owner enabling the feature is taken from the owner's brief and must be checked against current docs. Claude Desktop local chats and Claude Code cloud sessions are not covered.",
+   "req": "Requirement: 'Rate limit 600 requests/min per parent org'",
+   "prop": "Proposal: the compliance feed is the only vendor route that returns chat content and deletes for claude.ai, so it is pulled by a scheduled runner, not a plain tool call.",
+   "deep": {
+    "purpose": "Bring Enterprise Claude chats and files into the brain as personal-zone records, including their deletions, without exceeding the vendor rate limit or holding the key anywhere a model can reach.",
+    "expected": [
+     "An incremental run returns only records updated after the cursor and advances the cursor once per committed page",
+     "A deleted chat arrives with a deleted_at value and becomes a tombstone for cf_del and ch_tomb",
+     "A new vendor feed joins as another ext adapter that returns the same page shape to cf_norm; tools with their own MCP server cannot expose history (x_cap_mcp-spec), so they need a feed like this one"
+    ],
+    "not_expected": [
+     "It does not read Team, Pro or consumer chats; no admin route is documented for them (inferred)",
+     "It does not cover API-key traffic, Bedrock, Vertex, Foundry, Claude Code cloud sessions, or zero data retention organisations (x_cap_anthropic-compliance-exclusions)",
+     "It does not use the delete scope; the feed is read-only"
+    ],
+    "algorithm": {
+     "name": "Cursor sync with a token bucket at half the vendor rate",
+     "formula": "request allowed iff tokens >= 1; refill r = 5 per second (half of 600/min); cursor = (updated_at, after_id) of the last committed record",
+     "steps": [
+      "Load the cursor; if none, start a backfill from the oldest allowed date in a separate low-priority lane",
+      "Call the list with order_by=updated_at and after_id set to the cursor, taking one token from the bucket per call",
+      "Hand each page to cf_norm; commit the cursor only when cf_norm confirms",
+      "For a record with deleted_at set, emit a tombstone event instead of content",
+      "Stop when a page is empty or the run budget (5 minutes) ends; the next run resumes from the saved cursor"
+     ],
+     "params": {
+      "rate_cap": "300 requests per minute, half of the documented 600 (x_cap_anthropic-compliance-rate; the half is a design choice)",
+      "overlap": "re-read the last 60 s before the cursor and dedupe by (chat_id, updated_at) (design)",
+      "run_budget": "5 minutes (design)",
+      "scopes_requested": "read:compliance_activities, read:compliance_user_data, read:compliance_org_data only (x_cap_anthropic-compliance-scopes)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "R: documented limit, 600 requests per minute per parent organisation",
+      "f: share of R this feed may use",
+      "C: chats updated per day",
+      "k: calls needed per chat (unknown, 1 as the worst case)"
+     ],
+     "formula_full": "time = C x k / (f x R) minutes; with f = 0.5, time = C x k / 300",
+     "derivation": "Calls per day divided by the allowed calls per minute gives minutes of runtime. Taking only half of R leaves room for other users of the same key and for retries after HTTP 429.",
+     "worked_example": "Assumption: 2,000 users each update 40 chats a day, so C = 80,000, and k = 1 call per chat in the worst case. Time = 80,000 / 300 = 267 minutes (4.4 hours) per day at half rate. Full rate would take 133 minutes. A first backfill of 30 days = 2,400,000 chats needs 8,000 minutes, about 5.6 days at half rate, so backfill runs in its own lane over a week.",
+     "complexity": "O(records) time; O(1) memory because pages stream through.",
+     "failure_modes": [
+      "Several records share the same updated_at: the cursor includes after_id, and the 60 s overlap with dedupe covers late arrivals (design)",
+      "The key is shared with another tool and uses the budget: HTTP 429 rate is watched; at over 5 percent of calls the feed drops to a third of the limit"
+     ],
+     "calibration": "After 7 days, set f so that 429 responses stay below 1 percent of calls; do not go above 0.8."
+    },
+    "alternatives": [
+     {
+      "name": "Admin API key for activity logs",
+      "why_rejected": "That key reaches the Activity Feed only, not chat content (x_cap_anthropic-compliance-keys)."
+     },
+     {
+      "name": "Ask users to export their own data",
+      "why_rejected": "Manual, rare and no deletes; fine as a fallback for personal plans."
+     }
+    ],
+    "security": [
+     "Key theft gives read access to all chats: the key lives in the token vault, is decrypted only inside the connector runtime (sc_runtime), and never reaches a model or tool surface; rotate every 90 days (design)",
+     "Over-broad scope: only the three read scopes are requested; the delete scope is never requested, so a bug cannot delete vendor data",
+     "Injection in a chat body (an attacker's instruction pasted into a chat): content is stored and returned as untrusted data and never passed to an agent in this path",
+     "Pages replayed or reordered by a proxy: cursor commits are idempotent by (chat_id, updated_at)"
+    ],
+    "performance": {
+     "slo": "incremental lag under 15 minutes at p95 for an organisation of 2,000 users",
+     "complexity": "O(records) per run at 300 calls per minute",
+     "scaling": "At 10x users (20,000) the 600-per-minute limit alone sets the pace (about 44 hours a day at half rate), so the scheduler lengthens the interval and prioritises users active in the last day."
+    },
+    "edge_cases": [
+     "No new records: one empty call, cursor unchanged",
+     "Chat updated while a run is paging: it reappears on the next run with a later updated_at, deduped by version",
+     "Deleted chat that was never seen by us: the tombstone has no pointer to remove, so it is counted and dropped",
+     "Very large chat (thousands of messages): fetched in message pages and split into turns by cf_norm",
+     "Organisation under a 30-day limit (HIPAA): history older than 30 days cannot be pulled, so backfill is capped to that window (x_cap_anthropic-compliance-exclusions)",
+     "Clock skew: only server updated_at values are used, never the local clock"
+    ],
+    "tests": [
+     {
+      "name": "cursor resume",
+      "given": "run stops after page 3 of 10",
+      "expect": "next run starts at the saved (updated_at, after_id) and returns pages 4 to 10 once"
+     },
+     {
+      "name": "tombstone",
+      "given": "record arrives with deleted_at set",
+      "expect": "tombstone event emitted and no content forwarded"
+     },
+     {
+      "name": "rate cap",
+      "given": "run for 60 s with 600 queued pages",
+      "expect": "at most 300 calls made, no 429 received"
+     },
+     {
+      "name": "429 handling",
+      "given": "server returns 429 with retry-after 30",
+      "expect": "waits 30 s and resumes from the same cursor"
+     }
+    ],
+    "cost_levers": [
+     "Half-rate budget avoids needing a larger plan for the key",
+     "Incremental cursor instead of full re-listing cuts calls by over 95 percent after the first backfill (design estimate)"
+    ],
+    "feedback_events": [
+     "Owner marks an organisation unit as excluded; its users are skipped on the next run"
+    ],
+    "analytics_events": [
+     {
+      "name": "feed.claude.run",
+      "fields": [
+       "org_id",
+       "pages",
+       "records",
+       "tombstones",
+       "http_429",
+       "ms"
+      ],
+      "when": "at the end of every run"
+     },
+     {
+      "name": "feed.claude.cursor",
+      "fields": [
+       "org_id",
+       "updated_at",
+       "after_id"
+      ],
+      "when": "on every committed page"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "The vendor documents incremental sync with order_by=updated_at and an after_id cursor, with deleted_at tombstones (x_cap_anthropic-compliance-sync); this card uses exactly that pattern.",
+    "refs": [
+     "x_cap_anthropic-compliance-keys",
+     "x_cap_anthropic-compliance-scopes",
+     "x_cap_anthropic-compliance-rate",
+     "x_cap_anthropic-compliance-sync",
+     "x_cap_anthropic-compliance-exclusions",
+     "x_cap_anthropic-compliance-eligibility",
+     "x_cap_mcp-spec"
+    ]
+   }
+  },
+  "cf_openai": {
+   "line": "ChatGPT Enterprise compliance logs pulled in time windows as JSONL, scoped by workspace\nwatermark = now - 5 min; window = [w0, w1)",
+   "dumb": "ChatGPT's company plan can hand an admin a log of conversations. We ask for it one time slice at a time, for one workspace at a time, and get a file with one record per line. We leave out the last few minutes so late records do not slip between two slices. These logs may hold only snippets of a chat, not the whole text.",
+   "inn": "Compliance credential from the token vault (used only inside the connector runtime), workspace id list, last watermark per workspace, run request from the scheduler.",
+   "out": "Records {workspace, user, conversation_id, record_id, time, text_or_snippet, deleted} to cf_norm, tagged tool 'chatgpt'. Run report {windows, records, gaps, ms} to op_health.",
+   "store": "Reads and writes the watermark per workspace in the connector state table. Holds a downloaded window file only in memory or a temporary file, removed after the hand-off. No chat text is kept.",
+   "fail": "Window download fails: retry at 5 s, 30 s, 2 min, then leave the watermark in place and try the same window next run. HTTP 401 or 403: stop and flag the credential. Watermark older than 7 days: raise an alert, because logs are reportedly kept only 30 days. A malformed line: counted, skipped, never stops the window.",
+   "hard": "Details of the API, field names, retention and deletion behaviour come from search snippets and secondary blogs; the vendor help pages returned an access error and were not read. Treat every field name here as a placeholder: check current docs. Whether the logs hold full text or only snippets is unconfirmed.",
+   "req": "Requirement: 'admins can access an audit log of conversations'",
+   "prop": "Proposal: pull by closed time windows so a failed run can be repeated exactly, and so the feed never depends on a push.",
+   "deep": {
+    "purpose": "Bring ChatGPT Enterprise conversation records into the brain as personal-zone records, window by window, without gaps or double counting, and without promising full text we cannot confirm.",
+    "expected": [
+     "Each window [w0, w1) is pulled once, in order, and the watermark moves to w1 only after cf_norm confirms",
+     "Records seen twice across window edges are deduped by record id",
+     "A new workspace joins by adding its id and credential reference to the connector config, with no code change"
+    ],
+    "not_expected": [
+     "It does not capture individual ChatGPT accounts, which only offer a manual user export (x_cap_openai-enterprise-privacy)",
+     "It does not promise full conversation text; records may be snippet-level",
+     "It does not delete anything at the vendor"
+    ],
+    "algorithm": {
+     "name": "Closed time-window pull with a late-arrival margin and idempotent watermark",
+     "formula": "pull [w0, w1) where w1 <= now - margin; watermark = w1 after confirm; dedupe key = (workspace, record_id)",
+     "steps": [
+      "Read the watermark w0 for the workspace; set w1 = min(w0 + 15 min, now - 5 min)",
+      "If w1 <= w0, there is nothing to do yet; end the run",
+      "Request the window file for that workspace and read it line by line",
+      "Send each record to cf_norm; count skipped lines",
+      "After cf_norm confirms the last record, write the watermark w1 and repeat until the run budget ends"
+     ],
+     "params": {
+      "window": "15 minutes (design)",
+      "margin": "5 minutes for late records (design, tune from the observed delay)",
+      "alert_age": "watermark older than 7 days (design; logs reportedly last 30 days, x_cap_openai-compliance-logs)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "w: window length",
+      "m: late margin",
+      "T: retention of the vendor logs",
+      "lag: age of the oldest unpulled data"
+     ],
+     "formula_full": "steady-state lag <= w + m + run interval; data loss if lag > T",
+     "derivation": "A record can appear up to m after its time. Pulling only up to now minus m means every record in a closed window is present. The wait before data is pulled is at most the window plus the margin plus the run interval.",
+     "worked_example": "w = 15 min, m = 5 min, run interval 15 min: lag at most 35 minutes. With T = 30 days (reported by a secondary source), the scheduler can be down for 30 days minus 35 minutes before loss starts; the alert at 7 days leaves 23 days to fix it. A 6-day outage backlog = 6 x 96 = 576 windows, which at one window per 20 s is 3.2 hours.",
+     "complexity": "O(records) per run; memory O(1) with line streaming.",
+     "failure_modes": [
+      "Records arrive later than m: they are missed; a nightly 24-hour re-pull with dedupe catches them (design)",
+      "Vendor changes the file format: the bad-line rate crosses 5 percent and the run stops with an alert"
+     ],
+     "calibration": "Measure the delay between record time and availability for 14 days; set m to the p99 delay plus 1 minute."
+    },
+    "alternatives": [
+     {
+      "name": "Push by webhook",
+      "why_rejected": "No push is documented for these logs; a closed-window pull is repeatable and checkable."
+     },
+     {
+      "name": "Browser capture of the ChatGPT web page",
+      "why_rejected": "Needs a device agent that reads the whole page, with no consent trail or redaction guarantee."
+     }
+    ],
+    "security": [
+     "Credential theft exposes all workspace conversations: it lives in the token vault and is used only inside the connector runtime",
+     "A log file with crafted text meant to steer an agent: content is data and never passes into an agent in this path",
+     "Window file left on disk: it is read from memory or a temporary file that is deleted after confirm, and encrypted at rest",
+     "Cross-workspace mix-up: every record is checked against the workspace id requested, and a mismatch goes to a quarantine counter"
+    ],
+    "performance": {
+     "slo": "lag under 35 minutes at p95 at steady state",
+     "complexity": "O(records) per run",
+     "scaling": "At 10x volume, shorten the window to 5 minutes and run windows in parallel per workspace, bounded by the vendor limit (not documented in research, check current docs)."
+    },
+    "edge_cases": [
+     "Empty window: watermark still moves to w1",
+     "Same record in two windows: deduped by record id",
+     "Workspace added mid-run: it starts at the oldest allowed date in a backfill lane",
+     "A snippet that cuts a turn in the middle: stored as a partial with a snippet flag, never merged into full text",
+     "Clock skew: only the vendor's own record time is used for windows",
+     "A deleted conversation: appears as a deleted flag if the vendor reports it; otherwise cf_del finds it only when a later run no longer lists it"
+    ],
+    "tests": [
+     {
+      "name": "watermark safety",
+      "given": "run fails after reading half of a window",
+      "expect": "watermark unchanged; next run repeats the whole window and dedupes"
+     },
+     {
+      "name": "margin",
+      "given": "now is 12:03 and the watermark is 12:00",
+      "expect": "no window pulled because w1 would be after 11:58"
+     },
+     {
+      "name": "bad lines",
+      "given": "2 of 1,000 lines are not valid JSON",
+      "expect": "998 forwarded, skipped counter 2, watermark moves"
+     },
+     {
+      "name": "old watermark",
+      "given": "watermark is 8 days old",
+      "expect": "an alert is raised and the run continues"
+     }
+    ],
+    "cost_levers": [
+     "Windows are small files, so transfer cost is proportional to chat volume only",
+     "Skipping idle workspaces at night"
+    ],
+    "feedback_events": [
+     "Owner marks a workspace as out of scope; it is skipped from the next run"
+    ],
+    "analytics_events": [
+     {
+      "name": "feed.openai.window",
+      "fields": [
+       "workspace",
+       "w0",
+       "w1",
+       "records",
+       "bad_lines",
+       "ms"
+      ],
+      "when": "after every committed window"
+     },
+     {
+      "name": "feed.openai.lag",
+      "fields": [
+       "workspace",
+       "lag_s"
+      ],
+      "when": "at the end of every run"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Enterprise audit feeds from other vendors (GitHub audit log streams, Cursor audit logs) also deliver by batch or window rather than by push (x_cap_github-copilot-audit, x_cap_cursor-audit).",
+    "refs": [
+     "x_cap_openai-enterprise-privacy",
+     "x_cap_openai-compliance-logs",
+     "x_cap_github-copilot-audit",
+     "x_cap_cursor-audit"
+    ]
+   }
+  },
+  "cf_vault": {
+   "line": "Google Vault export and Microsoft Purview or Graph interaction records pulled by the same scheduled runner\nGraph: 1 query per licensed user",
+   "dumb": "Google and Microsoft keep records of what employees asked their AI assistants. Google exposes them through its Vault archive, and Microsoft through its audit and interaction records. A scheduled job fetches both, one person at a time for Microsoft, and turns them into the same record shape as every other feed. Cursor and GitHub Copilot give no chat text through an official admin API, so they are not here.",
+   "inn": "Export files or interaction records from Google Vault and Microsoft Graph or Purview; credentials from the token vault (used only inside the connector runtime); per-user checkpoints; run request from the scheduler.",
+   "out": "Records {source, user, session, time, text, deleted} to cf_norm, tagged tool 'gemini' or 'm365-copilot'. Run report {source, users, records, errors, ms} to op_health.",
+   "store": "Reads and writes a checkpoint per (source, user) in the connector state table. Export files stay in memory or a temporary file deleted after the hand-off. No chat text is kept.",
+   "fail": "Export job still running: poll at 30 s, 2 min, 10 min, then pick it up on the next run. Graph returns 429: wait for the retry-after value, then resume that user, 5 times, then skip to the next user and mark the user lagging. 403 (no licence or no permission): mark the user unreachable and report it; never retry for 24 h. Corrupt export: the run ends and the old checkpoint stays.",
+   "hard": "Edition lists for Vault, Purview audit details, throttling limits and delete behaviour were not confirmed in research (Purview page seen only as a snippet); Gemini Enterprise was not researched at all. Check current docs before building. Cursor and GitHub Copilot cannot be captured through a vendor API (x_cap_cursor-analytics-api, x_cap_github-copilot-audit).",
+   "req": "Requirement: 'Application permission, per-user queries, requires Copilot license'",
+   "prop": "Proposal: Vault and Graph differ a lot, so one adapter shape per source feeds the same normaliser, rather than special cases downstream.",
+   "deep": {
+    "purpose": "Pull Gemini app conversations and Microsoft 365 Copilot interactions into the brain as personal-zone records through each vendor's admin route, and be honest about who is not covered.",
+    "expected": [
+     "A Vault export for a date range is requested, polled and read into records once",
+     "Graph interaction records are pulled per licensed user from that user's checkpoint forward",
+     "A new vendor joins as another adapter that outputs the same record shape; see cf_norm for the shape"
+    ],
+    "not_expected": [
+     "It does not capture Cursor or GitHub Copilot chat content; no vendor API returns it (x_cap_cursor-analytics-api, x_cap_github-copilot-audit)",
+     "It does not capture users without a Copilot licence or outside eligible Vault editions",
+     "It does not write to Vault or Graph"
+    ],
+    "algorithm": {
+     "name": "Per-source adapters with per-user checkpoints behind one scheduled runner",
+     "formula": "calls per day = licensed users x runs per day; each (source, user) checkpoint advances only after cf_norm confirms",
+     "steps": [
+      "For Vault, create an export for [checkpoint, now - 5 min] and poll until it finishes",
+      "Download the export and read records into the common shape",
+      "For Graph, list licensed users, then query each user's interaction records after that user's checkpoint",
+      "Send records to cf_norm; advance each checkpoint only after confirmation",
+      "Report users that could not be read, with the reason"
+     ],
+     "params": {
+      "runs_per_day": "4 for Graph (design, tune with the lag target)",
+      "export_poll": "30 s, 2 min, 10 min (design)",
+      "margin": "5 minutes (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "U: licensed users",
+      "n: runs per day",
+      "q: queries per user per run"
+     ],
+     "formula_full": "daily Graph calls = U x n x q",
+     "derivation": "Graph answers per user, so cost grows with licensed users and with how often we run. Fewer runs mean fewer calls but more lag.",
+     "worked_example": "U = 5,000, n = 4, q = 1: 20,000 calls a day. At 10 calls per second that is 2,000 seconds, about 33 minutes. At n = 24 the same estate is 120,000 calls, 3.3 hours. The call rate is a design assumption; the real limit is not in our research.",
+     "complexity": "O(U) calls per run; Vault is one export per range, independent of U.",
+     "failure_modes": [
+      "Throttling on a large estate: runs fall behind; the runner skips idle users first",
+      "Users with no activity still cost a call: remember last-active and query idle users only once a day"
+     ],
+     "calibration": "Measure the throttle rate over 14 days; set n so that 429 responses stay under 1 percent."
+    },
+    "alternatives": [
+     {
+      "name": "Browser or desktop capture of Gemini and Copilot",
+      "why_rejected": "Needs a device agent that reads whole pages; admin routes give consent-friendly records with audit."
+     },
+     {
+      "name": "Treat Cursor and GitHub Copilot as covered by their analytics",
+      "why_rejected": "Their APIs return metrics or management events, not chat content (x_cap_cursor-analytics-api, x_cap_github-copilot-audit)."
+     }
+    ],
+    "security": [
+     "Application permission in Graph reaches every user in scope: the app is limited to the minimum permission, and the user list comes from the licence list, not from user input",
+     "Domain-wide delegation style access in Google gives broad reach: use a dedicated service identity with the narrowest scopes (x_sec_google-dwd)",
+     "Injection inside a chat record: content is data and never passes to an agent in this path",
+     "Export files left on disk: kept in memory or a temporary file, deleted after confirm and encrypted at rest"
+    ],
+    "performance": {
+     "slo": "Graph lag under 6 hours at p95 for 5,000 users (design); Vault ranges within 1 hour of the export finishing",
+     "complexity": "O(U) per Graph run",
+     "scaling": "At 10x users (50,000), the call rate becomes the limit; run idle users once a day and active users every run."
+    },
+    "edge_cases": [
+     "Empty export: checkpoint moves to the end of the range",
+     "User leaves the company: the licence list drops them and their checkpoint is archived, not deleted",
+     "Export for a range that Vault retention already removed: the records are absent, which the delete reconciler must not read as a user delete without a second run",
+     "Records in a language with non-Latin text: kept as UTF-8, never transliterated",
+     "Clock skew: only vendor timestamps are used",
+     "Partial run: checkpoints for confirmed users stay advanced; the rest repeat"
+    ],
+    "tests": [
+     {
+      "name": "checkpoint per user",
+      "given": "run ends after 3 of 10 users",
+      "expect": "3 checkpoints advanced; the next run starts with user 4"
+     },
+     {
+      "name": "unlicensed user",
+      "given": "Graph returns 403 for one user",
+      "expect": "user marked unreachable and others unaffected"
+     },
+     {
+      "name": "export polling",
+      "given": "export is ready after 4 minutes",
+      "expect": "polls at 30 s and 2 min, reads it at the third poll"
+     },
+     {
+      "name": "no cursor creep",
+      "given": "cf_norm rejects the last page",
+      "expect": "checkpoint stays and the page is pulled again"
+     }
+    ],
+    "cost_levers": [
+     "Idle-user skipping cuts Graph calls by most of the estate",
+     "One export per range instead of per user for Vault"
+    ],
+    "feedback_events": [
+     "Owner removes a team from scope; the runner skips them"
+    ],
+    "analytics_events": [
+     {
+      "name": "feed.vault.run",
+      "fields": [
+       "source",
+       "users",
+       "records",
+       "errors",
+       "ms"
+      ],
+      "when": "at the end of every run"
+     },
+     {
+      "name": "feed.vault.unreachable",
+      "fields": [
+       "source",
+       "user_hash",
+       "reason"
+      ],
+      "when": "when a user cannot be read"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Vault retains and exports Gemini app conversations for eligible Workspace editions (x_cap_gemini-vault); Microsoft exposes Copilot interactions through Graph and Purview audit (x_cap_ms-graph-ai-interaction).",
+    "refs": [
+     "x_cap_gemini-vault",
+     "x_cap_ms-graph-ai-interaction",
+     "x_cap_cursor-analytics-api",
+     "x_cap_github-copilot-audit",
+     "x_sec_google-dwd",
+     "x_sec_entra-consent"
+    ]
+   }
+  },
+  "cf_norm": {
+   "line": "Each turn becomes a Message envelope {uri, owner, tool, session, turn, time, content_hash}, zone personal\nid = SHA-256 over normalised text",
+   "dumb": "Every source sends chats in its own shape. This step turns each turn into one standard record with a stable address, the owner, the tool, the time and a fingerprint of the text. It always stamps the record as personal, so no one else can see it unless the owner shares it. The fingerprint lets us tell whether a turn changed or was sent twice.",
+   "inn": "Redacted lines from cp_redact over the outbound channel, and pages from cf_claude, cf_openai and cf_vault, each with its tool name and source ids.",
+   "out": "Message envelope {uri, owner, tool, session, turn, time, content_hash, zone: 'personal'} to zn_tag; chat event {uri, owner, tool, session, turn} to ch_bus; set of turn uris seen in this run to cf_del.",
+   "store": "Keeps nothing but a short idempotency table {uri, content_hash} for 24 h (design) to drop repeats. The turn text goes only to the store behind zn_tag; the brain index keeps pointers, not the text.",
+   "fail": "Owner cannot be resolved: the record goes to a quarantine queue for 7 days with an alert; it is never stamped to a guess. zn_tag or ch_bus unreachable: hold the batch in memory and retry at 1 s, 5 s, 30 s, then stop pulling and let the feed keep its cursor. A record without a time is rejected and counted.",
+   "hard": "Mapping a vendor account to the company identity depends on the identity provider and is not built here; a text hash cannot prove two near-identical turns are the same turn.",
+   "req": "Requirement: 'order_by=updated_at with after_id cursor'",
+   "prop": "Proposal: one envelope shape with a fixed personal zone means no later step has to guess who may see a chat.",
+   "deep": {
+    "purpose": "Give every captured turn one stable address and fingerprint and a personal-zone stamp, whatever its source, so that dedupe, edits and deletes work the same everywhere.",
+    "expected": [
+     "The same turn from the same source gives the same uri and content_hash on every run",
+     "Every output envelope has zone = personal; there is no code path in this card that writes another zone",
+     "A new source joins by sending its records with tool, owner, session and turn ids; the envelope shape does not change"
+    ],
+    "not_expected": [
+     "It does not decide who else may see a record; promotion out of the personal zone is another card's job and needs the owner",
+     "It does not redact text; cp_redact does on the device, and feeds are redacted by vendor scope only",
+     "It does not keep a copy of the text"
+    ],
+    "algorithm": {
+     "name": "Canonical envelope with stable uri and SHA-256 content hash",
+     "formula": "uri = 'chat://' + tool + '/' + owner_id + '/' + session + '/' + turn; content_hash = SHA-256(NFC(text) with LF line ends)",
+     "steps": [
+      "Resolve the owner from the source's account to the company owner id; quarantine if there is none",
+      "Build the uri from tool, owner id, session id and turn index",
+      "Normalise the text to Unicode NFC with LF line endings and trim trailing whitespace",
+      "Hash with SHA-256, set zone to personal, and look up (uri, content_hash) in the idempotency table",
+      "If new or changed, emit to zn_tag and ch_bus; always add the uri to the run's seen set for cf_del"
+     ],
+     "params": {
+      "hash": "SHA-256 (default)",
+      "idempotency_ttl": "24 h (design)",
+      "quarantine_ttl": "7 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: number of distinct turns ever stored",
+      "b: hash length in bits, 256"
+     ],
+     "formula_full": "P(any collision) <= n^2 / 2^(b+1)",
+     "derivation": "Random hashes follow the birthday bound: with n items, the chance that any two match is about n squared over twice the number of possible values.",
+     "worked_example": "n = 1,000,000,000 turns (10^9): n^2 = 10^18; 2^257 is about 2.3 x 10^77; P is about 4.3 x 10^-60, far below any hardware fault rate. A 64-bit hash with the same n would give 10^18 / 3.7 x 10^19 = 2.7 percent, which is why a short hash is not used.",
+     "complexity": "O(text length) per turn; O(1) lookup in the idempotency table.",
+     "failure_modes": [
+      "Two sources report the same real turn under different tool names: they stay two records; a later cross-source dedupe is not built here",
+      "Different Unicode forms of the same text produce different hashes without NFC: normalisation is mandatory and fixed"
+     ],
+     "calibration": "None needed for the hash. Check monthly that the share of quarantined records stays under 1 percent; if higher, the owner mapping is failing."
+    },
+    "alternatives": [
+     {
+      "name": "Per-source id as the key",
+      "why_rejected": "Ids differ per vendor and can be reused; the tool-owner-session-turn uri is the same shape everywhere."
+     },
+     {
+      "name": "Hash of text alone as the key",
+      "why_rejected": "Two people pasting the same sentence would share a key; owner is part of the uri."
+     }
+    ],
+    "security": [
+     "Cross-owner leak by a wrong owner mapping: unresolved owners are quarantined, never guessed, and the stamp is always personal",
+     "A feed claims another user's identity in its records: the owner is taken from the credential and workspace mapping, not from a text field",
+     "The hash reveals low-entropy text such as 'yes' by guessing: the hash is not shown to other users and is scoped to the owner",
+     "Zone downgrade by a bug: a test asserts every emitted envelope has zone personal"
+    ],
+    "performance": {
+     "slo": "p95 under 2 ms per turn; 5,000 turns per second per worker",
+     "complexity": "O(text length) per turn",
+     "scaling": "At 10x volume the idempotency table is the limit; shard it by owner id and keep the 24 h expiry. (design)"
+    },
+    "edge_cases": [
+     "Empty turn text: kept as an envelope with the hash of the empty string and a flag empty",
+     "Turn edited at the vendor: same uri, new hash, so downstream treats it as a new version",
+     "Same turn arrives from two runs at once: the idempotency table accepts one and drops the other",
+     "Mixed line endings and combining characters: removed by NFC and LF normalisation before hashing",
+     "Time zone missing: the time is stored in UTC with the source's own offset noted; a record with no time is rejected",
+     "Very long turn: split into parts with a part number; the uri gets a #part suffix"
+    ],
+    "tests": [
+     {
+      "name": "stable uri",
+      "given": "same turn sent twice",
+      "expect": "same uri and hash; second one dropped by idempotency"
+     },
+     {
+      "name": "zone is personal",
+      "given": "feed 10,000 random turns",
+      "expect": "all 10,000 envelopes have zone personal"
+     },
+     {
+      "name": "unicode forms",
+      "given": "'e' + combining accent versus the single accented 'e'",
+      "expect": "same content_hash after NFC"
+     },
+     {
+      "name": "unknown owner",
+      "given": "record whose account maps to no employee",
+      "expect": "quarantined, no event on ch_bus"
+     }
+    ],
+    "cost_levers": [
+     "Idempotency drops repeated turns before they reach storage",
+     "No model call; pure hashing"
+    ],
+    "feedback_events": [
+     "Owner reports a record that is not theirs; the mapping rule for that account is reviewed"
+    ],
+    "analytics_events": [
+     {
+      "name": "norm.envelope",
+      "fields": [
+       "tool",
+       "owner_hash",
+       "n",
+       "deduped",
+       "quarantined"
+      ],
+      "when": "per batch"
+     },
+     {
+      "name": "norm.zone_assert",
+      "fields": [
+       "checked",
+       "violations"
+      ],
+      "when": "per batch"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Content-addressed storage in git and similar systems keys data by hash; this card keys by owner and place and uses the hash only to detect change.",
+    "refs": [
+     "x_cap_anthropic-compliance-sync",
+     "x_cap_mcp-spec",
+     "x_sec_owasp-llm08"
+    ]
+   }
+  },
+  "cf_del": {
+   "line": "Each run is diffed against the pointer set; a turn missing from two complete runs becomes a tombstone\nfreeze if missing > 5%",
+   "dumb": "When someone deletes a chat, a feed may simply stop listing it. This step compares what a run reported against what we already hold. If a turn is missing in two complete runs in a row, we mark it deleted and stop showing it. It can only notice a delete on the next run, never sooner. If too much looks missing at once, it stops and asks for a check instead of deleting.",
+   "inn": "Reported set of turn uris and run coverage {source, from, to, complete} from cf_norm; the stored pointer set for that source and range; explicit deleted_at tombstones from cf_claude.",
+   "out": "Tombstone events {uri, reason, detected_at} to ch_tomb, reason one of user_deleted, vendor_tombstone, window_missing. Frozen-run alerts to op_health.",
+   "store": "Reads the pointer set for the covered range from the index. Writes a strike table {uri, strikes, first_missing_run} until the turn is tombstoned or seen again. No chat text.",
+   "fail": "Run incomplete (page error, timeout): no diff is made at all, strikes unchanged. More than 5 percent of the range missing: the run is frozen, no tombstones, alert raised, and a human reviews within 1 working day. ch_tomb unreachable: queue tombstones in the strike table and retry at 1 min, 10 min, 1 h.",
+   "hard": "A delete is only seen when the next run reports it, so it can lag by one or two run intervals; local session files purged by the tool are not user deletes and are never tombstoned here. Vendors with no list API cannot be reconciled at all.",
+   "req": "Requirement: 'deleted items carry a deleted_at tombstone'",
+   "prop": "Proposal: a missing turn is weak evidence, so require two complete runs and a size check before turning absence into a delete.",
+   "deep": {
+    "purpose": "Turn the disappearance of turns from a vendor feed into tombstones safely, without deleting records because of a partial run or a vendor outage.",
+    "expected": [
+     "A turn missing from two consecutive complete runs for its range becomes a tombstone with reason window_missing",
+     "A turn the vendor marks deleted becomes a tombstone at once with reason vendor_tombstone",
+     "A new source joins if it can give a complete listing for a range, with a run coverage flag; sources without one are marked not reconcilable"
+    ],
+    "not_expected": [
+     "It does not treat a local transcript file purged after about 30 days as a user delete (x_cap_claude-code-transcripts)",
+     "It does not delete at the vendor",
+     "It does not tombstone from an incomplete run"
+    ],
+    "algorithm": {
+     "name": "Set difference over a covered range with a two-strike rule and a size guard",
+     "formula": "missing = pointers(range) - reported; tombstone iff strikes >= 2 and |missing| / |pointers(range)| <= 0.05",
+     "steps": [
+      "Take the run coverage; if the run is not complete, stop without changes",
+      "Compute missing = pointers in [from, to] for the source minus the reported set (hash set lookups)",
+      "If |missing| / |pointers| exceeds 5 percent, freeze the run and alert; stop",
+      "For each missing uri, add one strike; for each reported uri, clear its strikes",
+      "Emit a tombstone for every uri with 2 strikes and remove it from the strike table"
+     ],
+     "params": {
+      "strikes": "2 (design)",
+      "freeze_ratio": "5 percent (design, tune on observed vendor churn)",
+      "vendor_tombstones": "taken at once (x_cap_anthropic-compliance-sync)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "P: pointers held in the covered range",
+      "R: reported turns in the run",
+      "M: missing turns",
+      "s: strikes needed",
+      "T_run: run interval"
+     ],
+     "formula_full": "M = P - |P intersect R|; frozen iff M / P > 0.05; detection delay = s x T_run",
+     "derivation": "A set difference finds turns we hold that the run did not report. Requiring several runs removes one-off gaps; the ratio guard catches a listing that is broken as a whole.",
+     "worked_example": "P = 10,000 turns, run reports 9,990 that we hold, so M = 10 and 10 / 10,000 = 0.1 percent: strike 1. Next run the same 10 are still missing: strike 2, 10 tombstones. If the run reported only 9,400, M = 600 and 6 percent is above 5 percent, so the run is frozen and no tombstones are made. With T_run = 1 hour and 2 strikes, a delete is seen after 2 hours.",
+     "complexity": "O(P + R) time with hash sets; O(P) memory for the range.",
+     "failure_modes": [
+      "A vendor outage returns partial lists marked complete: the 5 percent guard catches big losses but not a loss of 4 percent; the owner can lower the ratio per source",
+      "A mass delete is real (a person leaves and chats are purged): the freeze triggers; a human approves the tombstones"
+     ],
+     "calibration": "After 30 days, set freeze_ratio to 3 times the 99th percentile of the normal weekly delete share, never above 10 percent."
+    },
+    "alternatives": [
+     {
+      "name": "Tombstone on the first miss",
+      "why_rejected": "One short page would wipe real records."
+     },
+     {
+      "name": "Never delete, only keep history",
+      "why_rejected": "Keeping deleted chats breaks the owner's delete and likely erasure duties (x_sa_erasure)."
+     }
+    ],
+    "security": [
+     "An attacker or a bug empties a feed to force mass deletion of evidence: the ratio guard freezes the run and tombstones need a human above 5 percent",
+     "Tombstone replay or forged tombstone from outside: events come only from this card's verified run, with an ordered run id",
+     "A tombstone leaves residue (embeddings of deleted text): ch_tomb handles removal in the index; this card only reports the uri",
+     "Cross-owner delete by uri collision: the uri contains the owner id, and the diff runs per source and range"
+    ],
+    "performance": {
+     "slo": "diff of 1,000,000 pointers under 5 seconds; detection delay at most 2 run intervals",
+     "complexity": "O(P + R)",
+     "scaling": "At 10x pointers (10,000,000), partition the diff by owner and by day and run partitions in parallel."
+    },
+    "edge_cases": [
+     "Empty reported set with a complete run: ratio is 100 percent, so the run is frozen, not tombstoned",
+     "Duplicate uris in the reported set: collapsed by the set",
+     "A turn reappears after one strike: its strike count is cleared",
+     "Range edges: only pointers whose time lies strictly inside [from, to] are compared",
+     "A feed that cannot list (Cursor, GitHub Copilot): marked not reconcilable and never diffed",
+     "Run interval changed from 1 h to 6 h: the detection delay grows to 12 h and the owner view shows that"
+    ],
+    "tests": [
+     {
+      "name": "two strikes",
+      "given": "10 of 10,000 turns missing in two complete runs",
+      "expect": "10 tombstones on the second run, none on the first"
+     },
+     {
+      "name": "guard",
+      "given": "run reports 9,400 of 10,000",
+      "expect": "frozen, zero tombstones, alert raised"
+     },
+     {
+      "name": "incomplete run",
+      "given": "run ends with a page error",
+      "expect": "no diff, strikes unchanged"
+     },
+     {
+      "name": "local purge",
+      "given": "Claude Code file removed after the retention period",
+      "expect": "no tombstone; a gap event only"
+     }
+    ],
+    "cost_levers": [
+     "Hash-set diff keeps cost linear",
+     "Diffing only the covered range instead of the whole index"
+    ],
+    "feedback_events": [
+     "Reviewer approves or rejects a frozen run; the decision tunes freeze_ratio per source"
+    ],
+    "analytics_events": [
+     {
+      "name": "del.run",
+      "fields": [
+       "source",
+       "range",
+       "pointers",
+       "missing",
+       "tombstoned",
+       "frozen"
+      ],
+      "when": "after each diff"
+     },
+     {
+      "name": "del.frozen",
+      "fields": [
+       "source",
+       "ratio",
+       "run_id"
+      ],
+      "when": "when a run is frozen"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "The vendor's own sync uses a deleted_at tombstone that clients must apply (x_cap_anthropic-compliance-sync); this card adds the diff for feeds that only list what remains.",
+    "refs": [
+     "x_cap_anthropic-compliance-sync",
+     "x_cap_anthropic-compliance-exclusions",
+     "x_cap_claude-code-transcripts",
+     "x_sa_erasure"
+    ]
+   }
+  },
+  "cf_struct": {
+   "line": "Keeps threads whole; views by channel, person and artifact\nthreads never split",
+   "dumb": "In chat, who said it, where, and in reply to what matter as much as the words. This part keeps that context on each message and stores three views of the same pointers: by channel, by person, by thing discussed. A thread stays together as one unit, so a reply is never separated from the question.",
+   "inn": "From cf_norm: messages {channel, actor, ts, thread_id, text refs, artifact mentions}.",
+   "out": "Chunks keyed by thread with {channel, actors[], artifacts[], time range}, plus the three views (channel, actor, artifact) to ix_link and ix_chunk.",
+   "store": "Writes view tables of pointers and ids; no message body.",
+   "fail": "If thread ids are missing, a time-gap rule (30 minutes) groups messages; if artifact mention parsing fails the chunk is kept without artifact links and flagged; a malformed message is skipped and counted.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: keep each chat thread whole and indexed by channel, actor and artifact so retrieval can use the same handles people do.",
+   "hard": "Whether views by actor and artifact beat plain thread chunks for retrieval is not measured here; the first release builds all three and logs which view the loop uses.",
+   "deep": {
+    "purpose": "Group chat has no clean document boundaries. Keeping the thread whole and indexing it by channel, person and artifact gives the loop and the ranker the same handles people use when they search chat.",
+    "expected": [
+     "A thread of 12 messages becomes one chunk linked to its channel, 4 people and 2 documents",
+     "A question and its answer are never split across chunks"
+    ],
+    "not_expected": [
+     "It does not summarise or rewrite messages",
+     "It does not store message text"
+    ],
+    "algorithm": {
+     "name": "Thread grouping with three indexed views",
+     "formula": "chunk = thread (or 30-minute gap group); views = {by channel, by actor, by artifact}",
+     "steps": [
+      "Group messages by thread id, else by 30-minute gap",
+      "Extract channel, actors and artifact mentions",
+      "Write one chunk row of pointers",
+      "Write the three view entries",
+      "Hand the chunk to ix_chunk and the links to ix_link"
+     ],
+     "params": {
+      "gap_minutes": "30 (design)",
+      "max_chunk": "40 messages then split at a reply boundary (design)"
+     }
+    },
+    "security": [
+     "Private channel pointers shown to non-members: every view row carries the channel's ACL",
+     "Actor view misused for surveillance: actor-level queries are limited to what the asking user can see and are audited"
+    ],
+    "performance": {
+     "slo": "under 20 ms per thread",
+     "complexity": "O(messages)",
+     "scaling": "Streaming per channel; views are append-only and compacted nightly."
+    },
+    "edge_cases": [
+     "Very long thread: split at a reply boundary with the root repeated as context",
+     "Edited message: chunk updated, previous version tombstoned",
+     "Deleted message: removed from the chunk and from views",
+     "Bot messages: kept with actor type bot and a lower weight",
+     "Cross-posted message: one chunk, two channel links"
+    ],
+    "tests": [
+     {
+      "name": "thread_whole",
+      "given": "Question and 5 replies",
+      "expect": "one chunk with 6 messages"
+     },
+     {
+      "name": "views_built",
+      "given": "Thread in #launch with 3 people mentioning a doc",
+      "expect": "entries in channel, actor and artifact views"
+     },
+     {
+      "name": "gap_rule",
+      "given": "Messages without thread ids 10 minutes apart",
+      "expect": "grouped; 40 minutes apart split"
+     }
+    ],
+    "cost_levers": [
+     "Store only ids and pointers; views are small"
+    ],
+    "feedback_events": [
+     "Retrieval logs record which view found the evidence",
+     "Thread splits are counted"
+    ],
+    "analytics_events": [
+     {
+      "name": "chat_chunked",
+      "fields": [
+       "channel",
+       "thread_id",
+       "messages",
+       "actors",
+       "artifacts"
+      ],
+      "when": "per chunk"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_egc",
+      "key_idea": "Group chats need organisation by thread, channel and person before an agent can use them",
+      "how": "cf_struct builds those views"
+     },
+     {
+      "ref": "p26_refind",
+      "key_idea": "Raw chat search works with channel, actor and time controls",
+      "how": "the views are the controls qr_loop uses"
+     }
+    ],
+    "refs": [
+     "p26_egc",
+     "p26_refind"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "cf_del",
+   "b": "cf_claude",
+   "l": "full listing request",
+   "k": "n",
+   "d": "Request for a complete listing of a range {source, from, to} so a run can be diffed"
+  },
+  {
+   "a": "cf_del",
+   "b": "op_health",
+   "l": "frozen runs",
+   "k": "d",
+   "d": "Alert {source, ratio, run_id} when a diff run is frozen by the size guard"
+  },
+  {
+   "a": "cf_claude",
+   "b": "op_health",
+   "l": "run report",
+   "k": "d",
+   "d": "Run report {pages, records, tombstones, http_429, ms}"
+  },
+  {
+   "a": "cf_openai",
+   "b": "op_health",
+   "l": "window report",
+   "k": "d",
+   "d": "Window report {workspace, lag_s, bad_lines} and old-watermark alerts"
+  },
+  {
+   "a": "cf_vault",
+   "b": "op_health",
+   "l": "unreachable users",
+   "k": "d",
+   "d": "Users that could not be read {source, user_hash, reason}"
+  }
+ ]
+}

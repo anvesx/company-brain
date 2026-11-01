@@ -1,0 +1,3567 @@
+{
+ "stages": [
+  {
+   "id": "src",
+   "n": 1,
+   "role": "main",
+   "title": "Connect to every app",
+   "blurb": "Admin connects an app once. A connector reads it with the least access that works, at the app's own pace, and turns what it finds into one shared shape.",
+   "groups": [
+    {
+     "id": "src.ident",
+     "short": "ident",
+     "title": "Access and identity",
+     "members": [
+      "so_admin",
+      "so_oauth",
+      "so_svc",
+      "so_obo"
+     ]
+    },
+    {
+     "id": "src.rt",
+     "short": "rt",
+     "title": "Connector runtime",
+     "members": [
+      "so_sdk",
+      "so_cap",
+      "so_rate",
+      "so_mcp",
+      "so_norm",
+      "so_apps"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "chg",
+   "n": 2,
+   "role": "main",
+   "title": "Catch every change",
+   "blurb": "Each change reaches the brain by the cheapest reliable path: a push when the app offers one, a cursor poll otherwise, and a slow full sweep to catch what both missed.",
+   "groups": [
+    {
+     "id": "chg.trig",
+     "short": "trig",
+     "title": "Triggers",
+     "members": [
+      "ch_hook",
+      "ch_delta",
+      "ch_cdc",
+      "ch_sweep",
+      "ch_sched"
+     ]
+    },
+    {
+     "id": "chg.flow",
+     "short": "flow",
+     "title": "Durable sync",
+     "members": [
+      "ch_bus",
+      "ch_dedupe",
+      "ch_wf",
+      "ch_fill",
+      "ch_tomb",
+      "ch_cursor",
+      "ch_dlq"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "idx",
+   "n": 3,
+   "role": "main",
+   "title": "The pointer index",
+   "blurb": "The brain keeps pointers, facts about each document, access lists and search vectors. Document bodies are read on demand and thrown away after the vectors are made.",
+   "groups": [
+    {
+     "id": "idx.reg",
+     "short": "reg",
+     "title": "Pointer registry",
+     "members": [
+      "ix_ptr",
+      "ix_meta",
+      "ix_ent",
+      "ix_link",
+      "ix_fresh",
+      "ix_def",
+      "ix_att"
+     ]
+    },
+    {
+     "id": "idx.derive",
+     "short": "derive",
+     "title": "Transient derivation",
+     "members": [
+      "ix_fetch",
+      "ix_ext",
+      "ix_chunk",
+      "ix_ctx",
+      "ix_pii",
+      "ix_embed",
+      "ix_cat"
+     ]
+    },
+    {
+     "id": "idx.stores",
+     "short": "stores",
+     "title": "Search stores",
+     "members": [
+      "ix_lex",
+      "ix_vec",
+      "ix_snip",
+      "ix_gc",
+      "ix_reidx"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "acl",
+   "n": 4,
+   "role": "main",
+   "title": "Permissions follow the user",
+   "blurb": "Every result is checked against the access list the source app holds. The index narrows the search by permission first; for the final few results the app is asked again.",
+   "groups": [
+    {
+     "id": "acl.sync",
+     "short": "sync",
+     "title": "Permission sync",
+     "members": [
+      "ac_scim",
+      "ac_id",
+      "ac_src",
+      "ac_grp",
+      "ac_store"
+     ]
+    },
+    {
+     "id": "acl.enf",
+     "short": "enf",
+     "title": "Enforcement",
+     "members": [
+      "ac_filter",
+      "ac_live",
+      "ac_neg",
+      "ac_audit",
+      "ac_gate",
+      "ac_lin"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "qry",
+   "n": 5,
+   "role": "main",
+   "title": "Answer a question",
+   "blurb": "A question is planned, routed to the index or to the live app, ranked, checked against the user's permissions, read fresh, and answered with citations.",
+   "groups": [
+    {
+     "id": "qry.plan",
+     "short": "plan",
+     "title": "Understand and route",
+     "members": [
+      "qr_id",
+      "qr_rw",
+      "qr_route",
+      "qr_cache",
+      "qr_scope",
+      "qr_rev"
+     ]
+    },
+    {
+     "id": "qry.ret",
+     "short": "ret",
+     "title": "Retrieve",
+     "members": [
+      "qr_hyb",
+      "qr_graph",
+      "qr_live",
+      "qr_rerank",
+      "qr_hyd",
+      "qr_loop"
+     ]
+    },
+    {
+     "id": "qry.ans",
+     "short": "ans",
+     "title": "Compose the answer",
+     "members": [
+      "qr_pack",
+      "qr_inj",
+      "qr_ans",
+      "qr_cite",
+      "qr_stamp",
+      "qr_life"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "llm",
+   "n": 6,
+   "role": "main",
+   "title": "Interfaces for LLMs and agents",
+   "blurb": "Any model or agent can ask the brain through MCP or a plain API, under its own identity, and gets results that say where they came from and how current they are.",
+   "groups": [
+    {
+     "id": "llm.mcp",
+     "short": "mcp",
+     "title": "Expose the brain",
+     "members": [
+      "ll_mcp",
+      "ll_api",
+      "ll_schema",
+      "ll_fmt",
+      "ll_browse"
+     ]
+    },
+    {
+     "id": "llm.agent",
+     "short": "agent",
+     "title": "Agent access",
+     "members": [
+      "ll_agent",
+      "ll_quota",
+      "ll_sub",
+      "ll_ro"
+     ]
+    },
+    {
+     "id": "llm.proactive",
+     "short": "proactive",
+     "title": "Proactive surfacing",
+     "members": [
+      "ll_delta",
+      "ll_score",
+      "ll_note"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cli",
+   "n": 7,
+   "role": "main",
+   "title": "Connect to AI clients",
+   "blurb": "One remote MCP server reaches Claude, Codex, ChatGPT, Cursor, Copilot and Gemini. Each client signs the user in, sees a small set of tools, and gets the answer under its own limits.",
+   "groups": [
+    {
+     "id": "cli.auth",
+     "short": "auth",
+     "title": "Sign in from any client",
+     "members": [
+      "cl_meta",
+      "cl_reg",
+      "cl_aud",
+      "cl_consent"
+     ]
+    },
+    {
+     "id": "cli.ship",
+     "short": "ship",
+     "title": "Reach each client",
+     "members": [
+      "cl_search",
+      "cl_budget",
+      "cl_dist",
+      "cl_plugin",
+      "cl_net",
+      "cl_tasks"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ops",
+   "n": 8,
+   "role": "support",
+   "title": "Freshness, quality and cost",
+   "blurb": "The index is measured against the apps it points at: how late it is, what it misses, whether it leaks, and what each question and document costs.",
+   "groups": [
+    {
+     "id": "ops.fresh",
+     "short": "fresh",
+     "title": "Freshness",
+     "members": [
+      "op_lag",
+      "op_audit",
+      "op_cov",
+      "op_health",
+      "op_beat"
+     ]
+    },
+    {
+     "id": "ops.qual",
+     "short": "qual",
+     "title": "Quality and cost",
+     "members": [
+      "op_eval",
+      "op_leak",
+      "op_cost",
+      "op_trace",
+      "op_attr",
+      "op_ver"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "gov",
+   "n": 9,
+   "role": "support",
+   "title": "Privacy, deletion and tenant safety",
+   "blurb": "What the brain keeps is small and sensitive. It must forget when the app forgets, keep tenants apart, honour each app's terms and stop on command.",
+   "groups": [
+    {
+     "id": "gov.priv",
+     "short": "priv",
+     "title": "Keep and forget",
+     "members": [
+      "gv_erase",
+      "gv_kms",
+      "gv_inv",
+      "gv_tenant",
+      "gv_tos",
+      "gv_line",
+      "gv_kill"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "plt",
+   "n": 10,
+   "role": "support",
+   "title": "Platform parts the brain owns",
+   "blurb": "The brain is its own product. It runs these parts itself and picks standard tools for each, so it needs no host system.",
+   "groups": [
+    {
+     "id": "plt.own",
+     "short": "own",
+     "title": "Own platform parts",
+     "members": [
+      "pl_gw",
+      "pl_idp",
+      "pl_pol",
+      "pl_mem",
+      "pl_obs"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "zon",
+   "n": 11,
+   "role": "main",
+   "title": "Personal, team and company zones",
+   "blurb": "Admin access sees what the company shares. Per-user access sees what only one person can. Every pointer is tagged with a zone from its source, and personal data stays with its owner.",
+   "groups": [
+    {
+     "id": "zon.zone",
+     "short": "zone",
+     "title": "Zones and promotion",
+     "members": [
+      "zn_tag",
+      "zn_scope",
+      "zn_key",
+      "zn_promote",
+      "zn_taint",
+      "zn_review"
+     ]
+    },
+    {
+     "id": "zon.cred",
+     "short": "cred",
+     "title": "Admin and user credentials",
+     "members": [
+      "cr_mode",
+      "cr_link",
+      "cr_union",
+      "cr_gap"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cap",
+   "n": 12,
+   "role": "main",
+   "title": "Capture AI chats and work activity",
+   "blurb": "A small app on each laptop and the vendor admin feeds bring in AI chats and work activity as personal-zone records, with the owner in control.",
+   "groups": [
+    {
+     "id": "cap.local",
+     "short": "local",
+     "title": "Companion app",
+     "members": [
+      "cp_daemon",
+      "cp_hook",
+      "cp_redact",
+      "cp_vault",
+      "cp_mdm"
+     ]
+    },
+    {
+     "id": "cap.feeds",
+     "short": "feeds",
+     "title": "Vendor feeds",
+     "members": [
+      "cf_claude",
+      "cf_openai",
+      "cf_vault",
+      "cf_norm",
+      "cf_del",
+      "cf_struct"
+     ]
+    },
+    {
+     "id": "cap.experience",
+     "short": "experience",
+     "title": "Tacit experience",
+     "members": [
+      "cp_exp",
+      "cp_probe",
+      "cp_dup",
+      "cp_trust",
+      "cp_lib"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sec",
+   "n": 13,
+   "role": "support",
+   "title": "Credential and agent security",
+   "blurb": "Tokens never reach an agent. Only the connector runtime opens them. Everything an agent reads is scanned and scoped, and an agent cannot ask for a secret.",
+   "groups": [
+    {
+     "id": "sec.vault",
+     "short": "vault",
+     "title": "Keep secrets from agents",
+     "members": [
+      "sc_runtime",
+      "sc_split",
+      "sc_noconf",
+      "sc_scan",
+      "sc_scope",
+      "sc_egress"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "act",
+   "n": 14,
+   "role": "main",
+   "title": "Record work and update tools",
+   "blurb": "A separate action agent reads context from the brain and proposes updates to Jira and similar tools. It writes with the user's own token after the user confirms.",
+   "groups": [
+    {
+     "id": "act.write",
+     "short": "write",
+     "title": "Action agent",
+     "members": [
+      "ag_collect",
+      "ag_plan",
+      "ag_gate",
+      "ag_write",
+      "ag_priv"
+     ]
+    }
+   ]
+  }
+ ],
+ "comps": {
+  "so_admin": {
+   "label": "Workspace admin",
+   "sub": "Connects an app",
+   "kind": "actor",
+   "stage": "src",
+   "group": "src.ident",
+   "pin": "admin consent screen with a scope diff the admin approves before any token is issued"
+  },
+  "so_oauth": {
+   "label": "Token vault",
+   "sub": "Refresh and access tokens",
+   "kind": "sec",
+   "stage": "src",
+   "group": "src.ident",
+   "pin": "OAuth 2.0 authorization-code grant with refresh tokens, wrapped by a KMS key per tenant (RFC 6749)"
+  },
+  "so_svc": {
+   "label": "App-only access",
+   "sub": "Sweep without a user",
+   "kind": "sec",
+   "stage": "src",
+   "group": "src.ident",
+   "pin": "admin-consented app-only access (domain-wide delegation, application permissions), read-only scopes from a catalog"
+  },
+  "so_obo": {
+   "label": "On-behalf-of exchange",
+   "sub": "Per-user token at query time",
+   "kind": "sec",
+   "stage": "src",
+   "group": "src.ident",
+   "pin": "OAuth 2.0 token exchange (RFC 8693) and the Microsoft on-behalf-of flow: trade the user's brain token for a short-lived app token"
+  },
+  "so_sdk": {
+   "label": "Connector SDK",
+   "sub": "Manifest plus code escape hatch",
+   "kind": "plat",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "declarative manifest (auth, streams, pagination, incremental cursor, ACL mapping) with a code hook, as in Airbyte low-code connectors"
+  },
+  "so_cap": {
+   "label": "Capability probe",
+   "sub": "What can this app do?",
+   "kind": "det",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "per-app capability descriptor {webhook, delta, list, search, acl_api, rate}; the cheapest freshness path that works is chosen"
+  },
+  "so_rate": {
+   "label": "Rate-limit budgeter",
+   "sub": "Stay inside each app's quota",
+   "kind": "det",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "hierarchical token bucket per (tenant, app, endpoint) that honours Retry-After and shares a fair queue between tenants"
+  },
+  "so_mcp": {
+   "label": "MCP bridge",
+   "sub": "Apps that ship an MCP server",
+   "kind": "svc",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "Model Context Protocol client that calls an app's own MCP server for live read and search when no native connector exists"
+  },
+  "so_norm": {
+   "label": "Schema normaliser",
+   "sub": "One shape for every object",
+   "kind": "det",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "map each app object to a Document, Message, Principal or Event envelope with a stable URI, a version and a content hash"
+  },
+  "so_apps": {
+   "label": "Company apps",
+   "sub": "Slack, Drive, 365, Notion, Jira, GitHub, CRM",
+   "kind": "ext",
+   "stage": "src",
+   "group": "src.rt",
+   "pin": "vendor REST, GraphQL and webhook APIs; the system of record stays here"
+  },
+  "ch_hook": {
+   "label": "Webhook receiver",
+   "sub": "Verify, ack, enqueue",
+   "kind": "svc",
+   "stage": "chg",
+   "group": "chg.trig",
+   "pin": "HMAC signature check, replay window, acknowledge in under 200 ms, enqueue the event and do no work inline"
+  },
+  "ch_delta": {
+   "label": "Delta poller",
+   "sub": "Resume from a change token",
+   "kind": "det",
+   "stage": "chg",
+   "group": "chg.trig",
+   "pin": "per-stream change cursor (Microsoft Graph delta link, Drive changes page token), persisted and resumable"
+  },
+  "ch_cdc": {
+   "label": "Database change tail",
+   "sub": "Rows in databases and warehouses",
+   "kind": "svc",
+   "stage": "chg",
+   "group": "chg.trig",
+   "pin": "log-based change data capture (Debezium style) for sources that expose a transaction log"
+  },
+  "ch_sweep": {
+   "label": "Reconciliation sweep",
+   "sub": "Catch what pushes missed",
+   "kind": "det",
+   "stage": "chg",
+   "group": "chg.trig",
+   "pin": "slow full listing compared against a per-folder hash digest, so only differing subtrees are re-read"
+  },
+  "ch_sched": {
+   "label": "Adaptive scheduler",
+   "sub": "Poll faster where things change",
+   "kind": "det",
+   "stage": "chg",
+   "group": "chg.trig",
+   "pin": "poll interval from an EWMA of the observed change rate, clamped between 30 s and 6 h and capped by the rate budget"
+  },
+  "ch_bus": {
+   "label": "Change event log",
+   "sub": "Ordered per document",
+   "kind": "bus",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "partitioned append-only log keyed by tenant and document, at-least-once delivery"
+  },
+  "ch_dedupe": {
+   "label": "Idempotency and ordering",
+   "sub": "Drop stale and duplicate events",
+   "kind": "det",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "compare-and-set on (doc_id, source_version): apply only when the version is newer than the stored one"
+  },
+  "ch_wf": {
+   "label": "Durable sync workflow",
+   "sub": "Retry, resume, never lose a cursor",
+   "kind": "plat",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "durable-execution workflow (Temporal style) with resumable cursors, bounded retries and per-source concurrency"
+  },
+  "ch_fill": {
+   "label": "Backfill crawler",
+   "sub": "First crawl, useful early",
+   "kind": "svc",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "priority-ordered initial crawl (recent, shared and popular first) so search works before the crawl ends"
+  },
+  "ch_tomb": {
+   "label": "Tombstone propagation",
+   "sub": "Deletes and revoked access",
+   "kind": "det",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "a delete or permission removal soft-deletes the pointer at once and queues a purge of everything derived from it"
+  },
+  "ch_cursor": {
+   "label": "Cursor store",
+   "sub": "Where each stream stopped",
+   "kind": "db",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "transactional store of {stream, cursor, watermark} written in the same transaction as the events it covers"
+  },
+  "ch_dlq": {
+   "label": "Dead-letter queue",
+   "sub": "Parked failures with a replay tool",
+   "kind": "db",
+   "stage": "chg",
+   "group": "chg.flow",
+   "pin": "parked events with an error class, retry history and a one-click replay"
+  },
+  "ix_ptr": {
+   "label": "Pointer registry",
+   "sub": "One row per object, no body",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "row {uri, app, source_id, version, content_hash, title, owner, times, acl_ref, vector_ids}; the body is never written"
+  },
+  "ix_meta": {
+   "label": "Filter attributes",
+   "sub": "App, type, owner, date, space",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "columnar attributes the search engine filters on before it scores"
+  },
+  "ix_ent": {
+   "label": "Entity resolver",
+   "sub": "Same person or project across apps",
+   "kind": "ml",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "blocking plus pairwise match scoring (Fellegi-Sunter style) with a merge audit trail"
+  },
+  "ix_link": {
+   "label": "Relationship graph",
+   "sub": "Who, what, linked to what",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "property graph of document-to-document, person-to-document and document-to-entity edges, stored as adjacency lists"
+  },
+  "ix_fresh": {
+   "label": "Freshness stamp",
+   "sub": "How old is this entry?",
+   "kind": "det",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "each pointer carries source_version and last_verified; staleness is now minus last_verified"
+  },
+  "ix_def": {
+   "label": "Business definitions",
+   "sub": "One agreed meaning per term",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "versioned semantic contract {term, definition, owner, valid_from, valid_to, source_uri}; a query that uses a term is rewritten to the definition in force on the question date"
+  },
+  "ix_att": {
+   "label": "Claim and attestation record",
+   "sub": "One meaning, many sources",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.reg",
+   "pin": "each claim holds one meaning; each attestation holds a locator, content hash, author, observed time and validity window, and strength is computed when read"
+  },
+  "ix_fetch": {
+   "label": "Transient fetcher",
+   "sub": "Read the body, keep it in memory",
+   "kind": "svc",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "fetch through the connector by pointer; the body lives in memory only and is dropped after derivation"
+  },
+  "ix_ext": {
+   "label": "Text extractor",
+   "sub": "HTML, PDF, Office, code, chat",
+   "kind": "det",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "format-specific extraction that keeps headings, tables and message turns"
+  },
+  "ix_chunk": {
+   "label": "Structure-aware chunker",
+   "sub": "Cut on meaning, not on count",
+   "kind": "det",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "split on headings, message turns and function bounds with a 256 to 512 token target and small overlap"
+  },
+  "ix_ctx": {
+   "label": "Context line writer",
+   "sub": "One sentence of context per chunk",
+   "kind": "llm",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "contextual retrieval: a cheap model writes a short situating line prepended to the chunk before embedding, cached by content hash"
+  },
+  "ix_pii": {
+   "label": "Sensitivity classifier",
+   "sub": "Secrets and personal data",
+   "kind": "ml",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "detector for secrets and personal data that drops or masks them before embedding and sets a sensitivity label"
+  },
+  "ix_embed": {
+   "label": "Embedding service",
+   "sub": "Dense vectors, versioned",
+   "kind": "ml",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "dense embedding through the model gateway, batched, with the model id stored on every vector"
+  },
+  "ix_cat": {
+   "label": "Artifact catalog",
+   "sub": "What kind of thing each pointer is",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.derive",
+   "pin": "typed catalog row per pointer {artifact_type, entities[], period, owner_team, summary_ref}, built from metadata and the first screen of text; search narrows to candidate ids here before any vector is touched"
+  },
+  "ix_lex": {
+   "label": "Lexical index",
+   "sub": "Words and names",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.stores",
+   "pin": "BM25 inverted index with block-max WAND pruning, sharded by tenant"
+  },
+  "ix_vec": {
+   "label": "Vector index",
+   "sub": "Meaning",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.stores",
+   "pin": "approximate nearest-neighbour index (HNSW or DiskANN) with int8 or binary quantisation, partitioned by tenant, filter-aware"
+  },
+  "ix_snip": {
+   "label": "Snippet cache",
+   "sub": "Short excerpt for ranking and preview",
+   "kind": "db",
+   "stage": "idx",
+   "group": "idx.stores",
+   "pin": "excerpt capped at 300 characters, encrypted, with a time to live"
+  },
+  "ix_gc": {
+   "label": "Index garbage collector",
+   "sub": "Remove what no pointer owns",
+   "kind": "det",
+   "stage": "idx",
+   "group": "idx.stores",
+   "pin": "epoch-based collection of vectors and postings whose pointer is tombstoned"
+  },
+  "ix_reidx": {
+   "label": "Re-embed migrator",
+   "sub": "Change the model without downtime",
+   "kind": "svc",
+   "stage": "idx",
+   "group": "idx.stores",
+   "pin": "blue-green index versions: build the new one beside the old, dual-write, cut over, retire"
+  },
+  "ac_scim": {
+   "label": "Directory sync",
+   "sub": "Users, groups, leavers",
+   "kind": "svc",
+   "stage": "acl",
+   "group": "acl.sync",
+   "pin": "SCIM 2.0 and identity-provider feeds for users, groups and offboarding events"
+  },
+  "ac_id": {
+   "label": "Identity mapper",
+   "sub": "App user to company person",
+   "kind": "det",
+   "stage": "acl",
+   "group": "acl.sync",
+   "pin": "map each app's user id to one company principal by verified email, SCIM id and IdP subject"
+  },
+  "ac_src": {
+   "label": "ACL fetcher",
+   "sub": "Who may open this object",
+   "kind": "svc",
+   "stage": "acl",
+   "group": "acl.sync",
+   "pin": "read each object's sharing list (Drive permissions, SharePoint, Slack channel members, Jira project roles)"
+  },
+  "ac_grp": {
+   "label": "Group expander",
+   "sub": "Nested groups made flat",
+   "kind": "det",
+   "stage": "acl",
+   "group": "acl.sync",
+   "pin": "cycle-safe nested group flattening with versioned membership snapshots and lazy expansion for very large groups"
+  },
+  "ac_store": {
+   "label": "Access list store",
+   "sub": "Object to allowed principals",
+   "kind": "db",
+   "stage": "acl",
+   "group": "acl.sync",
+   "pin": "document id to a set of principal and group ids, stored apart from content so it can change on its own"
+  },
+  "ac_filter": {
+   "label": "Filter compiler",
+   "sub": "Search only what you may see",
+   "kind": "det",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "user to principal set to a pre-filter pushed into lexical and vector search; never filter after ranking alone"
+  },
+  "ac_live": {
+   "label": "Live permission recheck",
+   "sub": "Ask the app again for the top results",
+   "kind": "sec",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "verify the top-k with the source app using the user's token before display; fail closed"
+  },
+  "ac_neg": {
+   "label": "Revocation fast path",
+   "sub": "Lost access takes effect in seconds",
+   "kind": "db",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "revoked-principal cache with push invalidation and a seconds-long time to live"
+  },
+  "ac_audit": {
+   "label": "Access audit log",
+   "sub": "Who saw which object, under which list",
+   "kind": "db",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "append-only record of principal, query, objects shown, ACL version and any source recheck"
+  },
+  "ac_gate": {
+   "label": "Ownership gate",
+   "sub": "Hard check after retrieval, before the model",
+   "kind": "sec",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "every retrieved chunk carries owner and zone; a chunk whose owner or zone is not in the caller's allowed set is dropped by code, not by a prompt, and each drop is counted"
+  },
+  "ac_lin": {
+   "label": "Derived-object access",
+   "sub": "A note is as private as its sources",
+   "kind": "sec",
+   "stage": "acl",
+   "group": "acl.enf",
+   "pin": "each stored card or note keeps a derived_from list; visibility is the intersection of the asker's rights on every source, rechecked lazily after a policy change"
+  },
+  "qr_id": {
+   "label": "Principal resolver",
+   "sub": "Who is asking, as whom",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "resolve the caller to a user principal, an optional agent id and a scope"
+  },
+  "qr_rw": {
+   "label": "Query planner",
+   "sub": "Rewrite and split the question",
+   "kind": "llm",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "a small model rewrites, decomposes and extracts entities; it never sees data, only the question"
+  },
+  "qr_route": {
+   "label": "Source router",
+   "sub": "Index, live, or both",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "cost-based choice per sub-question from freshness need, app capability and remaining rate budget"
+  },
+  "qr_cache": {
+   "label": "Result cache",
+   "sub": "Per permission set",
+   "kind": "db",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "cache keyed by query and principal set, invalidated by change events"
+  },
+  "qr_scope": {
+   "label": "Candidate scoper",
+   "sub": "Narrow to a few hundred ids first",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "catalog and metadata filters produce a candidate id set (target under 500) that the lexical and vector search then rank inside, with the permission filter applied to the same set"
+  },
+  "qr_rev": {
+   "label": "Plan reviser",
+   "sub": "Diagnose a bad step and change the plan",
+   "kind": "llm",
+   "stage": "qry",
+   "group": "qry.plan",
+   "pin": "after each step a small model checks the result against the sub-question, names the failure (empty, off-topic, wrong source, stale) and revises the next step, at most 3 revisions"
+  },
+  "qr_hyb": {
+   "label": "Hybrid retrieval",
+   "sub": "Words plus meaning",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "BM25 and dense nearest neighbours merged with reciprocal rank fusion (k = 60)"
+  },
+  "qr_graph": {
+   "label": "Graph expansion",
+   "sub": "Pull in linked context",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "personalised PageRank over the relationship graph from the entities in the question"
+  },
+  "qr_live": {
+   "label": "Live federated search",
+   "sub": "Ask the app itself",
+   "kind": "svc",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "fan-out to app search APIs or MCP tools with the user's token, 1.5 s deadline, merged by rank fusion"
+  },
+  "qr_rerank": {
+   "label": "Cross-encoder reranker",
+   "sub": "Best ten of a hundred",
+   "kind": "ml",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "cross-encoder over the top 100 with recency and authority features"
+  },
+  "qr_hyd": {
+   "label": "Hydrator",
+   "sub": "Read the real text now",
+   "kind": "svc",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "fetch current text for the chosen pointers, validate by ETag, recheck access"
+  },
+  "qr_loop": {
+   "label": "Raw-record search loop",
+   "sub": "Agent searches the records, step by step",
+   "kind": "llm",
+   "stage": "qry",
+   "group": "qry.ret",
+   "pin": "agentic loop with chat-native controls (grep by term, filter by channel, actor and time, read around a hit) over permitted raw records, capped at 8 steps and a token budget"
+  },
+  "qr_pack": {
+   "label": "Context packer",
+   "sub": "Fit the best into the budget",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "token-budgeted selection with maximal marginal relevance and ordering that fights the lost-in-the-middle effect"
+  },
+  "qr_inj": {
+   "label": "Injection quarantine",
+   "sub": "Retrieved text is data",
+   "kind": "sec",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "retrieved text is wrapped as untrusted data; an instruction detector flags it and tool calls stay off in this context"
+  },
+  "qr_ans": {
+   "label": "Answer generator",
+   "sub": "Cite or abstain",
+   "kind": "llm",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "model call through the gateway with a cite-or-abstain instruction"
+  },
+  "qr_cite": {
+   "label": "Citation verifier",
+   "sub": "Every claim has a source",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "check each claim span against its cited passage and drop what the passage does not support"
+  },
+  "qr_stamp": {
+   "label": "Freshness stamp",
+   "sub": "Say how current the answer is",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "attach source version and read time to every citation"
+  },
+  "qr_life": {
+   "label": "Evidence lifecycle check",
+   "sub": "Newest, not contradicted, complete",
+   "kind": "det",
+   "stage": "qry",
+   "group": "qry.ans",
+   "pin": "each passage is labelled current, superseded or contradicted from version and link edges; set questions are checked for completeness and negations route to an absence check"
+  },
+  "ll_mcp": {
+   "label": "Brain MCP server",
+   "sub": "search, fetch, who_knows",
+   "kind": "svc",
+   "stage": "llm",
+   "group": "llm.mcp",
+   "pin": "Model Context Protocol server over streamable HTTP with OAuth 2.1; tools search, fetch, list_sources, who_knows"
+  },
+  "ll_api": {
+   "label": "REST and SDK",
+   "sub": "For code that is not an agent",
+   "kind": "svc",
+   "stage": "llm",
+   "group": "llm.mcp",
+   "pin": "REST with an OpenAPI description, idempotency keys, cursor pagination and generated SDKs"
+  },
+  "ll_schema": {
+   "label": "Tool contract",
+   "sub": "Descriptions tuned by evaluation",
+   "kind": "det",
+   "stage": "llm",
+   "group": "llm.mcp",
+   "pin": "tool names, descriptions and argument schemas tuned against a tool-use eval, with token-lean responses"
+  },
+  "ll_fmt": {
+   "label": "Result envelope",
+   "sub": "Provenance on every hit",
+   "kind": "det",
+   "stage": "llm",
+   "group": "llm.mcp",
+   "pin": "result {id, title, uri, snippet, score, source_app, version, retrieved_at, permission_checked_at}"
+  },
+  "ll_browse": {
+   "label": "Browsable knowledge files",
+   "sub": "Agent reads index.md, then opens one file",
+   "kind": "svc",
+   "stage": "llm",
+   "group": "llm.mcp",
+   "pin": "a generated tree of index.md and SKILL.md files with frontmatter {title, owner, updated, scope, open_with}, served per user so an agent lists, reads and follows links like a file system"
+  },
+  "ll_agent": {
+   "label": "Agent identity and scope",
+   "sub": "Its own name, narrower than its owner",
+   "kind": "sec",
+   "stage": "llm",
+   "group": "llm.agent",
+   "pin": "per-agent principal with a named owner and a token scoped to no more than the owner may see"
+  },
+  "ll_quota": {
+   "label": "Quota and fairness",
+   "sub": "No agent starves the rest",
+   "kind": "det",
+   "stage": "llm",
+   "group": "llm.agent",
+   "pin": "token bucket per agent and tenant with the cost of each call metered"
+  },
+  "ll_sub": {
+   "label": "Change subscription",
+   "sub": "Wake an agent when something changes",
+   "kind": "svc",
+   "stage": "llm",
+   "group": "llm.agent",
+   "pin": "agents subscribe to entity or topic change events and receive pushes"
+  },
+  "ll_ro": {
+   "label": "Read-only guard",
+   "sub": "The brain does not write to apps",
+   "kind": "sec",
+   "stage": "llm",
+   "group": "llm.agent",
+   "pin": "the brain exposes no write tool; actions go through the action layer under policy"
+  },
+  "ll_delta": {
+   "label": "Change detector",
+   "sub": "What moved since last time",
+   "kind": "det",
+   "stage": "llm",
+   "group": "llm.proactive",
+   "pin": "per user and per watched entity, diff the pointer and relationship changes since the last cursor, grouped by entity and kept as {entity, change, uri, at}"
+  },
+  "ll_score": {
+   "label": "Relevance scorer",
+   "sub": "Does this change matter to this person?",
+   "kind": "ml",
+   "stage": "llm",
+   "group": "llm.proactive",
+   "pin": "score = w1*role_match + w2*recency + w3*link_distance + w4*past_clicks, thresholded per user; only permitted changes are scored"
+  },
+  "ll_note": {
+   "label": "Notification writer",
+   "sub": "Two lines and a link",
+   "kind": "llm",
+   "stage": "llm",
+   "group": "llm.proactive",
+   "pin": "a small model turns the top deltas into a short notice with citations, one notice per entity per day, with a snooze and a never-again control"
+  },
+  "cl_meta": {
+   "label": "Login discovery",
+   "sub": "Client finds the login server itself",
+   "kind": "svc",
+   "stage": "cli",
+   "group": "cli.auth",
+   "pin": "RFC 9728 protected resource metadata plus RFC 8414 server metadata, so a client learns where to sign in from a 401 reply"
+  },
+  "cl_reg": {
+   "label": "Client registration",
+   "sub": "Known or unknown client",
+   "kind": "svc",
+   "stage": "cli",
+   "group": "cli.auth",
+   "pin": "client ID metadata documents first, dynamic client registration as fallback, and a static pre-registered client for hosts that need one"
+  },
+  "cl_aud": {
+   "label": "Token audience check",
+   "sub": "Token made for this server only",
+   "kind": "sec",
+   "stage": "cli",
+   "group": "cli.auth",
+   "pin": "PKCE S256, RFC 8707 resource indicator checked as the token audience, and RFC 9207 issuer in the redirect"
+  },
+  "cl_consent": {
+   "label": "Connect-an-app prompt",
+   "sub": "Ask the user to link a source",
+   "kind": "svc",
+   "stage": "cli",
+   "group": "cli.auth",
+   "pin": "URL-mode elicitation that sends the user to the brain's own consent page when a source app is not linked yet"
+  },
+  "cl_search": {
+   "label": "Search and fetch pair",
+   "sub": "Works with ChatGPT research",
+   "kind": "svc",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "two tools named search and fetch that return {id, title, text, url}, as ChatGPT deep research and company knowledge expect"
+  },
+  "cl_budget": {
+   "label": "Tool and output budget",
+   "sub": "Stay inside each client's limits",
+   "kind": "det",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "few tools with exact names, results under 25,000 tokens, a result-size hint on large tools, server instructions under 4,096 characters"
+  },
+  "cl_dist": {
+   "label": "Org rollout configs",
+   "sub": "One file per client family",
+   "kind": "det",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "generated managed config per client: managed-mcp.json, Claude.ai org connector, Copilot policy, Windsurf allowlist, Codex requirement, ChatGPT admin app"
+  },
+  "cl_plugin": {
+   "label": "Skill and context snippets",
+   "sub": "Tell agents when to ask the brain",
+   "kind": "det",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "a Claude plugin with a skill, plus CLAUDE.md and AGENTS.md snippets that name the brain tools and when to call them"
+  },
+  "cl_net": {
+   "label": "Public endpoint",
+   "sub": "Reachable from vendor clouds",
+   "kind": "plat",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "public HTTPS URL with an allowlist of vendor IP ranges, and a private registry instead of the public MCP registry"
+  },
+  "cl_tasks": {
+   "label": "Slow query tasks",
+   "sub": "Long searches that report back",
+   "kind": "svc",
+   "stage": "cli",
+   "group": "cli.ship",
+   "pin": "the MCP Tasks extension for slow multi-source queries, with polling and a cancel call"
+  },
+  "op_lag": {
+   "label": "Freshness lag monitor",
+   "sub": "How late is the index?",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.fresh",
+   "pin": "lag is now minus source modified time, tracked as p95 per source against a stated target"
+  },
+  "op_audit": {
+   "label": "Sampling audit",
+   "sub": "Check a sample against the app",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.fresh",
+   "pin": "random pointers checked against the live app for existence, version and access, with a capture-recapture coverage estimate"
+  },
+  "op_cov": {
+   "label": "Coverage estimator",
+   "sub": "Index count against app count",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.fresh",
+   "pin": "compare indexed object counts with cheap count calls to the app"
+  },
+  "op_health": {
+   "label": "Connector health",
+   "sub": "Break the circuit, then repair",
+   "kind": "svc",
+   "stage": "ops",
+   "group": "ops.fresh",
+   "pin": "error budget and circuit breaker that pauses a failing connector and opens a repair task"
+  },
+  "op_beat": {
+   "label": "Silent-failure heartbeat",
+   "sub": "A quiet source is not a healthy source",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.fresh",
+   "pin": "each connector must emit a heartbeat and a count of objects seen; no heartbeat, or zero new objects against an expected rate, raises a health alarm and forces a sweep"
+  },
+  "op_eval": {
+   "label": "Retrieval evaluation",
+   "sub": "A golden set per tenant",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "recall at k, nDCG at 10 and MRR on a per-tenant golden set, run on every index change"
+  },
+  "op_leak": {
+   "label": "Permission leak test",
+   "sub": "Planted users, zero leaks allowed",
+   "kind": "sec",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "synthetic users with known access lists; any unauthorised hit fails the release"
+  },
+  "op_cost": {
+   "label": "Cost meter",
+   "sub": "Per document and per query",
+   "kind": "det",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "cost per document indexed and per query from embedding, storage and app API calls"
+  },
+  "op_trace": {
+   "label": "Query trace store",
+   "sub": "Replay any answer",
+   "kind": "svc",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "full trace of plan, retrieve, live calls and rerank, replayable against a past index version"
+  },
+  "op_attr": {
+   "label": "Failure attributor",
+   "sub": "Which stage caused the bad answer?",
+   "kind": "ml",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "given a failed trace, a model assigns the failure to one stage (route, retrieve, rank, permission, compose) with evidence, and the cause is counted per week"
+  },
+  "op_ver": {
+   "label": "Versioned pipeline release",
+   "sub": "Prompts, rules and indexes ship as versions",
+   "kind": "svc",
+   "stage": "ops",
+   "group": "ops.qual",
+   "pin": "planner prompts, chunk rules, rerank weights and thresholds are versioned artifacts; a candidate version must beat the current one on the golden set under a judge before it goes live, and rolls back in one call"
+  },
+  "gv_erase": {
+   "label": "Erasure propagation",
+   "sub": "Delete in the app, gone here",
+   "kind": "det",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "a source delete becomes a tombstone that purges pointers, vectors, snippets, caches and traces within a stated time, with a receipt"
+  },
+  "gv_kms": {
+   "label": "Tenant keys and region",
+   "sub": "Own key, own region",
+   "kind": "sec",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "per-tenant envelope encryption with an optional customer-held key and region pinning"
+  },
+  "gv_inv": {
+   "label": "Embedding protection",
+   "sub": "Vectors are sensitive",
+   "kind": "sec",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "treat embeddings as sensitive data: encrypted at rest, never exported, rotated per tenant"
+  },
+  "gv_tenant": {
+   "label": "Tenant isolation",
+   "sub": "No cross-tenant read",
+   "kind": "sec",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "tenant id in every key and shard, with row-level policy as a second check"
+  },
+  "gv_tos": {
+   "label": "Vendor terms registry",
+   "sub": "What each app lets us keep",
+   "kind": "det",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "per-app allowed use (cache time, training ban, rate) enforced by configuration"
+  },
+  "gv_line": {
+   "label": "Store-or-point rule",
+   "sub": "What the brain may keep, and what it only points to",
+   "kind": "det",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "a table of what may be stored per object class: pointers, filters and a 300-character excerpt by default; derived notes only with a source list and an owner"
+  },
+  "gv_kill": {
+   "label": "Pause and purge switch",
+   "sub": "Stop one connector or one tenant",
+   "kind": "sec",
+   "stage": "gov",
+   "group": "gov.priv",
+   "pin": "per-connector and per-tenant kill switch that stops sync and purges derived data"
+  },
+  "pl_gw": {
+   "label": "LLM gateway",
+   "sub": "Every model call goes here",
+   "kind": "plat",
+   "stage": "plt",
+   "group": "plt.own",
+   "pin": "one gateway such as LiteLLM routes by cost and quality, meters spend per team and redacts personal data"
+  },
+  "pl_idp": {
+   "label": "Identity and audit",
+   "sub": "Users, agents, tenants, audit",
+   "kind": "plat",
+   "stage": "plt",
+   "group": "plt.own",
+   "pin": "an OpenID Connect provider for users and agents, plus a hash-chained audit table nobody can edit"
+  },
+  "pl_pol": {
+   "label": "Policy engine",
+   "sub": "Written rules before action",
+   "kind": "plat",
+   "stage": "plt",
+   "group": "plt.own",
+   "pin": "versioned rule files in OPA or Cedar, checked before any agent action"
+  },
+  "pl_mem": {
+   "label": "Lessons store",
+   "sub": "Preferences, corrections, lessons",
+   "kind": "plat",
+   "stage": "plt",
+   "group": "plt.own",
+   "pin": "a per-tenant table of corrections and preferences, linked to the eval tests that guard them"
+  },
+  "pl_obs": {
+   "label": "Traces and eval gates",
+   "sub": "Release gates and incidents",
+   "kind": "plat",
+   "stage": "plt",
+   "group": "plt.own",
+   "pin": "OpenTelemetry traces and a CI eval suite that blocks a release, plus an incident log"
+  },
+  "zn_tag": {
+   "label": "Zone tagger",
+   "sub": "Company, team or personal",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "zone is read from the source's own sharing setting (private channel, DM, My Drive, shared drive), never guessed by a model"
+  },
+  "zn_scope": {
+   "label": "Owner filter",
+   "sub": "Personal rows match their owner only",
+   "kind": "sec",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "owner id is a mandatory filter term inside the ANN and BM25 query for every personal-zone row, checked again at hydrate"
+  },
+  "zn_key": {
+   "label": "Per-user key",
+   "sub": "Personal data under the owner's key",
+   "kind": "sec",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "envelope encryption with one data key per user wrapped by the tenant KMS key; deleting the user key crypto-shreds their zone"
+  },
+  "zn_promote": {
+   "label": "Promotion gate",
+   "sub": "Personal to team only with consent",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "an item leaves the personal zone only when the source sharing changes or the owner confirms in a prompt; a model never promotes"
+  },
+  "zn_taint": {
+   "label": "Derived-data taint",
+   "sub": "Nothing derived crosses zones",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "every cache entry, entity, lesson and trace carries the highest zone of its inputs, and a company-level store rejects a personal taint"
+  },
+  "zn_review": {
+   "label": "Preview and correct",
+   "sub": "Owner sees and edits before sharing",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.zone",
+   "pin": "before any case or chat excerpt leaves the personal zone the owner gets a preview with the exact text, can edit or strike lines, and approves; the approval record is kept"
+  },
+  "cr_mode": {
+   "label": "Credential mode policy",
+   "sub": "Admin crawl, user link, or both",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.cred",
+   "pin": "per connector and per zone mode table: company zone via app-only grant, personal zone via the user's own grant, strict mode forces user grant for all"
+  },
+  "cr_link": {
+   "label": "One-time user link",
+   "sub": "Sign in once, link without a second login",
+   "kind": "svc",
+   "stage": "zon",
+   "group": "zon.cred",
+   "pin": "the user signs in once through company single sign-on, and linking an app reuses that session; only apps with no federation show a consent page"
+  },
+  "cr_union": {
+   "label": "Merged view",
+   "sub": "Admin view plus the user's own view",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.cred",
+   "pin": "results from the admin-crawled index and the user-linked index are merged by uri, and the stricter ACL wins on a conflict"
+  },
+  "cr_gap": {
+   "label": "Coverage gap report",
+   "sub": "What the admin crawl cannot see",
+   "kind": "det",
+   "stage": "zon",
+   "group": "zon.cred",
+   "pin": "per source, count objects the app-only grant cannot list and prompt the owner to link, using a probe of the user's own listing"
+  },
+  "cp_daemon": {
+   "label": "Local daemon",
+   "sub": "Runs on each laptop",
+   "kind": "svc",
+   "stage": "cap",
+   "group": "cap.local",
+   "pin": "a signed background process that watches an allowlist of session folders and posts new turns over an outbound-only TLS channel"
+  },
+  "cp_hook": {
+   "label": "Session hook reader",
+   "sub": "Claude Code and Codex sessions",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.local",
+   "pin": "session-end and stop hooks plus a tail of the local JSONL transcript files, resuming from a byte offset per file"
+  },
+  "cp_redact": {
+   "label": "On-device redaction",
+   "sub": "Strip secrets before upload",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.local",
+   "pin": "pattern and entropy secret scan (gitleaks style) plus personal-data masking, run before any byte leaves the laptop"
+  },
+  "cp_vault": {
+   "label": "Keychain and consent",
+   "sub": "Owns the credentials, shows a pause button",
+   "kind": "sec",
+   "stage": "cap",
+   "group": "cap.local",
+   "pin": "tokens stay in the operating system keychain, only the daemon reads them, and a visible pause switch stops capture at once"
+  },
+  "cp_mdm": {
+   "label": "Rollout and update",
+   "sub": "Install by device management",
+   "kind": "plat",
+   "stage": "cap",
+   "group": "cap.local",
+   "pin": "a signed and notarised installer pushed by device management with a pinned auto-update channel and a remote disable"
+  },
+  "cf_claude": {
+   "label": "Claude compliance feed",
+   "sub": "Enterprise chats and files",
+   "kind": "ext",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "Anthropic compliance API pulled on a schedule with a compliance access key, for web and desktop chats"
+  },
+  "cf_openai": {
+   "label": "ChatGPT compliance feed",
+   "sub": "Enterprise conversation logs",
+   "kind": "ext",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "OpenAI compliance logs pulled in time windows as JSONL, scoped by workspace"
+  },
+  "cf_vault": {
+   "label": "Other chat exports",
+   "sub": "Gemini and Copilot",
+   "kind": "ext",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "Google Vault export and Microsoft Purview or Graph interaction records, pulled by the same scheduled runner"
+  },
+  "cf_norm": {
+   "label": "Chat normaliser",
+   "sub": "One Message shape, zone personal",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "each turn becomes a Message envelope {uri, owner, tool, session, turn, time, content_hash} stamped zone personal"
+  },
+  "cf_del": {
+   "label": "Delete reconciler",
+   "sub": "Chats the user deleted",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "each export or hook run is diffed against the pointer set and any turn no longer reported becomes a tombstone"
+  },
+  "cf_struct": {
+   "label": "Chat views",
+   "sub": "By channel, by person, by artifact",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.feeds",
+   "pin": "each Message is attached to three views, channel thread, actor timeline and artifact link, so a search can open the view that fits the question"
+  },
+  "cp_exp": {
+   "label": "Experience distiller",
+   "sub": "Turn a finished task into a case",
+   "kind": "llm",
+   "stage": "cap",
+   "group": "cap.experience",
+   "pin": "a model reads the owner's session and writes a case with six elements {situation, goal, actions, decision rule, outcome, caveat}, always as a draft the owner reviews"
+  },
+  "cp_probe": {
+   "label": "Claim probe",
+   "sub": "Check the card against the live source",
+   "kind": "svc",
+   "stage": "cap",
+   "group": "cap.experience",
+   "pin": "before review, read-only calls to the live app test each card claim for support, scope and current validity, using the contributor's own permissions"
+  },
+  "cp_dup": {
+   "label": "Duplicate and conflict check",
+   "sub": "Is this case already on a shelf?",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.experience",
+   "pin": "compare the draft with the five nearest cards after a tag prefilter, then mark it new, a duplicate, a clarification or a conflict"
+  },
+  "cp_trust": {
+   "label": "Card evidence tier",
+   "sub": "Prediction, core or anchor",
+   "kind": "det",
+   "stage": "cap",
+   "group": "cap.experience",
+   "pin": "a card starts as a prediction from one case, becomes core after three independent cases agree, and an anchor after ten review cycles without contradiction"
+  },
+  "cp_lib": {
+   "label": "Case libraries",
+   "sub": "Six shelves of cases",
+   "kind": "db",
+   "stage": "cap",
+   "group": "cap.experience",
+   "pin": "six libraries (situation, action, decision rule, failure, tool, glossary) holding approved cases as pointers to the owner's source, retrieved by situation similarity"
+  },
+  "sc_runtime": {
+   "label": "Token boundary",
+   "sub": "Only the connector runtime decrypts",
+   "kind": "sec",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "tokens are decrypted only inside the connector runtime process, which has no inbound tool surface and no model access"
+  },
+  "sc_split": {
+   "label": "Separate admin and user keys",
+   "sub": "One breach does not reach both",
+   "kind": "sec",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "admin app-only tokens and per-user tokens sit under different KMS keys and different roles, and neither role can read the other"
+  },
+  "sc_noconf": {
+   "label": "No credential tools",
+   "sub": "Nothing to ask for a secret",
+   "kind": "sec",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "the tool list has no tool that returns, lists or edits a credential or connector setting; a test fails the build if one appears"
+  },
+  "sc_scan": {
+   "label": "Secret scan on index and output",
+   "sub": "Secrets never indexed or returned",
+   "kind": "det",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "gitleaks style rules and entropy checks on every chunk before indexing and on every answer before it leaves"
+  },
+  "sc_scope": {
+   "label": "Agent scope and trifecta guard",
+   "sub": "Least access per agent",
+   "kind": "sec",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "per-agent scope set checked by the policy engine, and no agent holds private data, untrusted input and an outbound channel at once"
+  },
+  "sc_egress": {
+   "label": "Egress allowlist",
+   "sub": "Answers cannot leak out",
+   "kind": "sec",
+   "stage": "sec",
+   "group": "sec.vault",
+   "pin": "outbound destinations limited to an allowlist and rendered links and images stripped from answers"
+  },
+  "ag_collect": {
+   "label": "Activity collector",
+   "sub": "What the user did today",
+   "kind": "svc",
+   "stage": "act",
+   "group": "act.write",
+   "pin": "reads the user's own personal-zone sessions and tool events for a day window, scoped by the owner filter"
+  },
+  "ag_plan": {
+   "label": "Update planner",
+   "sub": "Draft the Jira changes",
+   "kind": "llm",
+   "stage": "act",
+   "group": "act.write",
+   "pin": "a model proposes {tool, issue, change, evidence} items from collected activity and brain context, never a write"
+  },
+  "ag_gate": {
+   "label": "Confirmation gate",
+   "sub": "The user approves each change",
+   "kind": "det",
+   "stage": "act",
+   "group": "act.write",
+   "pin": "each proposed write waits for the owner's approval by default, and a per-tool auto-approve list is opt-in"
+  },
+  "ag_write": {
+   "label": "Scoped writer",
+   "sub": "Writes with the user's own token",
+   "kind": "svc",
+   "stage": "act",
+   "group": "act.write",
+   "pin": "one write call per approved item through the user's own grant, idempotent by a client key, then logged"
+  },
+  "ag_priv": {
+   "label": "Quote guard",
+   "sub": "Private chat never pasted in public",
+   "kind": "det",
+   "stage": "act",
+   "group": "act.write",
+   "pin": "any text copied from the personal zone into a company tool is paraphrased or blocked unless the owner confirms it"
+  }
+ },
+ "edges": [
+  {
+   "a": "cl_meta",
+   "b": "cl_reg",
+   "l": "server metadata",
+   "d": "Authorization server URL, scopes and supported registration methods",
+   "k": "s"
+  },
+  {
+   "a": "cl_reg",
+   "b": "cl_aud",
+   "l": "client record",
+   "d": "Registered client {client_id, redirect_uris, kind}",
+   "k": "s"
+  },
+  {
+   "a": "cl_aud",
+   "b": "ll_mcp",
+   "l": "verified token",
+   "d": "Access token whose audience is this server, with the user's identity",
+   "k": "s"
+  },
+  {
+   "a": "ll_mcp",
+   "b": "cl_meta",
+   "l": "401 challenge",
+   "d": "WWW-Authenticate header that points to the resource metadata",
+   "k": "s"
+  },
+  {
+   "a": "cl_consent",
+   "b": "so_admin",
+   "l": "connect link",
+   "d": "URL to the consent page for the missing source app",
+   "k": "s"
+  },
+  {
+   "a": "ll_mcp",
+   "b": "cl_consent",
+   "l": "unlinked source",
+   "d": "Source app that has no grant for this user",
+   "k": "e"
+  },
+  {
+   "a": "cl_search",
+   "b": "ll_mcp",
+   "l": "tool pair",
+   "d": "search and fetch tool definitions that return {id, title, text, url}",
+   "k": "n"
+  },
+  {
+   "a": "cl_search",
+   "b": "qr_id",
+   "l": "search call",
+   "d": "Tool call {query} with the caller's token",
+   "k": "e"
+  },
+  {
+   "a": "cl_budget",
+   "b": "ll_schema",
+   "l": "limits",
+   "d": "Tool count, result token cap and instruction length cap",
+   "k": "n"
+  },
+  {
+   "a": "cl_budget",
+   "b": "ll_fmt",
+   "l": "size cap",
+   "d": "Per-tool result size cap and page size",
+   "k": "n"
+  },
+  {
+   "a": "cl_dist",
+   "b": "cl_net",
+   "l": "server URL",
+   "d": "Public MCP endpoint written into each client's config",
+   "k": "n"
+  },
+  {
+   "a": "cl_plugin",
+   "b": "ll_mcp",
+   "l": "tool names",
+   "d": "Tool names the skill tells agents to call",
+   "k": "n"
+  },
+  {
+   "a": "cl_net",
+   "b": "ll_mcp",
+   "l": "traffic",
+   "d": "Requests from vendor clouds and local clients",
+   "k": "e"
+  },
+  {
+   "a": "cl_tasks",
+   "b": "ll_mcp",
+   "l": "task handle",
+   "d": "Task ID, status and result for a slow search",
+   "k": "n"
+  },
+  {
+   "a": "cl_tasks",
+   "b": "qr_id",
+   "l": "long search",
+   "d": "Query that runs past the client's wait limit",
+   "k": "e"
+  },
+  {
+   "a": "so_admin",
+   "b": "so_oauth",
+   "l": "consent and scopes",
+   "d": "Admin approves the scope diff; the grant {tenant, app, scopes, expiry} is stored",
+   "k": "s"
+  },
+  {
+   "a": "so_admin",
+   "b": "so_svc",
+   "l": "admin consent",
+   "d": "Tenant-wide app-only grant {tenant, app, scopes[]} with a named admin approver",
+   "k": "s"
+  },
+  {
+   "a": "so_oauth",
+   "b": "so_obo",
+   "l": "refresh token",
+   "d": "Wrapped refresh token {user, app, kms_key_id} used only for per-user exchange",
+   "k": "s"
+  },
+  {
+   "a": "so_oauth",
+   "b": "so_sdk",
+   "l": "access token",
+   "d": "Short-lived access token {token, expires_at, scopes} per user and app",
+   "k": "e"
+  },
+  {
+   "a": "so_svc",
+   "b": "so_sdk",
+   "l": "app token",
+   "d": "App-only token {token, expires_at, scopes} for sweeps",
+   "k": "e"
+  },
+  {
+   "a": "so_sdk",
+   "b": "so_cap",
+   "l": "probe",
+   "d": "Probe calls {app, endpoint} to learn webhook, delta, search and ACL support",
+   "k": "n"
+  },
+  {
+   "a": "so_cap",
+   "b": "ch_sched",
+   "l": "freshness path",
+   "d": "Capability descriptor {webhook, delta, list, acl_api, rate_limits}",
+   "k": "e"
+  },
+  {
+   "a": "so_rate",
+   "b": "so_sdk",
+   "l": "budget grant",
+   "d": "Grant {tenant, app, endpoint, tokens, wait_ms} before each call",
+   "k": "n"
+  },
+  {
+   "a": "so_sdk",
+   "b": "so_apps",
+   "l": "list and read",
+   "d": "HTTPS request {endpoint, cursor, page_size} with the access token",
+   "k": "e"
+  },
+  {
+   "a": "so_apps",
+   "b": "so_norm",
+   "l": "raw objects",
+   "d": "App-native object JSON with its own ids, times and sharing fields",
+   "k": "e"
+  },
+  {
+   "a": "so_norm",
+   "b": "ch_bus",
+   "l": "normalised event",
+   "d": "Envelope {uri, app, tenant, kind, version, content_hash, modified_at, acl_ref}",
+   "k": "d"
+  },
+  {
+   "a": "so_mcp",
+   "b": "so_apps",
+   "l": "MCP tool call",
+   "d": "MCP request {tool, arguments} to the app's own MCP server",
+   "k": "e"
+  },
+  {
+   "a": "so_obo",
+   "b": "so_mcp",
+   "l": "user token",
+   "d": "Short-lived token for this user and this app",
+   "k": "s"
+  },
+  {
+   "a": "so_obo",
+   "b": "qr_live",
+   "l": "user token",
+   "d": "Per-user token for live search, never stored beyond the request",
+   "k": "s"
+  },
+  {
+   "a": "so_obo",
+   "b": "ac_live",
+   "l": "user token",
+   "d": "Per-user token for the final access recheck",
+   "k": "s"
+  },
+  {
+   "a": "so_rate",
+   "b": "so_mcp",
+   "l": "budget grant",
+   "d": "Same budget applies to MCP calls",
+   "k": "n"
+  },
+  {
+   "a": "ch_hook",
+   "b": "ch_bus",
+   "l": "event",
+   "d": "Verified webhook {app, tenant, object_id, kind, received_at}",
+   "k": "d"
+  },
+  {
+   "a": "ch_delta",
+   "b": "ch_bus",
+   "l": "changed objects",
+   "d": "Delta page {stream, items[], next_cursor}",
+   "k": "d"
+  },
+  {
+   "a": "ch_cdc",
+   "b": "ch_bus",
+   "l": "row change",
+   "d": "Change record {table, pk, op, lsn, after}",
+   "k": "d"
+  },
+  {
+   "a": "ch_sweep",
+   "b": "ch_bus",
+   "l": "missed change",
+   "d": "Objects whose digest differs from the registry {uri, version}",
+   "k": "d"
+  },
+  {
+   "a": "ch_sched",
+   "b": "ch_delta",
+   "l": "poll now",
+   "d": "Poll order {stream, interval_s} from the change-rate EWMA",
+   "k": "n"
+  },
+  {
+   "a": "ch_sched",
+   "b": "ch_sweep",
+   "l": "sweep window",
+   "d": "Sweep schedule {tenant, app, window}",
+   "k": "n"
+  },
+  {
+   "a": "ch_bus",
+   "b": "ch_dedupe",
+   "l": "event",
+   "d": "Ordered event per document key",
+   "k": "e"
+  },
+  {
+   "a": "ch_dedupe",
+   "b": "ch_wf",
+   "l": "new version",
+   "d": "Event whose version beats the stored one",
+   "k": "e"
+  },
+  {
+   "a": "ch_dedupe",
+   "b": "ch_dlq",
+   "l": "poison event",
+   "d": "Event that failed {error_class, attempts}",
+   "k": "d"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ch_cursor",
+   "l": "commit cursor",
+   "d": "Cursor and watermark written with the events it covers",
+   "k": "n"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ch_dlq",
+   "l": "retries spent",
+   "d": "Event after bounded retries {error, history}",
+   "k": "d"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ix_ptr",
+   "l": "upsert pointer",
+   "d": "Pointer row {uri, version, content_hash, metadata}",
+   "k": "e"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ix_fetch",
+   "l": "derive request",
+   "d": "Order to fetch and derive {uri, version}",
+   "k": "e"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ch_tomb",
+   "l": "delete event",
+   "d": "Delete or access-removed event {uri, reason}",
+   "k": "s"
+  },
+  {
+   "a": "ch_fill",
+   "b": "ch_bus",
+   "l": "backfill batch",
+   "d": "Priority-ordered objects {uri, rank}",
+   "k": "d"
+  },
+  {
+   "a": "ch_dlq",
+   "b": "ch_wf",
+   "l": "replay",
+   "d": "Operator replay of a parked event",
+   "k": "n"
+  },
+  {
+   "a": "ch_tomb",
+   "b": "gv_erase",
+   "l": "tombstone",
+   "d": "Tombstone {uri, tenant, reason, at}",
+   "k": "s"
+  },
+  {
+   "a": "ch_tomb",
+   "b": "ix_ptr",
+   "l": "soft delete",
+   "d": "Mark pointer deleted so it drops out of search at once",
+   "k": "s"
+  },
+  {
+   "a": "ch_cursor",
+   "b": "ch_delta",
+   "l": "resume point",
+   "d": "Stored cursor for the next poll",
+   "k": "n"
+  },
+  {
+   "a": "ch_fill",
+   "b": "ch_cursor",
+   "l": "backfill progress",
+   "d": "Progress watermark per stream",
+   "k": "n"
+  },
+  {
+   "a": "ix_ptr",
+   "b": "ix_meta",
+   "l": "attributes",
+   "d": "Filterable attributes {app, type, owner, date, space}",
+   "k": "n"
+  },
+  {
+   "a": "ix_ptr",
+   "b": "ix_fresh",
+   "l": "version info",
+   "d": "source_version, last_verified",
+   "k": "n"
+  },
+  {
+   "a": "ix_ptr",
+   "b": "ix_ent",
+   "l": "names and owners",
+   "d": "Person and project mentions {uri, mentions[]}",
+   "k": "n"
+  },
+  {
+   "a": "ix_ent",
+   "b": "ix_link",
+   "l": "resolved entities",
+   "d": "Merged entity ids and edges",
+   "k": "n"
+  },
+  {
+   "a": "ix_fetch",
+   "b": "ix_ext",
+   "l": "raw body",
+   "d": "Body bytes in memory {uri, version, mime}",
+   "k": "e"
+  },
+  {
+   "a": "ix_ext",
+   "b": "ix_chunk",
+   "l": "structured text",
+   "d": "Text with headings, turns and tables marked",
+   "k": "e"
+  },
+  {
+   "a": "ix_chunk",
+   "b": "ix_ctx",
+   "l": "chunks",
+   "d": "Chunks {chunk_id, text, position}",
+   "k": "e"
+  },
+  {
+   "a": "ix_ctx",
+   "b": "ix_pii",
+   "l": "chunk with context",
+   "d": "Chunk text with the situating line",
+   "k": "e"
+  },
+  {
+   "a": "ix_pii",
+   "b": "ix_embed",
+   "l": "clean chunks",
+   "d": "Chunk text with secrets masked and a sensitivity label",
+   "k": "e"
+  },
+  {
+   "a": "ix_ctx",
+   "b": "pl_gw",
+   "l": "context-line call",
+   "d": "Model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "ix_embed",
+   "b": "pl_gw",
+   "l": "embedding call",
+   "d": "Batched embedding call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "ix_embed",
+   "b": "ix_vec",
+   "l": "vectors",
+   "d": "Vector {chunk_id, vec, model_id, acl_ref, uri}",
+   "k": "e"
+  },
+  {
+   "a": "ix_pii",
+   "b": "ix_lex",
+   "l": "tokens",
+   "d": "Chunk terms for the inverted index {chunk_id, terms, uri}",
+   "k": "e"
+  },
+  {
+   "a": "ix_pii",
+   "b": "ix_snip",
+   "l": "excerpt",
+   "d": "Excerpt up to 300 characters with a time to live",
+   "k": "e"
+  },
+  {
+   "a": "ix_link",
+   "b": "qr_graph",
+   "l": "graph reads",
+   "d": "Neighbours of an entity",
+   "k": "n"
+  },
+  {
+   "a": "ix_gc",
+   "b": "ix_vec",
+   "l": "collect",
+   "d": "Remove vectors whose pointer is deleted",
+   "k": "s"
+  },
+  {
+   "a": "ix_gc",
+   "b": "ix_lex",
+   "l": "collect",
+   "d": "Remove postings whose pointer is deleted",
+   "k": "s"
+  },
+  {
+   "a": "ix_gc",
+   "b": "ix_snip",
+   "l": "expire",
+   "d": "Remove excerpts whose pointer is deleted",
+   "k": "s"
+  },
+  {
+   "a": "ix_reidx",
+   "b": "ix_embed",
+   "l": "re-embed job",
+   "d": "Re-embed all chunks under the new model id",
+   "k": "n"
+  },
+  {
+   "a": "ix_reidx",
+   "b": "ix_vec",
+   "l": "cutover",
+   "d": "Swap the active index version",
+   "k": "n"
+  },
+  {
+   "a": "ix_meta",
+   "b": "ac_filter",
+   "l": "filter fields",
+   "d": "Attributes available to pre-filter",
+   "k": "n"
+  },
+  {
+   "a": "ix_fresh",
+   "b": "op_lag",
+   "l": "stamps",
+   "d": "Per-pointer last_verified",
+   "k": "n"
+  },
+  {
+   "a": "ac_scim",
+   "b": "ac_id",
+   "l": "users and groups",
+   "d": "User, group and leaver records from the identity provider",
+   "k": "s"
+  },
+  {
+   "a": "ac_id",
+   "b": "ac_store",
+   "l": "principal map",
+   "d": "App user id to company principal",
+   "k": "s"
+  },
+  {
+   "a": "ac_src",
+   "b": "ac_grp",
+   "l": "raw ACL",
+   "d": "Per-object sharing entries {uri, principal, role}",
+   "k": "s"
+  },
+  {
+   "a": "ac_grp",
+   "b": "ac_store",
+   "l": "expanded sets",
+   "d": "Principal set per object with a membership snapshot version",
+   "k": "s"
+  },
+  {
+   "a": "ch_wf",
+   "b": "ac_src",
+   "l": "acl refresh",
+   "d": "Order to refresh the sharing list when an object or its sharing changes",
+   "k": "s"
+  },
+  {
+   "a": "ac_store",
+   "b": "ac_filter",
+   "l": "principal sets",
+   "d": "Object to allowed principal ids",
+   "k": "s"
+  },
+  {
+   "a": "ac_filter",
+   "b": "qr_hyb",
+   "l": "pre-filter",
+   "d": "Principal-set filter {principals[], acl_version}",
+   "k": "s"
+  },
+  {
+   "a": "qr_id",
+   "b": "ac_filter",
+   "l": "principal",
+   "d": "User principal, group ids and agent scope",
+   "k": "s"
+  },
+  {
+   "a": "ac_neg",
+   "b": "ac_filter",
+   "l": "revoked",
+   "d": "Principals whose access just ended",
+   "k": "s"
+  },
+  {
+   "a": "ac_live",
+   "b": "ac_audit",
+   "l": "decision",
+   "d": "Decision {user, uri, allowed, acl_version, checked_at}",
+   "k": "s"
+  },
+  {
+   "a": "ac_live",
+   "b": "qr_hyd",
+   "l": "cleared results",
+   "d": "Results that passed the live recheck",
+   "k": "s"
+  },
+  {
+   "a": "ac_scim",
+   "b": "ac_neg",
+   "l": "leaver event",
+   "d": "Offboarding event {principal, at}",
+   "k": "s"
+  },
+  {
+   "a": "ac_audit",
+   "b": "pl_idp",
+   "l": "audit rows",
+   "d": "Rows appended to the shared audit log",
+   "k": "s"
+  },
+  {
+   "a": "ac_src",
+   "b": "so_sdk",
+   "l": "acl read",
+   "d": "Sharing-list calls through the connector",
+   "k": "s"
+  },
+  {
+   "a": "qr_id",
+   "b": "qr_rw",
+   "l": "question and scope",
+   "d": "Question text, principal, scope",
+   "k": "e"
+  },
+  {
+   "a": "qr_rw",
+   "b": "qr_route",
+   "l": "sub-questions",
+   "d": "Sub-questions with entities and freshness hints",
+   "k": "e"
+  },
+  {
+   "a": "qr_rw",
+   "b": "pl_gw",
+   "l": "planner call",
+   "d": "Small-model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "qr_route",
+   "b": "qr_cache",
+   "l": "lookup",
+   "d": "Cache key {query_hash, principal_set_id}",
+   "k": "n"
+  },
+  {
+   "a": "qr_cache",
+   "b": "qr_hyb",
+   "l": "miss",
+   "d": "Sub-questions that missed the cache",
+   "k": "n"
+  },
+  {
+   "a": "qr_route",
+   "b": "qr_hyb",
+   "l": "index path",
+   "d": "Sub-questions answerable from the index",
+   "k": "e"
+  },
+  {
+   "a": "qr_route",
+   "b": "qr_live",
+   "l": "live path",
+   "d": "Sub-questions that need the freshest data or an unindexed app",
+   "k": "e"
+  },
+  {
+   "a": "qr_hyb",
+   "b": "ix_lex",
+   "l": "term query",
+   "d": "BM25 query with the ACL pre-filter",
+   "k": "e"
+  },
+  {
+   "a": "qr_hyb",
+   "b": "ix_vec",
+   "l": "vector query",
+   "d": "kNN query with the ACL pre-filter",
+   "k": "e"
+  },
+  {
+   "a": "qr_hyb",
+   "b": "qr_graph",
+   "l": "seed hits",
+   "d": "Top hits whose entities seed the expansion",
+   "k": "n"
+  },
+  {
+   "a": "qr_hyb",
+   "b": "qr_rerank",
+   "l": "candidates",
+   "d": "About 100 fused candidates {chunk_id, score}",
+   "k": "e"
+  },
+  {
+   "a": "qr_graph",
+   "b": "qr_rerank",
+   "l": "extra candidates",
+   "d": "Linked documents from graph expansion",
+   "k": "n"
+  },
+  {
+   "a": "qr_live",
+   "b": "qr_rerank",
+   "l": "live candidates",
+   "d": "App-ranked hits with the user's own access already applied",
+   "k": "e"
+  },
+  {
+   "a": "qr_rerank",
+   "b": "ac_live",
+   "l": "top results",
+   "d": "Top 10 {uri, chunk_id, score}",
+   "k": "s"
+  },
+  {
+   "a": "qr_hyd",
+   "b": "ix_snip",
+   "l": "snippet read",
+   "d": "Use cached excerpt while the live read is in flight",
+   "k": "n"
+  },
+  {
+   "a": "qr_hyd",
+   "b": "qr_pack",
+   "l": "fresh passages",
+   "d": "Current passages with ETag and read time",
+   "k": "e"
+  },
+  {
+   "a": "qr_hyd",
+   "b": "ix_fetch",
+   "l": "stale detected",
+   "d": "Re-derive when the ETag differs from the registry",
+   "k": "d"
+  },
+  {
+   "a": "qr_pack",
+   "b": "qr_inj",
+   "l": "packed context",
+   "d": "Passages in budget order",
+   "k": "e"
+  },
+  {
+   "a": "qr_inj",
+   "b": "qr_ans",
+   "l": "wrapped context",
+   "d": "Passages marked as untrusted data",
+   "k": "s"
+  },
+  {
+   "a": "qr_ans",
+   "b": "pl_gw",
+   "l": "answer call",
+   "d": "Model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "qr_ans",
+   "b": "qr_cite",
+   "l": "draft answer",
+   "d": "Answer with claim spans and citation ids",
+   "k": "e"
+  },
+  {
+   "a": "qr_cite",
+   "b": "qr_stamp",
+   "l": "verified answer",
+   "d": "Answer whose claims all have support",
+   "k": "e"
+  },
+  {
+   "a": "qr_stamp",
+   "b": "ll_fmt",
+   "l": "final answer",
+   "d": "Answer with per-citation version and read time",
+   "k": "e"
+  },
+  {
+   "a": "qr_cite",
+   "b": "pl_mem",
+   "l": "unsupported claims",
+   "d": "Claims that failed the check, for the lessons store",
+   "k": "d"
+  },
+  {
+   "a": "ll_mcp",
+   "b": "ll_schema",
+   "l": "tool descriptions",
+   "d": "Tool names, descriptions and argument schemas",
+   "k": "n"
+  },
+  {
+   "a": "ll_mcp",
+   "b": "qr_id",
+   "l": "search call",
+   "d": "Tool call {query, filters} with the caller's token",
+   "k": "e"
+  },
+  {
+   "a": "ll_api",
+   "b": "qr_id",
+   "l": "API call",
+   "d": "Request {query, filters} with the caller's token",
+   "k": "e"
+  },
+  {
+   "a": "ll_fmt",
+   "b": "ll_mcp",
+   "l": "tool result",
+   "d": "Result envelope as an MCP tool result",
+   "k": "e"
+  },
+  {
+   "a": "ll_fmt",
+   "b": "ll_api",
+   "l": "response",
+   "d": "Result envelope as JSON",
+   "k": "e"
+  },
+  {
+   "a": "ll_agent",
+   "b": "ll_mcp",
+   "l": "agent token",
+   "d": "Token scoped to the agent and its owner",
+   "k": "s"
+  },
+  {
+   "a": "ll_agent",
+   "b": "ll_api",
+   "l": "agent token",
+   "d": "Token scoped to the agent and its owner",
+   "k": "s"
+  },
+  {
+   "a": "ll_agent",
+   "b": "pl_idp",
+   "l": "principal",
+   "d": "Agent principal {agent_id, owner, scope}",
+   "k": "s"
+  },
+  {
+   "a": "ll_quota",
+   "b": "ll_mcp",
+   "l": "limit",
+   "d": "Allow or delay by bucket",
+   "k": "n"
+  },
+  {
+   "a": "ll_quota",
+   "b": "op_cost",
+   "l": "metered use",
+   "d": "Calls and cost per agent",
+   "k": "n"
+  },
+  {
+   "a": "ll_sub",
+   "b": "ch_bus",
+   "l": "event feed",
+   "d": "Subscribe to change events for an entity or topic",
+   "k": "d"
+  },
+  {
+   "a": "ll_sub",
+   "b": "ll_agent",
+   "l": "push",
+   "d": "Change notification to the subscribed agent",
+   "k": "d"
+  },
+  {
+   "a": "ll_ro",
+   "b": "ll_schema",
+   "l": "no write tools",
+   "d": "Tool list contains no write action",
+   "k": "s"
+  },
+  {
+   "a": "ll_ro",
+   "b": "pl_pol",
+   "l": "action requests",
+   "d": "Write intents sent to the action layer under policy",
+   "k": "s"
+  },
+  {
+   "a": "op_lag",
+   "b": "op_health",
+   "l": "late source",
+   "d": "Source whose lag breaches its target",
+   "k": "n"
+  },
+  {
+   "a": "op_audit",
+   "b": "op_cov",
+   "l": "sample result",
+   "d": "Sampled existence, version and access results",
+   "k": "n"
+  },
+  {
+   "a": "op_cov",
+   "b": "ch_sweep",
+   "l": "gap found",
+   "d": "Folders or streams whose counts disagree",
+   "k": "n"
+  },
+  {
+   "a": "op_health",
+   "b": "ch_wf",
+   "l": "pause",
+   "d": "Pause or resume a failing connector",
+   "k": "s"
+  },
+  {
+   "a": "op_audit",
+   "b": "ix_ptr",
+   "l": "sample",
+   "d": "Random pointers drawn for checking",
+   "k": "n"
+  },
+  {
+   "a": "op_eval",
+   "b": "pl_obs",
+   "l": "release gate",
+   "d": "Eval result that gates an index or model change",
+   "k": "n"
+  },
+  {
+   "a": "op_eval",
+   "b": "ix_reidx",
+   "l": "gate",
+   "d": "Block a cutover when quality drops",
+   "k": "n"
+  },
+  {
+   "a": "op_leak",
+   "b": "ac_filter",
+   "l": "probe",
+   "d": "Synthetic users query for objects they must not see",
+   "k": "s"
+  },
+  {
+   "a": "op_leak",
+   "b": "pl_obs",
+   "l": "leak result",
+   "d": "Zero-leak result as a release gate",
+   "k": "s"
+  },
+  {
+   "a": "op_cost",
+   "b": "pl_gw",
+   "l": "model spend",
+   "d": "Model spend read from the gateway meter",
+   "k": "n"
+  },
+  {
+   "a": "op_trace",
+   "b": "qr_ans",
+   "l": "trace",
+   "d": "Plan, retrieve, live and rerank trace for each answer",
+   "k": "n"
+  },
+  {
+   "a": "op_trace",
+   "b": "op_eval",
+   "l": "replay",
+   "d": "Replay of past queries against a new index",
+   "k": "n"
+  },
+  {
+   "a": "gv_erase",
+   "b": "ix_gc",
+   "l": "purge order",
+   "d": "Purge {uri, derived_ids[]}",
+   "k": "s"
+  },
+  {
+   "a": "gv_erase",
+   "b": "qr_cache",
+   "l": "invalidate",
+   "d": "Drop cached answers that cite the object",
+   "k": "s"
+  },
+  {
+   "a": "gv_erase",
+   "b": "op_trace",
+   "l": "redact traces",
+   "d": "Remove the object from stored traces",
+   "k": "s"
+  },
+  {
+   "a": "gv_kms",
+   "b": "ix_vec",
+   "l": "key",
+   "d": "Per-tenant data key for the vector shard",
+   "k": "s"
+  },
+  {
+   "a": "gv_kms",
+   "b": "ix_snip",
+   "l": "key",
+   "d": "Per-tenant data key for excerpts",
+   "k": "s"
+  },
+  {
+   "a": "gv_inv",
+   "b": "ix_vec",
+   "l": "policy",
+   "d": "No export; rotate per tenant",
+   "k": "s"
+  },
+  {
+   "a": "gv_tenant",
+   "b": "ix_ptr",
+   "l": "isolation",
+   "d": "Tenant id in every key; row-level policy",
+   "k": "s"
+  },
+  {
+   "a": "gv_tos",
+   "b": "so_sdk",
+   "l": "allowed use",
+   "d": "Per-app cache time, training ban and rate ceiling",
+   "k": "s"
+  },
+  {
+   "a": "gv_tos",
+   "b": "ix_snip",
+   "l": "time to live",
+   "d": "Maximum excerpt lifetime for the app",
+   "k": "s"
+  },
+  {
+   "a": "gv_kill",
+   "b": "ch_wf",
+   "l": "stop sync",
+   "d": "Stop a connector or tenant",
+   "k": "s"
+  },
+  {
+   "a": "gv_kill",
+   "b": "gv_erase",
+   "l": "purge",
+   "d": "Purge all derived data for the connector or tenant",
+   "k": "s"
+  },
+  {
+   "a": "pl_gw",
+   "b": "pl_pol",
+   "l": "policy check",
+   "d": "Each call is checked against policy",
+   "k": "s"
+  },
+  {
+   "a": "pl_idp",
+   "b": "pl_pol",
+   "l": "principal",
+   "d": "Caller identity for policy",
+   "k": "s"
+  },
+  {
+   "a": "pl_mem",
+   "b": "qr_rw",
+   "l": "preferences",
+   "d": "Company preferences and lessons for the planner",
+   "k": "n"
+  },
+  {
+   "a": "pl_obs",
+   "b": "op_trace",
+   "l": "traces",
+   "d": "Shared trace and incident tooling",
+   "k": "n"
+  },
+  {
+   "a": "so_norm",
+   "b": "zn_tag",
+   "l": "envelope",
+   "d": "Normalised object with its source sharing fields",
+   "k": "s"
+  },
+  {
+   "a": "zn_tag",
+   "b": "ix_ptr",
+   "l": "zone tag",
+   "d": "Pointer row gains {zone, owner_id}",
+   "k": "s"
+  },
+  {
+   "a": "zn_tag",
+   "b": "zn_key",
+   "l": "personal rows",
+   "d": "Personal-zone chunks routed to the owner's data key",
+   "k": "s"
+  },
+  {
+   "a": "zn_key",
+   "b": "ix_vec",
+   "l": "owner key",
+   "d": "Per-user data key for personal vector rows",
+   "k": "s"
+  },
+  {
+   "a": "zn_scope",
+   "b": "ac_filter",
+   "l": "owner term",
+   "d": "Mandatory owner_id filter for personal rows",
+   "k": "s"
+  },
+  {
+   "a": "zn_scope",
+   "b": "qr_hyd",
+   "l": "owner recheck",
+   "d": "Owner check repeated at hydrate",
+   "k": "s"
+  },
+  {
+   "a": "zn_promote",
+   "b": "zn_tag",
+   "l": "new zone",
+   "d": "Zone change {uri, from, to, by, at}",
+   "k": "s"
+  },
+  {
+   "a": "zn_promote",
+   "b": "ac_audit",
+   "l": "promotion record",
+   "d": "Who moved what out of the personal zone",
+   "k": "s"
+  },
+  {
+   "a": "zn_taint",
+   "b": "qr_cache",
+   "l": "taint label",
+   "d": "Cache entries carry the highest input zone",
+   "k": "s"
+  },
+  {
+   "a": "zn_taint",
+   "b": "ix_ent",
+   "l": "taint label",
+   "d": "Entities merge only inside one zone",
+   "k": "s"
+  },
+  {
+   "a": "zn_taint",
+   "b": "pl_mem",
+   "l": "taint label",
+   "d": "Lessons store rejects personal taint",
+   "k": "s"
+  },
+  {
+   "a": "zn_taint",
+   "b": "op_trace",
+   "l": "taint label",
+   "d": "Traces carry the zone of the answer",
+   "k": "s"
+  },
+  {
+   "a": "cr_mode",
+   "b": "so_svc",
+   "l": "company zone",
+   "d": "Company-zone sweeps use the app-only grant",
+   "k": "s"
+  },
+  {
+   "a": "cr_mode",
+   "b": "cr_link",
+   "l": "personal zone",
+   "d": "Personal-zone sources need the user's own grant",
+   "k": "s"
+  },
+  {
+   "a": "cr_link",
+   "b": "so_oauth",
+   "l": "user grant",
+   "d": "Per-user refresh token stored under the user's key {user, app}",
+   "k": "s"
+  },
+  {
+   "a": "cr_link",
+   "b": "cl_consent",
+   "l": "missing link",
+   "d": "Source with no federation falls back to the consent page",
+   "k": "s"
+  },
+  {
+   "a": "cr_union",
+   "b": "qr_rerank",
+   "l": "merged candidates",
+   "d": "Candidates from both views, deduplicated by uri",
+   "k": "e"
+  },
+  {
+   "a": "cr_gap",
+   "b": "cr_link",
+   "l": "link prompt",
+   "d": "Sources the user should link {user, app, count}",
+   "k": "n"
+  },
+  {
+   "a": "cr_gap",
+   "b": "op_cov",
+   "l": "gap count",
+   "d": "Objects the admin crawl cannot see",
+   "k": "n"
+  },
+  {
+   "a": "so_svc",
+   "b": "cr_union",
+   "l": "admin view",
+   "d": "Index built under the app-only grant",
+   "k": "e"
+  },
+  {
+   "a": "cp_hook",
+   "b": "cp_daemon",
+   "l": "new turns",
+   "d": "Transcript lines {session, offset, text}",
+   "k": "e"
+  },
+  {
+   "a": "cp_daemon",
+   "b": "cp_redact",
+   "l": "raw turns",
+   "d": "Turns before upload",
+   "k": "e"
+  },
+  {
+   "a": "cp_redact",
+   "b": "cf_norm",
+   "l": "clean turns",
+   "d": "Redacted turns over the outbound channel",
+   "k": "e"
+  },
+  {
+   "a": "cp_vault",
+   "b": "cp_daemon",
+   "l": "pause and token",
+   "d": "Pause state and keychain-held token",
+   "k": "s"
+  },
+  {
+   "a": "cp_mdm",
+   "b": "cp_daemon",
+   "l": "install and update",
+   "d": "Signed build and policy file",
+   "k": "n"
+  },
+  {
+   "a": "cf_claude",
+   "b": "cf_norm",
+   "l": "export page",
+   "d": "Compliance API page {chat, files, deleted}",
+   "k": "d"
+  },
+  {
+   "a": "cf_openai",
+   "b": "cf_norm",
+   "l": "log window",
+   "d": "Logs for a time window",
+   "k": "d"
+  },
+  {
+   "a": "cf_vault",
+   "b": "cf_norm",
+   "l": "export file",
+   "d": "Vault or Purview export records",
+   "k": "d"
+  },
+  {
+   "a": "cf_norm",
+   "b": "zn_tag",
+   "l": "personal messages",
+   "d": "Message envelope stamped zone personal",
+   "k": "s"
+  },
+  {
+   "a": "cf_norm",
+   "b": "ch_bus",
+   "l": "chat event",
+   "d": "Message event {uri, owner, tool, session, turn}",
+   "k": "d"
+  },
+  {
+   "a": "cf_del",
+   "b": "ch_tomb",
+   "l": "missing turns",
+   "d": "Turns no longer reported {uri, reason}",
+   "k": "s"
+  },
+  {
+   "a": "cf_norm",
+   "b": "cf_del",
+   "l": "reported set",
+   "d": "Set of turn uris seen in this run",
+   "k": "n"
+  },
+  {
+   "a": "cp_redact",
+   "b": "sc_scan",
+   "l": "rules",
+   "d": "Shared secret rule set",
+   "k": "n"
+  },
+  {
+   "a": "sc_runtime",
+   "b": "so_oauth",
+   "l": "decrypt",
+   "d": "Decrypt request from the connector runtime only",
+   "k": "s"
+  },
+  {
+   "a": "sc_runtime",
+   "b": "so_sdk",
+   "l": "short token",
+   "d": "Short-lived access token handed to a connector call",
+   "k": "s"
+  },
+  {
+   "a": "sc_split",
+   "b": "gv_kms",
+   "l": "two keys",
+   "d": "Separate admin and user KMS keys",
+   "k": "s"
+  },
+  {
+   "a": "sc_noconf",
+   "b": "ll_schema",
+   "l": "tool audit",
+   "d": "Build check that no credential tool exists",
+   "k": "s"
+  },
+  {
+   "a": "sc_scan",
+   "b": "ix_pii",
+   "l": "rules",
+   "d": "Secret rules used before indexing",
+   "k": "s"
+  },
+  {
+   "a": "sc_scan",
+   "b": "ll_fmt",
+   "l": "output scan",
+   "d": "Answer text scanned before it leaves",
+   "k": "s"
+  },
+  {
+   "a": "sc_scope",
+   "b": "ll_agent",
+   "l": "scope",
+   "d": "Allowed tools and zones per agent",
+   "k": "s"
+  },
+  {
+   "a": "sc_scope",
+   "b": "pl_pol",
+   "l": "rule set",
+   "d": "Trifecta rules in the policy engine",
+   "k": "s"
+  },
+  {
+   "a": "sc_egress",
+   "b": "ll_fmt",
+   "l": "strip",
+   "d": "Links and images removed from answers",
+   "k": "s"
+  },
+  {
+   "a": "sc_egress",
+   "b": "ag_write",
+   "l": "allowlist",
+   "d": "Destinations a write may call",
+   "k": "s"
+  },
+  {
+   "a": "ag_collect",
+   "b": "zn_scope",
+   "l": "owner scope",
+   "d": "Reads limited to the signed-in owner",
+   "k": "s"
+  },
+  {
+   "a": "ag_collect",
+   "b": "ag_plan",
+   "l": "activity",
+   "d": "Day window of the owner's sessions and events",
+   "k": "e"
+  },
+  {
+   "a": "ag_plan",
+   "b": "pl_gw",
+   "l": "planner call",
+   "d": "Model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "ag_plan",
+   "b": "qr_id",
+   "l": "context search",
+   "d": "Brain search with the owner's token",
+   "k": "e"
+  },
+  {
+   "a": "ag_plan",
+   "b": "ag_priv",
+   "l": "proposed items",
+   "d": "Items {tool, issue, change, evidence}",
+   "k": "e"
+  },
+  {
+   "a": "ag_priv",
+   "b": "ag_gate",
+   "l": "checked items",
+   "d": "Items with private text paraphrased or blocked",
+   "k": "e"
+  },
+  {
+   "a": "ag_gate",
+   "b": "ag_write",
+   "l": "approved items",
+   "d": "Items the owner approved",
+   "k": "e"
+  },
+  {
+   "a": "ag_gate",
+   "b": "pl_pol",
+   "l": "policy check",
+   "d": "Write intent checked against rules",
+   "k": "s"
+  },
+  {
+   "a": "ag_write",
+   "b": "so_apps",
+   "l": "write call",
+   "d": "One write with the user's own grant and an idempotency key",
+   "k": "e"
+  },
+  {
+   "a": "ag_write",
+   "b": "ac_audit",
+   "l": "write record",
+   "d": "Audit row for each write",
+   "k": "s"
+  },
+  {
+   "a": "ll_ro",
+   "b": "ag_collect",
+   "l": "read only brain",
+   "d": "The brain stays read only; this agent sits beside it",
+   "k": "s"
+  },
+  {
+   "a": "ix_ext",
+   "b": "ix_cat",
+   "l": "typed artifact",
+   "d": "Artifact type, entities and period found during extraction",
+   "k": "n"
+  },
+  {
+   "a": "ix_cat",
+   "b": "ix_ptr",
+   "l": "catalog row",
+   "d": "Catalog fields written beside the pointer row",
+   "k": "n"
+  },
+  {
+   "a": "ix_cat",
+   "b": "qr_scope",
+   "l": "candidate ids",
+   "d": "Ids whose type, entities and period match the question",
+   "k": "e"
+  },
+  {
+   "a": "ix_def",
+   "b": "qr_rw",
+   "l": "definitions",
+   "d": "Term definitions in force on the question date",
+   "k": "n"
+  },
+  {
+   "a": "ix_def",
+   "b": "qr_life",
+   "l": "term versions",
+   "d": "Definition validity windows used to label superseded answers",
+   "k": "n"
+  },
+  {
+   "a": "qr_scope",
+   "b": "qr_hyb",
+   "l": "id set",
+   "d": "Candidate id set, target under 500, passed into both searches",
+   "k": "e"
+  },
+  {
+   "a": "qr_scope",
+   "b": "ac_filter",
+   "l": "scope plus access",
+   "d": "Candidate ids joined with the permission filter",
+   "k": "s"
+  },
+  {
+   "a": "qr_rev",
+   "b": "qr_route",
+   "l": "revised plan",
+   "d": "Next step with the diagnosis and the changed source or filter",
+   "k": "d"
+  },
+  {
+   "a": "qr_rev",
+   "b": "op_trace",
+   "l": "revision record",
+   "d": "Failure name, old step, new step",
+   "k": "n"
+  },
+  {
+   "a": "qr_hyd",
+   "b": "qr_rev",
+   "l": "step result",
+   "d": "Passages and counts from the step that just ran",
+   "k": "n"
+  },
+  {
+   "a": "qr_loop",
+   "b": "qr_live",
+   "l": "raw search",
+   "d": "Grep, channel, actor and time filters sent to the live path",
+   "k": "n"
+  },
+  {
+   "a": "qr_loop",
+   "b": "pl_gw",
+   "l": "agent step",
+   "d": "One model step through the gateway with the step budget",
+   "k": "n"
+  },
+  {
+   "a": "qr_loop",
+   "b": "ac_filter",
+   "l": "same filter",
+   "d": "The user's permission filter applied on every step",
+   "k": "s"
+  },
+  {
+   "a": "qr_loop",
+   "b": "qr_pack",
+   "l": "evidence set",
+   "d": "Passages the loop kept, with the steps that found them",
+   "k": "e"
+  },
+  {
+   "a": "cf_struct",
+   "b": "qr_loop",
+   "l": "chat views",
+   "d": "Channel thread, actor timeline and artifact links the loop may open",
+   "k": "n"
+  },
+  {
+   "a": "qr_pack",
+   "b": "qr_life",
+   "l": "packed passages",
+   "d": "Passages with version, supersedes and contradicts links",
+   "k": "e"
+  },
+  {
+   "a": "qr_life",
+   "b": "ix_link",
+   "l": "link reads",
+   "d": "Supersedes and contradicts edges for the packed ids",
+   "k": "n"
+  },
+  {
+   "a": "qr_life",
+   "b": "qr_ans",
+   "l": "labelled evidence",
+   "d": "Passages tagged current, superseded or contradicted, plus a completeness flag",
+   "k": "e"
+  },
+  {
+   "a": "qr_rerank",
+   "b": "ac_gate",
+   "l": "ranked chunks",
+   "d": "Chunks with owner id and zone",
+   "k": "s"
+  },
+  {
+   "a": "ac_gate",
+   "b": "ac_live",
+   "l": "owned chunks",
+   "d": "Chunks whose owner and zone are allowed",
+   "k": "s"
+  },
+  {
+   "a": "ac_gate",
+   "b": "ac_audit",
+   "l": "drop record",
+   "d": "Count and reason of chunks dropped by the ownership gate",
+   "k": "s"
+  },
+  {
+   "a": "ll_mcp",
+   "b": "ll_browse",
+   "l": "browse call",
+   "d": "list and read calls for index.md and SKILL.md files",
+   "k": "n"
+  },
+  {
+   "a": "ll_browse",
+   "b": "ix_meta",
+   "l": "listing",
+   "d": "Per user listing built from catalog and filter attributes",
+   "k": "n"
+  },
+  {
+   "a": "ll_browse",
+   "b": "ac_filter",
+   "l": "per user tree",
+   "d": "The tree is cut to what the user may open",
+   "k": "s"
+  },
+  {
+   "a": "ll_browse",
+   "b": "ll_fmt",
+   "l": "file result",
+   "d": "File text with frontmatter and provenance",
+   "k": "e"
+  },
+  {
+   "a": "ch_bus",
+   "b": "ll_delta",
+   "l": "change events",
+   "d": "Pointer and relationship change events",
+   "k": "d"
+  },
+  {
+   "a": "ll_delta",
+   "b": "ll_score",
+   "l": "deltas",
+   "d": "Grouped changes per watched entity",
+   "k": "e"
+  },
+  {
+   "a": "ll_score",
+   "b": "ac_filter",
+   "l": "who may see",
+   "d": "Permission filter applied before a delta is scored",
+   "k": "s"
+  },
+  {
+   "a": "ll_score",
+   "b": "ll_note",
+   "l": "ranked deltas",
+   "d": "Deltas above the user's threshold",
+   "k": "e"
+  },
+  {
+   "a": "ll_note",
+   "b": "pl_gw",
+   "l": "notice call",
+   "d": "Model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "ll_note",
+   "b": "ll_sub",
+   "l": "ready notices",
+   "d": "Notices handed to the subscription push",
+   "k": "d"
+  },
+  {
+   "a": "cp_hook",
+   "b": "cp_exp",
+   "l": "finished session",
+   "d": "Redacted transcript of a finished task",
+   "k": "n"
+  },
+  {
+   "a": "cp_exp",
+   "b": "pl_gw",
+   "l": "distil call",
+   "d": "Model call through the gateway",
+   "k": "n"
+  },
+  {
+   "a": "zn_review",
+   "b": "zn_promote",
+   "l": "approved case",
+   "d": "Case text the owner approved or edited",
+   "k": "s"
+  },
+  {
+   "a": "zn_review",
+   "b": "ac_audit",
+   "l": "consent record",
+   "d": "Who approved which text and when",
+   "k": "s"
+  },
+  {
+   "a": "zn_promote",
+   "b": "cp_lib",
+   "l": "promoted case",
+   "d": "Approved case moved to the shared shelf",
+   "k": "e"
+  },
+  {
+   "a": "cp_lib",
+   "b": "ll_browse",
+   "l": "libraries as files",
+   "d": "Each shelf exposed as browsable files",
+   "k": "n"
+  },
+  {
+   "a": "cf_norm",
+   "b": "cf_struct",
+   "l": "messages",
+   "d": "Message envelopes ready to be attached to views",
+   "k": "e"
+  },
+  {
+   "a": "cf_struct",
+   "b": "ix_link",
+   "l": "view edges",
+   "d": "Channel, actor and artifact edges",
+   "k": "n"
+  },
+  {
+   "a": "op_beat",
+   "b": "op_health",
+   "l": "silent source",
+   "d": "Connector with no heartbeat or no new objects",
+   "k": "d"
+  },
+  {
+   "a": "op_beat",
+   "b": "ch_sweep",
+   "l": "force sweep",
+   "d": "Sweep request for one connector",
+   "k": "d"
+  },
+  {
+   "a": "op_beat",
+   "b": "pl_obs",
+   "l": "heartbeat",
+   "d": "Heartbeat rows per connector",
+   "k": "n"
+  },
+  {
+   "a": "op_trace",
+   "b": "op_attr",
+   "l": "failed trace",
+   "d": "Trace of an answer a user marked wrong or the verifier rejected",
+   "k": "n"
+  },
+  {
+   "a": "op_attr",
+   "b": "op_ver",
+   "l": "attributed fix",
+   "d": "Stage, cause and a proposed version change",
+   "k": "e"
+  },
+  {
+   "a": "op_attr",
+   "b": "op_eval",
+   "l": "new golden case",
+   "d": "Failed question added to the golden set",
+   "k": "n"
+  },
+  {
+   "a": "op_ver",
+   "b": "pl_gw",
+   "l": "judge call",
+   "d": "Judge model scores the candidate against the current version",
+   "k": "n"
+  },
+  {
+   "a": "op_ver",
+   "b": "op_eval",
+   "l": "candidate",
+   "d": "Candidate version under test",
+   "k": "e"
+  },
+  {
+   "a": "op_ver",
+   "b": "ix_reidx",
+   "l": "release",
+   "d": "Version id to cut over or roll back",
+   "k": "e"
+  },
+  {
+   "a": "cp_exp",
+   "b": "cp_probe",
+   "l": "case draft",
+   "d": "Six-field draft with its source pointers",
+   "k": "e"
+  },
+  {
+   "a": "cp_probe",
+   "b": "ix_fetch",
+   "l": "live read",
+   "d": "Read-only fetch of the cited source, under the contributor's token",
+   "k": "e"
+  },
+  {
+   "a": "cp_probe",
+   "b": "cp_dup",
+   "l": "probed draft",
+   "d": "Draft with each claim marked supported, narrowed or unsupported",
+   "k": "e"
+  },
+  {
+   "a": "cp_dup",
+   "b": "cp_lib",
+   "l": "nearest cards",
+   "d": "Top five cards by tag and meaning",
+   "k": "n"
+  },
+  {
+   "a": "cp_dup",
+   "b": "cp_trust",
+   "l": "checked draft",
+   "d": "Draft with a new, duplicate, clarify or conflict mark",
+   "k": "e"
+  },
+  {
+   "a": "cp_trust",
+   "b": "zn_review",
+   "l": "draft with tier",
+   "d": "Draft and its evidence tier for the owner's review",
+   "k": "e"
+  },
+  {
+   "a": "cp_exp",
+   "b": "ac_lin",
+   "l": "derived_from",
+   "d": "List of source pointers the card was drawn from",
+   "k": "s"
+  },
+  {
+   "a": "ac_lin",
+   "b": "ac_gate",
+   "l": "card visibility",
+   "d": "Intersection of the asker's rights on every source",
+   "k": "s"
+  },
+  {
+   "a": "ix_ptr",
+   "b": "ix_att",
+   "l": "locator and hash",
+   "d": "Source locator, content hash and validity window",
+   "k": "n"
+  },
+  {
+   "a": "ix_att",
+   "b": "qr_life",
+   "l": "attestations",
+   "d": "Claims with their attestations, authority and conflict edges",
+   "k": "e"
+  },
+  {
+   "a": "gv_tos",
+   "b": "gv_line",
+   "l": "vendor terms",
+   "d": "What each app lets us keep",
+   "k": "s"
+  },
+  {
+   "a": "gv_line",
+   "b": "ix_snip",
+   "l": "excerpt cap",
+   "d": "Excerpt length and class rules",
+   "k": "s"
+  },
+  {
+   "a": "gv_line",
+   "b": "cp_lib",
+   "l": "note rule",
+   "d": "Derived notes need a source list and an owner",
+   "k": "s"
+  }
+ ]
+}

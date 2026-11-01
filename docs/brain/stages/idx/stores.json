@@ -1,0 +1,954 @@
+{
+  "group": {
+    "line": "A keyword index scored by BM25, a quantised nearest-neighbour vector index, an encrypted short excerpt store, epoch-based garbage collection and blue-green re-indexing.",
+    "dumb": "These are the shelves where the derived data lives. One shelf finds pieces by exact words, one finds them by meaning, and one holds a tiny encrypted preview. A cleaner removes entries when their document is deleted, and a rebuild process can swap in a new generation of the whole index without stopping searches."
+  },
+  "comps": {
+    "ix_lex": {
+      "line": "Keyword index with BM25 scoring and block-max WAND skipping, one shard set per tenant\nk1=1.2, b=0.75; one term scores 11.47 for tf 3 in a 300-token piece",
+      "dumb": "This is the word index, like the index at the back of a book. For each word it lists the pieces that contain it and how often. A question's words are looked up and pieces are ranked by how rare the words are and how often they appear. Only word counts are kept, not word order, so the original text cannot be read back out.",
+      "inn": "Masked, context-prefixed chunk terms from ix_pii: {tenant_id, chunk_id, terms with counts, acl_ref, sensitivity, index_gen}. Search request from qr_hyb: {tenant_id, terms, filter, k}. Purge from ix_gc.",
+      "out": "Ranked hits to qr_hyb: [{chunk_id, score}] already filtered by access list. Index size and lag stats to op_cov.",
+      "store": "Inverted index per (tenant_id, index_gen): term to postings list of (chunk_id, tf) in blocks of 128 with the block maximum score; chunk table with length and acl_ref. Postings hold term frequency only, no positions and no body text.",
+      "fail": "Shard unreachable: retry once at 50 ms, then the hybrid search answers from the vector side only and flags degraded. Write fails: 3 retries over 30 seconds, then ch_dlq. Segment corruption (checksum mismatch): replace from the last good segment and replay writes since then, target under 15 minutes (design). Merge falling behind: stop accepting backfill writes until the segment count is under 50 (design).",
+      "req": "Requirement: 'Tenant isolation in the database with a CI bleed test'",
+      "hard": "Whether to build on an open search engine (r_opensearch, r_elasticsearch, r_vespa) or a library is undecided; the block-max skipping method and the parameters are not in the research index, so they are marked default and tuned.",
+      "prop": "Proposal: exact names, error codes and ticket numbers are found by words far better than by meaning, so the brain keeps a keyword index next to the vector index and fuses both. The access filter runs inside the postings walk (p_acorn shows the same idea for vectors).",
+      "deep": {
+        "purpose": "Answer 'which chunks contain these words' quickly and rank them by BM25, with each tenant's data in its own shard set and access filtering inside the search, never after it.",
+        "expected": [
+          "A query for an exact error code ranks the chunk containing it in the top 3",
+          "Chunks the asker cannot read never appear, even as a count",
+          "Deleting a chunk removes it from results as soon as its tombstone is applied"
+        ],
+        "not_expected": [
+          "It does not store text or word positions",
+          "It does not search across tenants",
+          "It does not fuse with vectors; qr_hyb does"
+        ],
+        "algorithm": {
+          "name": "BM25 over an inverted index with block-max WAND dynamic pruning",
+          "formula": "score(q,d) = sum over terms t of IDF(t) * tf*(k1+1) / (tf + k1*(1 - b + b*|d|/avgdl)); IDF(t) = ln(1 + (N - n + 0.5)/(n + 0.5))",
+          "steps": [
+            "Tokenise and normalise the query the same way as at index time",
+            "For each term open its postings list, skipping blocks whose maximum score cannot beat the current top-k threshold",
+            "Apply the access filter by checking each candidate's acl_ref against the asker's group set before scoring",
+            "Sum term scores, keep the top k in a heap, and return chunk ids with scores",
+            "Write path: add postings to a memory segment, flush at 64 MB, merge segments in the background"
+          ],
+          "params": {
+            "k1": "1.2 (default, tune on recall@20)",
+            "b": "0.75 (default, tune)",
+            "block_size": "128 postings (default)",
+            "segment_flush_mb": "64 (design)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "N: chunks in the shard",
+            "n: chunks containing the term",
+            "tf: term count in the chunk",
+            "|d|: chunk length in tokens",
+            "avgdl: mean chunk length"
+          ],
+          "formula_full": "IDF = ln(1 + (N - n + 0.5)/(n + 0.5)); tf_part = tf*(k1+1) / (tf + k1*(1 - b + b*|d|/avgdl))",
+          "derivation": "A rare term (small n) has a high IDF, so matching it counts more. The tf part rises with count but saturates, and the length term reduces the score for long chunks.",
+          "worked_example": "N = 1,000,000, n = 1,000, tf = 3, |d| = 300, avgdl = 400, k1 = 1.2, b = 0.75. IDF = ln(1 + 999,000.5/1,000.5) = ln(999.5) = 6.907 using this form. Length factor = 1 - 0.75 + 0.75 * 0.75 = 0.8125. tf_part = 3 * 2.2 / (3 + 1.2 * 0.8125) = 6.6 / 3.975 = 1.660. Score = 6.907 * 1.660 = 11.47.",
+          "complexity": "Query: roughly O(sum of postings touched), far fewer with block skipping. Index size about O(total distinct (term, chunk) pairs).",
+          "failure_modes": [
+            "Very common words give long postings: stop words are dropped at index time",
+            "Typos and word forms miss: stemming plus the vector side cover the gap",
+            "Score scales differ across shards: IDF is computed per tenant shard, and fusion uses ranks, not scores"
+          ],
+          "calibration": "Grid k1 in {0.9, 1.2, 1.6} and b in {0.5, 0.75, 0.9} on the tenant's labelled queries; keep the best recall@20."
+        },
+        "alternatives": [
+          {
+            "name": "Vector search only",
+            "why_rejected": "Misses exact identifiers; BM25 plus dense with fusion beats either alone in the contextual retrieval results (t_t26)."
+          },
+          {
+            "name": "One shared index with a tenant filter",
+            "why_rejected": "A filter bug becomes a data leak; separate shards need a bleed test only at the routing layer."
+          }
+        ],
+        "security": [
+          "Cross-tenant bleed through a shared shard: each tenant has its own shard set and every read carries tenant_id checked at the shard router, with a CI bleed test that fails the build (spec section 4)",
+          "Text reconstruction from the index: postings keep term counts only, no positions, so exact word order cannot be rebuilt; the index is still treated as sensitive and encrypted per tenant",
+          "Permission leak through result counts or highlights: the filter runs before scoring, and no totals or snippets are returned from this store"
+        ],
+        "performance": {
+          "slo": "p95 under 40 ms for a 5-term query on a 1,000,000-chunk shard (design)",
+          "complexity": "Sub-linear in postings with block-max skipping",
+          "scaling": "At 10x chunks add shards per tenant by chunk_id hash; merges run off-peak. Alternatives such as Vespa and OpenSearch already do this (r_vespa, r_opensearch)."
+        },
+        "edge_cases": [
+          "Query with only stop words: returns empty and the vector side carries the answer",
+          "Empty tenant shard: returns empty in under 5 ms",
+          "Chunk text identical in two documents: two postings entries, one per chunk_id",
+          "Very long identifier tokens: split on punctuation and also kept whole",
+          "A new app adds its own field names: they are indexed as ordinary terms and no schema change is needed"
+        ],
+        "tests": [
+          {
+            "name": "bm25 math",
+            "given": "N 1,000,000, n 1,000, tf 3, length 300, avgdl 400",
+            "expect": "score 11.47 within 0.01"
+          },
+          {
+            "name": "acl filter",
+            "given": "a chunk matching the query whose acl_ref excludes the asker",
+            "expect": "absent from results; result count unchanged for others"
+          },
+          {
+            "name": "tenant bleed",
+            "given": "identical term in tenants A and B, query as A",
+            "expect": "0 hits from B"
+          },
+          {
+            "name": "delete",
+            "given": "tombstone applied for a chunk",
+            "expect": "0 hits for its unique term within 60 seconds"
+          }
+        ],
+        "cost_levers": [
+          "Block skipping cuts postings read",
+          "Dropping stop words and positions shrinks storage",
+          "Merge only when segment count passes 50"
+        ],
+        "feedback_events": [
+          "Queries where the clicked result ranked below 10 on the keyword side feed the k1 and b tuning set"
+        ],
+        "analytics_events": [
+          {
+            "name": "lex.query",
+            "fields": [
+              "tenant_id",
+              "terms",
+              "candidates",
+              "filtered",
+              "ms"
+            ],
+            "when": "each search"
+          },
+          {
+            "name": "lex.merge",
+            "fields": [
+              "tenant_id",
+              "segments_before",
+              "segments_after",
+              "ms"
+            ],
+            "when": "each merge"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_acorn",
+            "key_idea": "Filtering inside the nearest-neighbour search keeps recall under restrictive filters.",
+            "how": "Same principle used for the postings walk: filter during, not after."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_vespa",
+            "name": "Vespa",
+            "take": "Hybrid BM25 plus vector in one engine, per-tenant partitioning."
+          },
+          {
+            "ref": "r_opensearch",
+            "name": "OpenSearch",
+            "take": "BM25 with document-level security as a reference."
+          },
+          {
+            "ref": "r_elasticsearch",
+            "name": "Elasticsearch",
+            "take": "Mature BM25, segments and merges."
+          }
+        ],
+        "industry": "Glean and Elastic combine keyword and vector retrieval with permission filters; Anthropic's contextual BM25 variant improved failures from 3.7 to 2.9 percent in the published test.",
+        "refs": [
+          "t_t26",
+          "p_acorn",
+          "r_vespa",
+          "r_opensearch",
+          "r_elasticsearch",
+          "pr_glean",
+          "pr_elastic"
+        ]
+      }
+    },
+    "ix_vec": {
+      "line": "Vector index: 1-bit codes, rescore top hits, cluster index on object storage, tenant-partitioned\nBinary cuts memory 95%, recall@10 0.84 to 0.95; oversample, then rescore",
+      "dumb": "This is the meaning index. Each piece is a point in a space where similar pieces sit close together, and a question is turned into a point and matched with the nearest ones. To fit millions of points in memory the numbers are squeezed to one byte or one bit each, and the best matches are then re-checked with the full numbers. Entries a person may not read are skipped during the search.",
+      "inn": "Vectors from ix_embed: {tenant_id, chunk_id, vec, model_id, index_gen, acl_ref, uri}. Search from qr_hyb: {tenant_id, query_vec, filter, k, index_gen}. Purge from ix_gc.",
+      "out": "Ranked hits to qr_hyb: [{chunk_id, similarity}] after the access filter. Memory and recall stats to op_cov.",
+      "store": "Per (tenant_id, index_gen): a neighbour graph over quantised vectors in memory, full-precision vectors on disk or object storage for rescoring, attribute table with acl_ref and sensitivity. Vectors are encrypted at rest with the tenant key.",
+      "fail": "Node lost: replicas serve within 5 seconds (design); a replica rebuilds from the segment log, target under 30 minutes. Search timeout at 300 ms: return the best candidates found so far and flag partial. Cold namespace: first query reads from object storage, about 874 ms at 1 million documents in the reported test, then stays warm. Write queue past 10,000 items: slow backfill, keep live writes.",
+      "req": "Requirement: 'Tenant isolation in the database with a CI bleed test'",
+      "hard": "Engine choice (turbopuffer, Qdrant, pgvector, LanceDB, Milvus) and graph versus disk-based layout are open; the cold and warm figures below are one vendor's measurement and the quantised recall range is vendor-reported. Published backing points to 1-bit codes with a full-precision rescore (c2_hf_quant: 32x smaller, 96.45 percent of quality on one model with rescore, 92.53 percent without) and a cluster index on object storage (c2_tpuf_arch, c2_tpuf_ann3). Recall on our own text and p95 at billions of vectors are untested; no vendor publishes p95.",
+      "prop": "Proposal: quantise to fit memory, then rescore the top candidates with full vectors, because a vendor reports about 95 percent memory saving with recall@10 of 0.84 to 0.95 (t_t40). Tenant-per-namespace gives cheap isolation and cheap cold storage (t_t35, t_t36).",
+      "deep": {
+        "purpose": "Find the chunks whose meaning is nearest a question, quickly, within memory limits, with access filtering inside the graph walk so a restrictive filter does not wreck recall.",
+        "expected": [
+          "Top-20 candidates after rescoring match an exact search for at least 95 percent of cases at the chosen setting",
+          "A user with access to 1 percent of a tenant still gets 20 results when 20 exist",
+          "Only vectors from the active generation are searched"
+        ],
+        "not_expected": [
+          "It does not store text",
+          "It does not mix model ids inside one generation",
+          "It does not decide ranking across keyword and meaning; qr_hyb does"
+        ],
+        "algorithm": {
+          "name": "Filter-aware approximate nearest-neighbour search over quantised vectors with oversampling and full-precision rescoring",
+          "formula": "candidates = ef_search; rescore top (oversample * k) with full vectors; memory = N * d * bytes_per_dim",
+          "steps": [
+            "Quantise stored vectors (int8, or binary for the first pass) and keep full vectors out of memory",
+            "Walk the neighbour graph from the entry point, checking the access filter at each visited node so filtered nodes are skipped but still used to route (the approach of p_acorn)",
+            "Collect ef_search candidates by quantised distance",
+            "Fetch full vectors for oversample * k candidates and recompute exact similarity",
+            "Return the top k"
+          ],
+          "params": {
+            "graph_degree_M": "16 (default, tune)",
+            "ef_construction": "200 (default, tune)",
+            "ef_search": "100 (default, tune on recall and latency)",
+            "oversample": "4 (default, tune; vendors suggest oversampling with binary)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "N: vectors",
+            "d: dimensions",
+            "k: results wanted",
+            "recall@k: share of true nearest neighbours returned"
+          ],
+          "formula_full": "memory = N * d * b; recall@k = |returned and true| / k; saving = 1 - b_q / b_full",
+          "derivation": "Memory is count times dimensions times bytes per dimension. Binary uses 1 bit (0.125 byte) versus 4 bytes, a 32 times cut, about 97 percent in raw vectors; vendors report about 95 percent in practice once the graph is counted.",
+          "worked_example": "N = 10,000,000, d = 1,024: float32 = 10,000,000 * 1,024 * 4 = 40.96 GB; int8 = 10.24 GB; binary = 10,000,000 * 1,024 / 8 = 1.28 GB. Reported cold p50 874 ms and warm p50 14 ms at 1 million documents (t_t36). Binary recall@10 0.84 to 0.95 before rescoring (t_t40, vendor).",
+          "complexity": "Search roughly O(ef_search * M * log N); build O(N * ef_construction * log N); rescoring O(oversample * k * d).",
+          "failure_modes": [
+            "Restrictive filter disconnects the graph: filter-aware traversal and a fallback to exact scan below 1,000 matching vectors",
+            "Quantisation drops recall: oversample and rescore, and a monthly recall check against exact search",
+            "Deleted vectors stay in the graph until compaction: ix_gc and a hard-delete test (t_t17)"
+          ],
+          "calibration": "On 1,000 sampled queries per tenant size, sweep ef_search and oversample; pick the smallest pair that gives recall@20 of at least 0.95 against exact search and p95 under the slo."
+        },
+        "alternatives": [
+          {
+            "name": "Exact scan of all vectors",
+            "why_rejected": "At 10 million vectors it is too slow and too costly per query."
+          },
+          {
+            "name": "Full-precision graph in memory",
+            "why_rejected": "40.96 GB for 10 million vectors at 1,024 dimensions, four times the int8 size."
+          },
+          {
+            "name": "All-RAM graph index",
+            "why_rejected": "Memory is the limit at petabyte scale. A cluster index on object storage costs 3 to 4 round trips on a cold read, about 400 ms (c2_tpuf_arch); trading cold latency for memory is our inference."
+          }
+        ],
+        "security": [
+          "Embedding inversion from a stolen vector file: vectors are encrypted per tenant, from masked text only, and treated as sensitive data (t_t15)",
+          "Cross-tenant query by a forged tenant_id: the namespace is chosen from the verified session, not from the request body, and a CI bleed test runs (spec section 4)",
+          "Soft-delete resurrection: deletes are confirmed by a delete, compact and probe test (t_t17), and ACL revoke checks use strong reads (t_t57)"
+        ],
+        "performance": {
+          "slo": "p95 under 60 ms warm and under 1.5 seconds cold at 10 million vectors (design, based on the reported 14 ms warm and 874 ms cold at 1 million)",
+          "complexity": "Sub-linear in N",
+          "scaling": "At 10x vectors move older tenants to cold storage, shard by tenant, and use disk-based layouts such as DiskANN-style indexes or SPANN-style partitions (p_spann, p_freshdiskann)."
+        },
+        "edge_cases": [
+          "Empty namespace: returns empty immediately",
+          "Filter matches fewer than 20 vectors: exact scan on those",
+          "Two model ids in one write batch: rejected",
+          "Duplicate chunk ids: later write replaces the earlier for the same index_gen",
+          "A new app needs no schema change: its objects arrive as vectors with metadata"
+        ],
+        "tests": [
+          {
+            "name": "memory math",
+            "given": "10,000,000 vectors, 1,024 dimensions",
+            "expect": "float32 40.96 GB, int8 10.24 GB, binary 1.28 GB"
+          },
+          {
+            "name": "restrictive filter",
+            "given": "asker can read 1 percent of 1,000,000 vectors",
+            "expect": "20 results returned with recall@20 at least 0.9 against exact"
+          },
+          {
+            "name": "hard delete",
+            "given": "delete 1,000 vectors, compact, query their own embeddings",
+            "expect": "0 of the 1,000 returned"
+          },
+          {
+            "name": "generation",
+            "given": "vectors of generation 3 and 4 present, query for 4",
+            "expect": "0 hits from generation 3"
+          }
+        ],
+        "cost_levers": [
+          "Quantisation with rescoring",
+          "Cold storage for idle tenants (t_t35)",
+          "Smaller dimension if the evaluation allows"
+        ],
+        "feedback_events": [
+          "Queries with the cited chunk below rank 20 add to the recall check set"
+        ],
+        "analytics_events": [
+          {
+            "name": "vec.query",
+            "fields": [
+              "tenant_id",
+              "ef_search",
+              "filtered_pct",
+              "candidates",
+              "ms",
+              "cold"
+            ],
+            "when": "each search"
+          },
+          {
+            "name": "vec.recall_probe",
+            "fields": [
+              "tenant_id",
+              "recall_at_20",
+              "sample"
+            ],
+            "when": "each monthly probe"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_acorn",
+            "key_idea": "Predicate-aware graph search keeps recall under filters.",
+            "how": "Core of the filter-aware traversal."
+          },
+          {
+            "ref": "p_freshdiskann",
+            "key_idea": "A disk-based graph index that supports updates and deletes.",
+            "how": "Reference for streaming updates at large scale."
+          },
+          {
+            "ref": "p_spann",
+            "key_idea": "Partitioned disk-based nearest-neighbour search for billion-scale data.",
+            "how": "Reference for the 10x scale step."
+          },
+          {
+            "ref": "p_filtered-stale",
+            "key_idea": "Filtered graph indexes can leave stale or unreachable entries.",
+            "how": "Reason for the exact-scan fallback and the delete probe."
+          },
+          {
+            "ref": "c2_hf_quant",
+            "key_idea": "Binary codes are 32x smaller and keep most quality when the top hits are rescored.",
+            "how": "Default storage for the large tiers."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_qdrant",
+            "name": "Qdrant",
+            "take": "Payload-filtered search and quantisation options."
+          },
+          {
+            "ref": "r_pgvector",
+            "name": "pgvector",
+            "take": "Vectors beside relational data for the T0 memory-first stage."
+          },
+          {
+            "ref": "r_lancedb",
+            "name": "LanceDB",
+            "take": "Disk-based columnar vectors."
+          },
+          {
+            "ref": "r_milvus",
+            "name": "Milvus",
+            "take": "Partitioned scale-out reference."
+          },
+          {
+            "ref": "c2_tpuf_arch",
+            "name": "turbopuffer",
+            "take": "Object-storage-first cluster index; lists 3 PB+ and 1 trillion+ documents seen (observed, not a limit)."
+          }
+        ],
+        "industry": "turbopuffer reports a namespace per tenant with object-storage cold data; vendors report binary quantisation with oversampling and rescoring.",
+        "refs": [
+          "t_t40",
+          "t_t35",
+          "t_t36",
+          "t_t57",
+          "t_t15",
+          "t_t17",
+          "p_acorn",
+          "p_freshdiskann",
+          "p_spann",
+          "p_filtered-stale",
+          "r_qdrant",
+          "r_pgvector",
+          "r_lancedb",
+          "r_milvus",
+          "c2_hf_quant",
+          "c2_tpuf_arch",
+          "c2_tpuf_ann3"
+        ]
+      }
+    },
+    "ix_snip": {
+      "line": "Excerpt capped at 300 characters, encrypted with the tenant key, expiring after a set time\n10M rows x 328 bytes = 3.28 GB; default life 7 days, 0 for Slack",
+      "dumb": "This keeps a tiny preview of each piece, at most 300 characters, so a result can show something before the full text is fetched. Each preview is locked with the customer's own key and tied to its document, so it cannot be moved to another document. It expires on its own after a few days, and for Slack it is never kept at all.",
+      "inn": "Excerpt from ix_pii: {tenant_id, chunk_id, uri, text (masked, at most 300 characters), sensitivity, ttl_days}. Read from qr_hyd: {tenant_id, chunk_id}. Purge from ix_gc. Key from gv_kms.",
+      "out": "Decrypted excerpt to qr_hyd: {chunk_id, excerpt} only if the asker passed the access recheck there. Counts to op_cov.",
+      "store": "Table per tenant: (chunk_id, nonce 12 B, ciphertext at most 300 B, tag 16 B, expires_at, key_version). Encrypted with AES-GCM using a per-tenant data key from gv_kms; additional authenticated data is (tenant_id, uri, chunk_id). No Slack rows exist until legal signs off (gv_tos).",
+      "fail": "Key service unavailable: reads return no excerpt (the result shows the title only) and writes queue up to 10 minutes then go to ch_dlq. Decryption tag mismatch: treat as corrupt, drop the row, raise an alert. Expiry job lag past 1 hour: alert; reads still check expires_at themselves. Tenant key revoked: all its excerpts become unreadable at once.",
+      "req": "Requirement: 'Privacy requests complete without engineering work'",
+      "hard": "Default life of 7 days is a design choice that legal and the owner have to confirm per app; the exact vendor terms for each app are open (gv_tos), and Slack rows stay disabled until they are.",
+      "prop": "Proposal: keep only a short encrypted preview so results are readable before the live fetch, with a short life and a tenant key that can be destroyed to wipe everything (crypto-shredding, t_t17). Slack is excluded because its terms bar persistent copies (t_t07, t_t13).",
+      "deep": {
+        "purpose": "Hold a tiny, short-lived, encrypted preview of each chunk so search results can show context without a live fetch, while keeping stored content as small as possible and erasable by key destruction.",
+        "expected": [
+          "No row holds more than 300 characters",
+          "A row cannot be decrypted with a different uri or tenant",
+          "Expired rows are not returned even if the cleanup job is late"
+        ],
+        "not_expected": [
+          "It does not store Slack or other live-only sources",
+          "It does not store unmasked text",
+          "It does not decide who may see an excerpt; the recheck at qr_hyd does"
+        ],
+        "algorithm": {
+          "name": "Authenticated encryption of a capped excerpt, bound to its document, with a time to live",
+          "formula": "ct, tag = AES-GCM(K_tenant, nonce, excerpt[:300], AAD = tenant_id || uri || chunk_id); row_size = 12 + 300 + 16",
+          "steps": [
+            "Reject live-only apps and restricted chunks before any write",
+            "Cut the masked text to 300 characters at a word boundary",
+            "Encrypt with the tenant data key and a fresh 12-byte random nonce, binding tenant, uri and chunk id as associated data",
+            "Write with expires_at = now + ttl (default 7 days)",
+            "On read, check expires_at, decrypt with the same associated data, and return only after the caller's recheck"
+          ],
+          "params": {
+            "max_chars": "300 (spec of this card)",
+            "ttl_days": "7 (design, per-app override)",
+            "nonce_bytes": "12 (standard for AES-GCM)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "R: rows",
+            "nonce 12 B, tag 16 B: encryption overhead",
+            "S: bytes per row"
+          ],
+          "formula_full": "S = 12 + 300 + 16 = 328 B; storage = R * S",
+          "derivation": "Each row holds at most 300 bytes of ciphertext plus a 12-byte nonce and a 16-byte tag, so total storage is rows times 328 bytes. Rows older than the life are removed, so steady-state rows equal write rate times life.",
+          "worked_example": "R = 10,000,000: 10,000,000 * 328 B = 3.28 GB. If 1,000,000 chunks change per day and life is 7 days, steady state is about 7,000,000 new-excerpt rows plus rows for unchanged chunks that are refreshed on re-derive (design estimate).",
+          "complexity": "O(1) per read and write; the expiry sweep is O(expired rows).",
+          "failure_modes": [
+            "Nonce reuse breaks AES-GCM: nonces are random 96-bit with a per-key write cap of 2^32 rows, then the data key rotates",
+            "Characters are bytes in some encodings: the cap is 300 characters and 1,200 bytes maximum (design) to cover multi-byte text",
+            "Key rotation leaves old rows: key_version is stored and a background job re-encrypts"
+          ],
+          "calibration": "Ask search users which results needed the preview; if under 20 percent do, shorten the life to 3 days (design target)."
+        },
+        "alternatives": [
+          {
+            "name": "Store no preview at all",
+            "why_rejected": "Every result needs a live fetch to show a line, so latency and rate limits grow."
+          },
+          {
+            "name": "Store full chunk text",
+            "why_rejected": "Becomes a content copy, which the pointer-only design and several vendor terms rule out."
+          }
+        ],
+        "security": [
+          "Stolen database dump: every row is encrypted with a tenant key held in the key service, so the dump alone gives no text",
+          "Row swapping (move a ciphertext to another document or tenant): the associated data binds tenant, uri and chunk id, so decryption fails",
+          "Excerpt shown to an unauthorised asker: this store never decides access; qr_hyd rechecks with the asker's token before asking for the excerpt"
+        ],
+        "performance": {
+          "slo": "p95 under 10 ms to read and decrypt 20 excerpts (design)",
+          "complexity": "O(1) per row",
+          "scaling": "At 10x rows storage is 32.8 GB for 100 million rows; partition by tenant and drop expired partitions."
+        },
+        "edge_cases": [
+          "Empty masked text: no row written",
+          "Excerpt equals the whole chunk when under 300 characters: allowed",
+          "Tenant key destroyed (erasure order): all rows unreadable instantly, then deleted by ix_gc",
+          "Slack chunk arrives by mistake: refused and an alert raised",
+          "Same chunk re-derived: row replaced with a new nonce and fresh expiry"
+        ],
+        "tests": [
+          {
+            "name": "size cap",
+            "given": "a 5,000-character chunk",
+            "expect": "row excerpt at most 300 characters"
+          },
+          {
+            "name": "aad binding",
+            "given": "ciphertext copied to a row with a different uri",
+            "expect": "decryption fails"
+          },
+          {
+            "name": "expiry",
+            "given": "row with expires_at one second ago and a late cleanup job",
+            "expect": "read returns nothing"
+          },
+          {
+            "name": "live-only",
+            "given": "chunk from a live-only app",
+            "expect": "0 rows written"
+          }
+        ],
+        "cost_levers": [
+          "300-character cap",
+          "Short life by default",
+          "Skip the excerpt when the live fetch is cheap for that app"
+        ],
+        "feedback_events": [
+          "Results where the user opened the source without reading the excerpt mark it as low value for that app"
+        ],
+        "analytics_events": [
+          {
+            "name": "snip.write",
+            "fields": [
+              "tenant_id",
+              "app",
+              "bytes",
+              "ttl_days"
+            ],
+            "when": "each write"
+          },
+          {
+            "name": "snip.refused",
+            "fields": [
+              "tenant_id",
+              "app",
+              "reason"
+            ],
+            "when": "live-only or restricted refusal"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_rag-privacy",
+            "key_idea": "Stored retrieval data can leak private content.",
+            "how": "Minimise what is stored and encrypt it per tenant."
+          }
+        ],
+        "repos": [],
+        "industry": "Slack's terms bar persistent copies of its search data (t_t07, t_t13), so such sources return live-only results with no stored excerpt.",
+        "refs": [
+          "t_t07",
+          "t_t13",
+          "t_t17",
+          "p_rag-privacy",
+          "t_t15"
+        ]
+      }
+    },
+    "ix_gc": {
+      "line": "Epoch-based collection of vectors, postings and excerpts whose pointer is tombstoned\nReclaim if tombstone epoch < oldest active reader epoch; compact at 20% dead",
+      "dumb": "When a document is deleted the brain marks it dead right away, so it stops showing up. This cleaner then removes its leftovers from the keyword index, the meaning index and the preview store. It waits until no running search could still be looking at the old data, then physically deletes it. Then it tests that the data is really gone.",
+      "inn": "Tombstones from ch_tomb through ix_ptr: {tenant_id, uri, tombstone_epoch, reason: delete|acl_loss|restricted|erasure}. Reader epochs from ix_lex and ix_vec. Erasure orders from gv_erase.",
+      "out": "Delete commands to ix_vec, ix_lex and ix_snip: {tenant_id, chunk_ids[], epoch}. Purge receipt to ix_ptr and gv_erase: {tenant_id, uri, purged_at, verified: bool}. Link cleanup to ix_link.",
+      "store": "Reads the tombstone log and the reader-epoch table. Writes a purge ledger {tenant_id, uri, chunk_count, tombstone_epoch, purged_at, probe_result}. Holds no content.",
+      "fail": "Reader never finishes (stuck query): cap reader lifetime at 60 seconds, then advance the epoch and cancel it (design). Delete command fails: 5 retries over 10 minutes, then ch_dlq and an alert. Probe still finds a deleted vector: the purge is reopened, forced compaction runs, and a page goes to on-call. Compaction stalls past 6 hours: alert.",
+      "req": "Requirement: 'Privacy requests complete without engineering work'",
+      "hard": "The 1-hour erasure and 24-hour ordinary delete targets are design values that the owner and legal must confirm; how soft-deleted vectors behave differs by engine and must be tested for the chosen one (t_t17).",
+      "prop": "Proposal: delete in two steps, stop serving at once with a tombstone, reclaim storage when no reader can see it, then prove it by test, because some vector stores keep soft-deleted vectors in files until compaction (t_t17).",
+      "deep": {
+        "purpose": "Remove derived data for dead pointers safely, without breaking searches in flight, and verify the removal, so deletes and erasure requests are real and provable.",
+        "expected": [
+          "A tombstoned chunk is never returned after the tombstone is applied",
+          "Physical removal completes within the target window",
+          "Every purge ends with a probe that confirms the chunk's vector and terms are gone"
+        ],
+        "not_expected": [
+          "It does not decide what to delete; tombstones decide",
+          "It does not delete the source document in the app",
+          "It does not touch other tenants' data"
+        ],
+        "algorithm": {
+          "name": "Epoch-based reclamation with threshold compaction and delete-compact-probe verification",
+          "formula": "reclaim(x) iff tombstone_epoch(x) < min(active_reader_epoch); compact when dead_fraction > 0.20",
+          "steps": [
+            "Read new tombstones and mark their chunks dead in ix_vec, ix_lex and ix_snip so reads skip them at once",
+            "Each search registers the epoch it started in; the cleaner computes the minimum active epoch",
+            "Reclaim every dead item whose tombstone epoch is below that minimum",
+            "Compact a segment when more than 20 percent of it is dead, rewriting only live entries",
+            "Probe: query by the deleted chunk's own vector and unique terms, and write the result to the ledger"
+          ],
+          "params": {
+            "compaction_threshold": "20 percent dead (design, tune on disk cost versus query cost)",
+            "erasure_deadline": "1 hour (design)",
+            "ordinary_deadline": "24 hours (design)",
+            "max_reader_age_s": "60 (design)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "e_t: tombstone epoch",
+            "e_r: epoch of each running reader",
+            "dead_fraction: dead entries over total entries in a segment"
+          ],
+          "formula_full": "safe iff e_t < min_r(e_r); write_amplification of compaction ~ 1 / (1 - dead_fraction)",
+          "derivation": "A reader that began before the tombstone may still hold the old item, so the item is safe to free only after every such reader finished. Compacting at fraction f rewrites the live share, so each live entry is rewritten about 1/(1-f) times over its life.",
+          "worked_example": "Active readers have epochs {41, 43, 44}; a tombstone is at epoch 42. min = 41, and 42 is not below 41, so wait. When the reader at 41 finishes, min = 43 and 42 < 43, so reclaim. Compaction: a segment of 1,000,000 entries with 250,000 dead is 25 percent dead, above 20, so compact; the rewrite touches 750,000 live entries.",
+          "complexity": "Marking O(1) per chunk; compaction O(live entries in segment); probe O(log N) per chunk.",
+          "failure_modes": [
+            "A stuck reader blocks reclamation: reader age cap of 60 seconds",
+            "Compaction storms: limit to 1 segment per shard at a time",
+            "Tombstone arrives before the derive job: ix_ptr compare-and-set drops the derive result"
+          ],
+          "calibration": "Track median dead_fraction at compaction and p95 purge time; lower the threshold if purge deadlines slip, raise it if disk write cost dominates."
+        },
+        "alternatives": [
+          {
+            "name": "Delete immediately in place",
+            "why_rejected": "Breaks searches in flight and, in many stores, only soft-deletes anyway."
+          },
+          {
+            "name": "Rebuild the whole index nightly",
+            "why_rejected": "Costs a full pass and leaves a day-long window for deleted data."
+          }
+        ],
+        "security": [
+          "Deleted data survives in index files after a privacy request: delete, compact and probe test per request, and a destroyable per-tenant key as the backstop (t_t17)",
+          "Revoked access lingers: acl_loss tombstones hide chunks at once and ACL checks use strong reads (t_t57)",
+          "Cleaner given a forged tombstone to wipe another tenant: tombstones carry tenant_id and are accepted only from ix_ptr's signed log"
+        ],
+        "performance": {
+          "slo": "p95 purge under 1 hour for erasure and 24 hours for ordinary deletes (design); hiding from search under 5 seconds",
+          "complexity": "Linear in dead entries",
+          "scaling": "At 10x data run one cleaner per shard and keep compaction off-peak."
+        },
+        "edge_cases": [
+          "Tombstone for an unknown chunk: no-op recorded in the ledger",
+          "Same chunk tombstoned twice: idempotent",
+          "Tombstone then resurrection (object restored): new version gets new chunk ids, old ones still purge",
+          "Tenant offboarded: drop the whole namespace and destroy the tenant key",
+          "Erasure order covers Slack-derived rows: none exist, ledger records zero"
+        ],
+        "tests": [
+          {
+            "name": "epoch rule",
+            "given": "readers {41,43,44}, tombstone 42",
+            "expect": "not reclaimed until reader 41 ends, then reclaimed"
+          },
+          {
+            "name": "probe",
+            "given": "1,000 chunks purged and compacted",
+            "expect": "0 found by vector or by unique term"
+          },
+          {
+            "name": "compaction trigger",
+            "given": "segment 25 percent dead",
+            "expect": "compacted; 19 percent dead is not"
+          },
+          {
+            "name": "erasure deadline",
+            "given": "erasure order at time T",
+            "expect": "purge ledger verified=true before T + 1 hour"
+          }
+        ],
+        "cost_levers": [
+          "Compact only above 20 percent dead",
+          "Batch tombstones per segment",
+          "Run compaction off-peak"
+        ],
+        "feedback_events": [
+          "Any probe that finds data triggers a regression case for the engine's delete path"
+        ],
+        "analytics_events": [
+          {
+            "name": "gc.purged",
+            "fields": [
+              "tenant_id",
+              "reason",
+              "chunks",
+              "ms_from_tombstone",
+              "verified"
+            ],
+            "when": "each purge"
+          },
+          {
+            "name": "gc.compacted",
+            "fields": [
+              "tenant_id",
+              "store",
+              "dead_fraction",
+              "ms"
+            ],
+            "when": "each compaction"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_filtered-stale",
+            "key_idea": "Deleted or filtered entries can stay reachable in graph indexes.",
+            "how": "Reason for the explicit probe after compaction."
+          },
+          {
+            "ref": "p_freshdiskann",
+            "key_idea": "Streaming deletes with background consolidation.",
+            "how": "Pattern for tombstone then consolidate."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_qdrant",
+            "name": "Qdrant",
+            "take": "Segment optimisers that rewrite segments with many deletes."
+          },
+          {
+            "ref": "r_lancedb",
+            "name": "LanceDB",
+            "take": "Compaction and cleanup of old versions."
+          }
+        ],
+        "industry": "A turbopuffer-style strong read mode lets revocation be checked against the latest state (t_t57).",
+        "refs": [
+          "t_t17",
+          "t_t57",
+          "p_filtered-stale",
+          "p_freshdiskann",
+          "r_qdrant",
+          "r_lancedb"
+        ]
+      }
+    },
+    "ix_reidx": {
+      "line": "Blue-green index versions: build beside the old, dual-write, cut over per tenant, retire\n10M chunks at 2,000/s = 83 min; storage 2x during dual-write; gate recall@20",
+      "dumb": "Sometimes the whole index must be rebuilt, for example when a better meaning model arrives. Instead of stopping search, this step builds a complete second copy beside the live one, keeps both up to date, checks that the new one is at least as good, and then flips each customer over in one instant. The old copy stays for a week in case we need to flip back.",
+      "inn": "Rebuild plan from op_eval: {target_gen, target_model_id, tenants[], gate}. New writes from ix_embed and ix_pii for both generations during dual-write.",
+      "out": "Refetch orders to ix_fetch: {tenant_id, uris[], lane: backfill, target_gen}. Re-embed jobs to ix_embed. New vector ids and active_gen flips to ix_ptr. Retire orders for the old generation to ix_gc.",
+      "store": "Reads and writes the generation table {tenant_id, active_gen, building_gen, status, gate_result, cutover_at}. Keeps both generations of ix_vec and ix_lex until retired. No content is stored here.",
+      "fail": "Gate fails (new recall@20 lower than old minus 0.5 points, or a tenant drops over 2 points): do not cut over, keep the old, report. Build job fails: resume from the last committed batch, 3 retries, then ch_dlq. Dual-write error on the new side: pause the build, never fail the live write. Cutover flip fails: stays on the old generation. Source rate limit: the backfill lane slows through so_rate.",
+      "req": "Requirement: 'Ingest documents and messages; answer with citations; respect source permissions'",
+      "hard": "The spec has no stated recall gate; the 0.5 and 2 point thresholds and the 7-day rollback window are design values. Because bodies are not stored, a rebuild must refetch every document from the apps, so its time and rate-limit cost depend on each app and are unmeasured.",
+      "prop": "Proposal: change the index by building a new generation beside the old and flipping per tenant, so a model upgrade is not an outage (t_t43, t_t58). Notion describes running the old and new setup together and switching.",
+      "deep": {
+        "purpose": "Move a tenant's index to a new embedding model or layout without downtime or quality loss, with a measurable gate before the flip and a fast way back.",
+        "expected": [
+          "Search keeps working at normal latency during the whole rebuild",
+          "The flip is atomic per tenant: a query sees either the old or the new generation, never a mix",
+          "The old generation can serve again within 5 minutes of a rollback"
+        ],
+        "not_expected": [
+          "It does not edit vectors in place",
+          "It does not copy content; it refetches through ix_fetch like any derive",
+          "It does not flip a tenant that fails the gate"
+        ],
+        "algorithm": {
+          "name": "Blue-green index versioning with dual-write, quality gate and atomic per-tenant cutover",
+          "formula": "build_time = N_chunks / throughput; storage_peak = storage_old + storage_new; cutover iff recall_new >= recall_old - 0.5 pt and no tenant worse by more than 2 pt",
+          "steps": [
+            "Create generation g+1 next to g and start dual-write: every live change writes both",
+            "Backfill g+1 by sending refetch orders for all pointers through the backfill lane, then chunk, derive and embed with the new model",
+            "Run the gate on labelled queries per tenant: recall@20, latency and result overlap",
+            "Flip active_gen for each passing tenant in one atomic update in ix_ptr",
+            "Keep g for 7 days, then retire it through ix_gc"
+          ],
+          "params": {
+            "backfill_throughput": "2,000 chunks per second (design, bounded by source rate limits)",
+            "gate_recall_drop": "0.5 point overall, 2 points per tenant (design)",
+            "rollback_window": "7 days (design)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "N: chunks",
+            "T: throughput in chunks per second",
+            "S: storage per generation"
+          ],
+          "formula_full": "build_time = N / T; storage_peak = 2 * S during dual-write; cutover safe iff recall_new - recall_old >= -0.5 pt",
+          "derivation": "Time is volume divided by rate. During dual-write both generations are fully stored, so storage is double. The gate allows a tiny recall loss only so a cheaper model can be adopted.",
+          "worked_example": "N = 10,000,000, T = 2,000 per second: 5,000 s, about 83 minutes. Vector storage at int8 is 10.24 GB per generation, so the peak is 20.48 GB. A tenant moving from recall@20 of 0.91 to 0.905 passes (drop 0.5); 0.88 fails (drop 3 points).",
+          "complexity": "O(N) refetch and embed; query-time cost unchanged.",
+          "failure_modes": [
+            "Refetch hits source rate limits and takes days: the backfill lane is throttled per app, and tenants cut over as each finishes",
+            "Dual-write doubles live write cost: only during the build window",
+            "Gate set too lax passes a worse model: labelled sets are refreshed each quarter"
+          ],
+          "calibration": "Use the production query log with clicked-result labels; require at least 500 labelled queries per tenant, or fall back to the pooled gate."
+        },
+        "alternatives": [
+          {
+            "name": "Re-embed in place",
+            "why_rejected": "A half-migrated index mixes incompatible vectors and cannot roll back."
+          },
+          {
+            "name": "Downtime window",
+            "why_rejected": "Hours of no search for a 10 million chunk tenant."
+          }
+        ],
+        "security": [
+          "Old generation keeps data past a deletion: dual-write also applies tombstones to both generations and ix_gc purges both",
+          "Cutover flip forged to point a tenant at another tenant's generation: the flip is a signed, audited update keyed by tenant_id in ix_ptr",
+          "Refetch with a stronger credential than normal derive: refetch orders go through ix_fetch with the same app-only credential and policy checks"
+        ],
+        "performance": {
+          "slo": "Zero downtime; flip under 1 second per tenant (design); rollback under 5 minutes (design)",
+          "complexity": "O(N) for the build",
+          "scaling": "At 10x chunks the refetch rate limit dominates; tenants cut over one by one as they finish, and large tenants build in the background for days (Notion separates backfill from live, t_t45)."
+        },
+        "edge_cases": [
+          "A tenant with 0 chunks: flips immediately",
+          "A document edited during the build: dual-write carries it to both",
+          "Two rebuilds requested at once: the second waits; one building_gen per tenant",
+          "A new app added mid-build: its pointers are included in the next rebuild and dual-written now",
+          "Source app has no delta API (Notion, Jira, GitHub, HubSpot, Linear, Figma): the full refetch is the same as the sweep, with new derivation"
+        ],
+        "tests": [
+          {
+            "name": "no downtime",
+            "given": "search load of 50 queries per second during a rebuild",
+            "expect": "error rate 0 percent and p95 within 20 percent of baseline"
+          },
+          {
+            "name": "gate",
+            "given": "new recall 0.88 versus old 0.91",
+            "expect": "no cutover, old stays active, report written"
+          },
+          {
+            "name": "atomic flip",
+            "given": "1,000 queries during the flip",
+            "expect": "each query served wholly by one generation"
+          },
+          {
+            "name": "rollback",
+            "given": "flip back within 7 days",
+            "expect": "old generation active in under 5 minutes"
+          }
+        ],
+        "cost_levers": [
+          "Cut over tenants as they finish",
+          "Skip tenants with no change in model",
+          "Embedding cache reuse when only the layout changes"
+        ],
+        "feedback_events": [
+          "Gate failures list the queries that regressed for the evaluation set"
+        ],
+        "analytics_events": [
+          {
+            "name": "reidx.progress",
+            "fields": [
+              "tenant_id",
+              "target_gen",
+              "done",
+              "total",
+              "eta_s"
+            ],
+            "when": "each 1,000 chunks"
+          },
+          {
+            "name": "reidx.cutover",
+            "fields": [
+              "tenant_id",
+              "target_gen",
+              "recall_old",
+              "recall_new",
+              "result"
+            ],
+            "when": "each cutover decision"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_freshdiskann",
+            "key_idea": "An index that takes streaming updates alongside serving.",
+            "how": "Dual-write keeps the new generation fresh while it builds."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_cocoindex",
+            "name": "CocoIndex",
+            "take": "Incremental re-processing when the pipeline definition changes."
+          },
+          {
+            "ref": "r_vespa",
+            "name": "Vespa",
+            "take": "Online schema and model changes with parallel versions."
+          }
+        ],
+        "industry": "Notion reports separating backfill from live indexing and using generation ids for model migration.",
+        "refs": [
+          "t_t43",
+          "t_t58",
+          "t_t45",
+          "t_t44",
+          "p_freshdiskann",
+          "r_cocoindex",
+          "r_vespa"
+        ]
+      }
+    }
+  },
+  "edges": [
+    {
+      "a": "ix_lex",
+      "b": "qr_hyb",
+      "l": "keyword hits",
+      "k": "n",
+      "d": "[{chunk_id, score}] after the access filter"
+    },
+    {
+      "a": "ix_vec",
+      "b": "qr_hyb",
+      "l": "meaning hits",
+      "k": "n",
+      "d": "[{chunk_id, similarity}] after the access filter"
+    },
+    {
+      "a": "ix_snip",
+      "b": "qr_hyd",
+      "l": "excerpt",
+      "k": "n",
+      "d": "{chunk_id, excerpt up to 300 characters}"
+    },
+    {
+      "a": "ix_gc",
+      "b": "ix_link",
+      "l": "edge cleanup",
+      "k": "n",
+      "d": "{tenant_id, uri} edges to remove"
+    },
+    {
+      "a": "ix_gc",
+      "b": "ix_ptr",
+      "l": "purge receipt",
+      "k": "n",
+      "d": "{tenant_id, uri, purged_at, verified}"
+    },
+    {
+      "a": "ix_gc",
+      "b": "gv_erase",
+      "l": "purge proof",
+      "k": "n",
+      "d": "{tenant_id, uri, purged_at, probe_result}"
+    },
+    {
+      "a": "ix_reidx",
+      "b": "ix_ptr",
+      "l": "generation flip",
+      "k": "s",
+      "d": "{tenant_id, active_gen, vector_ids swap}",
+      "x": 1
+    },
+    {
+      "a": "ix_reidx",
+      "b": "ix_fetch",
+      "l": "refetch order",
+      "k": "n",
+      "d": "{tenant_id, uris[], lane: backfill, target_gen}"
+    },
+    {
+      "a": "ix_reidx",
+      "b": "ix_gc",
+      "l": "retire old generation",
+      "k": "n",
+      "d": "{tenant_id, old_gen, retire_after}"
+    }
+  ]
+}

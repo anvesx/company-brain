@@ -1,0 +1,483 @@
+{
+ "qr_hyb": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_lex",
+   "ix_vec"
+  ],
+  "stack": [
+   {
+    "part": "lexical index",
+    "pick": "Postgres full text (tsvector, ts_rank_cd) at M0; OpenSearch when scale needs it",
+    "why": "research/repos.md: start on Postgres so pointers, ACL rows and vectors join in one query. Plain ts_rank is not true BM25, so say so in the eval notes."
+   },
+   {
+    "part": "vector index",
+    "pick": "pgvector (HNSW index, cosine)",
+    "why": "Same database as the ACL rows, so the pre-filter runs inside the kNN query. Do NOT pick a separate vector store that can only post-filter."
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3 with asyncio",
+    "why": "Two searches run in parallel on two pooled connections. Check current docs for pool settings."
+   },
+   {
+    "part": "embedding call",
+    "pick": "LLM gateway such as LiteLLM",
+    "why": "One place to swap embedding models. Do not call a provider SDK from this card."
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary,pool]' pgvector",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "psql postgres://postgres:dev@localhost -c 'CREATE EXTENSION IF NOT EXISTS vector'"
+  ],
+  "layout": [
+   "brain/query/hybrid.py : rrf() and search()",
+   "brain/query/filters.py : turns {principals, acl_version} into SQL",
+   "tests/test_hybrid.py : fusion and fail-closed tests",
+   "tests/golden/queries.jsonl : labelled queries for later tuning"
+  ],
+  "schema": "{\n \"$id\": \"HybridRequest\",\n \"type\": \"object\",\n \"required\": [\"tenant_id\", \"query\", \"principals\", \"acl_version\"],\n \"properties\": {\n  \"tenant_id\": {\"type\": \"string\"},\n  \"query\": {\"type\": \"string\", \"minLength\": 1},\n  \"principals\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}, \"minItems\": 1},\n  \"acl_version\": {\"type\": \"integer\"},\n  \"limit\": {\"type\": \"integer\", \"default\": 100, \"maximum\": 100}\n }\n}",
+  "interface": "async def hybrid_search(req: HybridRequest) -> list[Candidate]  # Candidate = {chunk_id, uri, fused_score, rank_bm25, rank_dense}; raises NoPrefilter if principals is empty",
+  "code": "K = 60\n\ndef rrf(lists, k=K, top=100):\n    \"\"\"lists: {name: [chunk_id, ...]} best first.\"\"\"\n    score, best = {}, {}\n    for name, ids in lists.items():\n        for rank, cid in enumerate(ids, start=1):\n            score[cid] = score.get(cid, 0.0) + 1.0 / (k + rank)\n            best[cid] = min(best.get(cid, rank), rank)\n    # tricky part: deterministic ties, best single rank then id\n    order = sorted(score, key=lambda c: (-score[c], best[c], c))\n    return order[:top], score\n\nasync def hybrid_search(req):\n    if not req.principals:\n        raise NoPrefilter()  # fail closed: never search without a filter\n    vec = await embed(req.query)\n    async def bm25():\n        return await q_lex(req.tenant_id, req.query, req.principals, 100)\n    async def dense():\n        return await q_vec(req.tenant_id, vec, req.principals, 100)\n    res = await asyncio.gather(\n        asyncio.wait_for(bm25(), 0.4), asyncio.wait_for(dense(), 0.4),\n        return_exceptions=True)\n    lists = {n: r for n, r in zip(('bm25', 'dense'), res)\n             if not isinstance(r, BaseException)}\n    if not lists:\n        return []\n    ids, score = rrf(lists, top=req.limit)\n    return [cand(c, score[c], lists) for c in ids]",
+  "steps": [
+   {
+    "do": "Create chunk table columns the searches need (tsv, embedding, acl_principals text[]) and GIN and HNSW indexes",
+    "done_when": "\\d chunk shows both indexes"
+   },
+   {
+    "do": "Write q_lex and q_vec with the ACL filter as a WHERE clause using acl_principals && %s",
+    "done_when": "a test user outside the ACL gets 0 rows from both queries"
+   },
+   {
+    "do": "Implement rrf() as a pure function",
+    "done_when": "pytest -k rrf passes, including a chunk in both lists outranking a rank-1 chunk in one list"
+   },
+   {
+    "do": "Wire hybrid_search with 400 ms per-source timeouts and fail-closed check",
+    "done_when": "test with a sleeping source returns results from the other source and sets degraded"
+   },
+   {
+    "do": "Add a trace row of ids and ranks, no text",
+    "done_when": "select count(*) from query_trace shows one row per call and no text column"
+   },
+   {
+    "do": "Run 20 golden queries",
+    "done_when": "report prints recall@100 for bm25, dense and fused, fused is highest or equal"
+   }
+  ],
+  "config": {
+   "RRF_K": "60 // common default; tune only after 500 labelled queries",
+   "PER_LIST_CUTOFF": "100 // matches the output size",
+   "SOURCE_TIMEOUT_MS": "400 // design budget, drop the slow source",
+   "RETRY_DELAY_MS": "200 // one retry when both sources fail"
+  },
+  "verify": [
+   "pytest tests/test_hybrid.py -q  # all pass, includes test_no_prefilter_raises",
+   "python -m brain.query.eval tests/golden/queries.jsonl  # fused recall@100 >= max(bm25, dense)",
+   "psql -c \"select count(*) from chunk where acl_principals = '{}'\"  # 0, empty ACL rows are a bug"
+  ],
+  "pitfalls": [
+   "Filtering after the kNN step starves recall and leaks scored ids: put the ACL clause inside both queries",
+   "Fusing raw scores instead of ranks lets one scale dominate: fuse ranks only",
+   "Unstable tie order makes evals flaky: sort by score, best rank, then id",
+   "HNSW with a selective filter can return fewer than 100 rows: check current pgvector docs for iterative scan settings"
+  ]
+ },
+ "qr_graph": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_link",
+   "qr_hyb",
+   "ac_filter"
+  ],
+  "stack": [
+   {
+    "part": "graph store",
+    "pick": "Postgres edge table (ix_link), recursive CTE for the 2-hop read",
+    "why": "research/techniques.md decision 10: relationship bundles in the same index, not a graph database. Do NOT add Neo4j for a 2-hop read."
+   },
+   {
+    "part": "numerics",
+    "pick": "scipy.sparse and numpy",
+    "why": "Power iteration on at most 5,000 nodes is a few sparse multiplies. networkx is fine for tests but slow in the request path."
+   },
+   {
+    "part": "access filter",
+    "pick": "same ACL filter as qr_hyb",
+    "why": "A linked document must pass the same principal check as a search hit."
+   }
+  ],
+  "install": [
+   "pip install numpy scipy 'psycopg[binary,pool]'",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/query/graph.py : subgraph load and ppr()",
+   "brain/query/sql/two_hop.sql : the bounded neighbour query",
+   "tests/test_ppr.py : convergence and ACL tests"
+  ],
+  "schema": "CREATE TABLE link (\n  tenant_id text NOT NULL,\n  src_entity text NOT NULL,\n  dst_entity text NOT NULL,\n  kind text NOT NULL,\n  weight real NOT NULL DEFAULT 1.0,\n  PRIMARY KEY (tenant_id, src_entity, dst_entity, kind)\n);\nCREATE INDEX link_dst ON link (tenant_id, dst_entity);",
+  "interface": "def expand(seeds: dict[str, float], principals: list[str], acl_version: int, limit: int = 50) -> list[GraphHit]  # GraphHit = {uri, chunk_id, ppr_score, path}",
+  "code": "import numpy as np\nfrom scipy.sparse import csr_matrix\n\ndef ppr(edges, seeds, alpha=0.15, rounds=30, tol=1e-4):\n    \"\"\"edges: [(src, dst, w)] on a bounded subgraph. seeds: {node: weight}.\"\"\"\n    nodes = sorted({n for e in edges for n in e[:2]} | set(seeds))\n    ix = {n: i for i, n in enumerate(nodes)}\n    n = len(nodes)\n    rows = [ix[d] for s, d, w in edges]\n    cols = [ix[s] for s, d, w in edges]\n    M = csr_matrix(([w for s, d, w in edges], (rows, cols)), shape=(n, n))\n    out = np.asarray(M.sum(axis=0)).ravel()\n    out[out == 0] = 1.0  # tricky part: dangling nodes must not divide by zero\n    M = M @ csr_matrix((1.0 / out, (range(n), range(n))), shape=(n, n))\n    s = np.zeros(n)\n    for k, v in seeds.items():\n        s[ix[k]] = v\n    s /= s.sum()\n    r = s.copy()\n    for _ in range(rounds):\n        nxt = alpha * s + (1 - alpha) * (M @ r)\n        if np.abs(nxt - r).sum() < tol:\n            r = nxt\n            break\n        r = nxt\n    return {nodes[i]: float(r[i]) for i in np.argsort(-r)}",
+  "steps": [
+   {
+    "do": "Create link table and load a 200-edge fixture",
+    "done_when": "select count(*) from link returns 200"
+   },
+   {
+    "do": "Write the 2-hop SQL capped at 5,000 nodes",
+    "done_when": "EXPLAIN shows an index scan on link and a hub node returns exactly 5,000 rows"
+   },
+   {
+    "do": "Implement ppr() with dangling-node handling",
+    "done_when": "test: scores sum to about 1.0 and a seed outranks a 2-hop node"
+   },
+   {
+    "do": "Map entity scores to chunks the user may see, applying the ACL filter",
+    "done_when": "test: a chunk outside the user's principals never appears"
+   },
+   {
+    "do": "Return up to 50 hits with the path of links followed",
+    "done_when": "each hit has a non-empty path list"
+   },
+   {
+    "do": "Time it on a 5,000-node subgraph",
+    "done_when": "p95 under 50 ms on a laptop (design target)"
+   }
+  ],
+  "config": {
+   "ALPHA": "0.15 // usual restart probability",
+   "HOPS": "2 // keeps the subgraph local",
+   "MAX_NODES": "5000 // hard cap for latency",
+   "MAX_ROUNDS": "30 // stop earlier at change under 1e-4"
+  },
+  "verify": [
+   "pytest tests/test_ppr.py -q  # all pass",
+   "python -m brain.query.graph --bench fixtures/hub.json  # nodes=5000 ms<50 (design target)"
+  ],
+  "pitfalls": [
+   "A hub node (one entity linked to everything) floods the subgraph: cap nodes and drop the lowest-weight edges first",
+   "Dangling nodes make scores sum below 1 or give NaN: handle zero out-degree",
+   "Graph neighbours are not permission-checked by default: filter chunks by principals before returning",
+   "Stale links after a delete keep ghosts alive: read only edges whose tombstone flag is clear"
+  ]
+ },
+ "qr_live": {
+  "milestone": "M1",
+  "effort_days": 6,
+  "depends_on": [
+   "so_cap",
+   "so_rate"
+  ],
+  "stack": [
+   {
+    "part": "fan-out",
+    "pick": "Python asyncio with asyncio.timeout and httpx.AsyncClient",
+    "why": "One task per app, one shared deadline. Do NOT use thread pools that cannot be cancelled."
+   },
+   {
+    "part": "app access",
+    "pick": "the app's MCP tool or search API, called with the user's own token from so_obo",
+    "why": "research/products.md: MCP is the cross-vendor live-access standard, and live results already carry the user's access."
+   },
+   {
+    "part": "circuit breaker",
+    "pick": "small in-process class (3 failures in 60 s pauses 120 s)",
+    "why": "A library is more weight than the 20 lines needed; check current docs if you prefer pybreaker."
+   },
+   {
+    "part": "rate budget",
+    "pick": "token bucket per (tenant, app) from so_rate",
+    "why": "Jira, Slack and Notion all limit calls; research/techniques.md T06, T07, T08."
+   }
+  ],
+  "install": [
+   "pip install httpx",
+   "pip install pytest pytest-asyncio respx"
+  ],
+  "layout": [
+   "brain/query/live.py : fan_out() and breaker",
+   "brain/query/fuse.py : shared rrf() used with qr_hyb",
+   "tests/test_live.py : deadline, breaker and no-persist tests"
+  ],
+  "schema": "{\n \"$id\": \"LiveResult\",\n \"type\": \"object\",\n \"required\": [\"app\", \"uri\", \"title\", \"app_rank\", \"fused_score\"],\n \"properties\": {\n  \"app\": {\"type\": \"string\"},\n  \"uri\": {\"type\": \"string\"},\n  \"title\": {\"type\": \"string\"},\n  \"snippet\": {\"type\": \"string\", \"description\": \"memory only, never persisted\"},\n  \"app_rank\": {\"type\": \"integer\", \"minimum\": 1},\n  \"fused_score\": {\"type\": \"number\"}\n }\n}",
+  "interface": "async def live_search(q: LiveQuery, apps: list[str], tokens: dict[str, str], deadline_s: float = 1.5) -> LiveOutcome  # LiveOutcome = {results: list[LiveResult], timed_out: list[str], skipped: list[str]}",
+  "code": "async def live_search(q, apps, tokens, deadline_s=1.5):\n    apps = [a for a in apps if breaker.allow(a)][:6]\n    results, timed_out = {}, []\n\n    async def one(app):\n        try:\n            hits = await adapters[app].search(q.text, tokens[app], limit=20)\n            breaker.ok(app)\n            results[app] = hits\n        except asyncio.CancelledError:\n            raise\n        except Exception:\n            breaker.fail(app)\n\n    tasks = {a: asyncio.create_task(one(a)) for a in apps}\n    done, pending = await asyncio.wait(tasks.values(), timeout=deadline_s)\n    for t in pending:  # tricky part: cancel late apps, keep early ones\n        t.cancel()\n    timed_out = [a for a, t in tasks.items() if t in pending]\n    for a in timed_out:\n        breaker.fail(a)\n    lists = {a: [h.uri for h in hs] for a, hs in results.items()}\n    ids, score = rrf(lists, k=60, top=100)\n    by_uri = {h.uri: (a, i + 1, h) for a, hs in results.items() for i, h in enumerate(hs)}\n    out = [to_result(by_uri[u], score[u]) for u in ids]\n    return LiveOutcome(out, timed_out, [a for a in q.apps if a not in apps])",
+  "steps": [
+   {
+    "do": "Define an adapter protocol with search(text, token, limit)",
+    "done_when": "two fake adapters pass the same contract test"
+   },
+   {
+    "do": "Write live_search with one shared deadline",
+    "done_when": "test: a 3 s adapter is cancelled and results return in under 1.6 s"
+   },
+   {
+    "do": "Fuse with rrf() across apps",
+    "done_when": "test: a uri returned by two apps outranks a single-app rank-1 uri"
+   },
+   {
+    "do": "Add the circuit breaker",
+    "done_when": "test: 3 failures in 60 s skips the app for the next call"
+   },
+   {
+    "do": "Prove nothing is persisted",
+    "done_when": "test greps the trace table, snippet cache and logs: no snippet text found"
+   },
+   {
+    "do": "Wire the per-app token bucket",
+    "done_when": "test: an exhausted bucket puts the app in skipped, not timed_out"
+   }
+  ],
+  "config": {
+   "LIVE_DEADLINE_S": "1.5 // from the card pin",
+   "MAX_APPS": "6 // bounds fan-out and rate use",
+   "MAX_RESULTS_PER_APP": "20 // enough for rank fusion",
+   "BREAKER_TRIP": "3 failures in 60 s // pause 120 s"
+  },
+  "verify": [
+   "pytest tests/test_live.py -q  # all pass",
+   "pytest tests/test_live.py::test_no_snippet_persisted -q  # 1 passed"
+  ],
+  "pitfalls": [
+   "One slow app holds the whole answer if you await gather without a timeout: use wait with a deadline and cancel",
+   "Caching live snippets quietly turns the brain into a copy: keep them in request memory only",
+   "Forwarding the user's token to an app other than the one it was issued for breaks the MCP token rule (research/techniques.md T24)",
+   "Each failed call should count against the rate bucket too, or retries burn the quota"
+  ]
+ },
+ "qr_rerank": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "qr_hyb",
+   "qr_graph",
+   "qr_live",
+   "ix_snip"
+  ],
+  "stack": [
+   {
+    "part": "cross-encoder runtime",
+    "pick": "sentence-transformers CrossEncoder (check current docs for the maintained API)",
+    "why": "Runs a pairwise scorer locally with no extra service. A hosted rerank API is the alternative; keep it behind the same function."
+   },
+   {
+    "part": "model",
+    "pick": "an open cross-encoder reranker model, chosen on your own golden set",
+    "why": "research/techniques.md decision 9: gains are corpus-specific. Do NOT pick by a leaderboard alone; model names change, check current docs."
+   },
+   {
+    "part": "batching",
+    "pick": "batch size 32, truncate each pair to 256 tokens",
+    "why": "The research budget is about 100 ms for the reranker (T29, third-party figures). Measure on your hardware."
+   }
+  ],
+  "install": [
+   "pip install sentence-transformers",
+   "pip install numpy pytest"
+  ],
+  "layout": [
+   "brain/query/rerank.py : rerank() and feature math",
+   "brain/query/models.py : model loader, loaded once at start",
+   "tests/test_rerank.py : feature and ordering tests",
+   "tests/golden/rerank.jsonl : query, doc, label rows"
+  ],
+  "schema": "{\n \"$id\": \"RerankInput\",\n \"type\": \"object\",\n \"required\": [\"query\", \"candidates\"],\n \"properties\": {\n  \"query\": {\"type\": \"string\"},\n  \"candidates\": {\"type\": \"array\", \"maxItems\": 200, \"items\": {\n   \"type\": \"object\",\n   \"required\": [\"chunk_id\", \"uri\", \"text\", \"modified_at\"],\n   \"properties\": {\"chunk_id\": {\"type\": \"string\"}, \"uri\": {\"type\": \"string\"}, \"text\": {\"type\": \"string\"}, \"modified_at\": {\"type\": \"string\", \"format\": \"date-time\"}, \"source_trust\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1}}}}\n }\n}",
+  "interface": "def rerank(query: str, cands: list[Candidate], top: int = 10, now: datetime | None = None) -> list[Ranked]  # Ranked = {uri, chunk_id, final_score, ce_score, recency, authority}",
+  "code": "import math\n\nBETA, GAMMA, TAU = 0.1, 0.05, 90.0\n\ndef rerank(query, cands, top=10, now=None):\n    now = now or datetime.now(timezone.utc)\n    seen, uniq = set(), []\n    for c in cands:  # dedupe: the same chunk may arrive from three sources\n        if c.chunk_id not in seen:\n            seen.add(c.chunk_id)\n            uniq.append(c)\n    pairs = [(query, c.text[:1500]) for c in uniq]\n    raw = model.predict(pairs, batch_size=32)\n    # tricky part: squash raw logits to 0..1 so the 0.1 and 0.05 terms mean something\n    ce = [1.0 / (1.0 + math.exp(-x)) for x in raw]\n    out = []\n    for c, s in zip(uniq, ce):\n        age = max((now - c.modified_at).total_seconds() / 86400.0, 0.0)\n        rec = math.exp(-age / TAU)\n        auth = c.source_trust if c.source_trust is not None else 0.5\n        out.append(Ranked(c.uri, c.chunk_id, s + BETA * rec + GAMMA * auth, s, rec, auth))\n    out.sort(key=lambda r: (-r.final_score, r.chunk_id))\n    return out[:top]",
+  "steps": [
+   {
+    "do": "Load the model once at process start",
+    "done_when": "startup log shows model loaded and a 1-pair warm-up call finishes"
+   },
+   {
+    "do": "Implement dedupe and CE scoring with sigmoid squash",
+    "done_when": "unit test: scores are all in 0..1"
+   },
+   {
+    "do": "Add recency and authority terms",
+    "done_when": "test: an equal-CE doc modified yesterday outranks one modified 2 years ago"
+   },
+   {
+    "do": "Build a 100-pair labelled golden set from real queries",
+    "done_when": "wc -l tests/golden/rerank.jsonl shows at least 100 rows"
+   },
+   {
+    "do": "Compare against fused order on the golden set",
+    "done_when": "report prints nDCG@10 for both and rerank is not lower"
+   },
+   {
+    "do": "Time a 100-candidate call on target hardware",
+    "done_when": "printed p95 ms is recorded in the README"
+   }
+  ],
+  "config": {
+   "POOL_SIZE": "100 // candidates scored; research test used 150",
+   "TOP_N": "10 // passed to the live permission recheck",
+   "BETA_RECENCY": "0.1 // weight of the recency term",
+   "GAMMA_AUTHORITY": "0.05 // weight of source trust",
+   "TAU_DAYS": "90 // recency half-life style constant, tune per tenant"
+  },
+  "verify": [
+   "pytest tests/test_rerank.py -q  # all pass",
+   "python -m brain.query.eval_rerank tests/golden/rerank.jsonl  # prints nDCG@10 fused vs reranked, reranked >= fused"
+  ],
+  "pitfalls": [
+   "Adding raw logits to 0.1 * recency makes the extra terms noise: squash first",
+   "Long chunks get truncated silently and score low: cap at one size and use the situating line plus the snippet",
+   "Loading the model per request adds seconds: load once",
+   "Reranking on text the user cannot see leaks nothing here, but the top 10 must still go to ac_live before any text is read"
+  ]
+ },
+ "qr_hyd": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_fetch"
+  ],
+  "stack": [
+   {
+    "part": "HTTP client",
+    "pick": "httpx.AsyncClient with HTTP/2 off at first",
+    "why": "Conditional GET with If-None-Match is plain HTTP; keep it boring."
+   },
+   {
+    "part": "app reads",
+    "pick": "the app's fetch API or its MCP fetch tool, with the user's token",
+    "why": "Reading with the user's token is also the access recheck: a 403 or 404 drops the pointer."
+   },
+   {
+    "part": "concurrency",
+    "pick": "asyncio.Semaphore(10) plus asyncio.timeout(1.2)",
+    "why": "Ten pointers in parallel stay inside one read deadline."
+   },
+   {
+    "part": "pointer registry",
+    "pick": "ix_ptr table in Postgres",
+    "why": "Holds the stored etag and version to compare against."
+   }
+  ],
+  "install": [
+   "pip install httpx",
+   "pip install pytest pytest-asyncio respx"
+  ],
+  "layout": [
+   "brain/query/hydrate.py : hydrate() and per-pointer read",
+   "brain/query/validators.py : etag and hash comparison",
+   "tests/test_hydrate.py : 304, 200, 403, 404 and timeout cases"
+  ],
+  "schema": "{\n \"$id\": \"Passage\",\n \"type\": \"object\",\n \"required\": [\"uri\", \"source_version\", \"etag\", \"read_at\", \"state\"],\n \"properties\": {\n  \"uri\": {\"type\": \"string\"},\n  \"text\": {\"type\": \"string\", \"description\": \"request memory only\"},\n  \"source_version\": {\"type\": \"string\"},\n  \"etag\": {\"type\": \"string\"},\n  \"read_at\": {\"type\": \"string\", \"format\": \"date-time\"},\n  \"state\": {\"enum\": [\"fresh\", \"changed\", \"snippet_fallback\"]}\n }\n}",
+  "interface": "async def hydrate(ptrs: list[Pointer], tokens: dict[str, str]) -> HydrateResult  # HydrateResult = {passages: list[Passage], dropped: list[{uri, reason}]}",
+  "code": "async def read_one(p, token, sem):\n    async with sem:\n        for attempt in (0, 1):\n            try:\n                async with asyncio.timeout(1.2):\n                    r = await http.get(p.fetch_url, headers={\n                        'Authorization': f'Bearer {token}',\n                        'If-None-Match': p.etag or ''})\n                break\n            except (asyncio.TimeoutError, httpx.TransportError):\n                if attempt == 1:\n                    return Fallback(p)  # snippet_fallback state\n                await asyncio.sleep(0.15)\n    if r.status_code in (403, 404, 410):\n        emit('tombstone' if r.status_code != 403 else 'access_lost', p.uri)\n        return Dropped(p.uri, str(r.status_code))\n    text = cached_passage(p) if r.status_code == 304 else extract(r, p)\n    state = 'fresh'\n    if r.status_code == 200 and content_hash(text) != p.content_hash:\n        state = 'changed'  # tricky part: tell ix_fetch, do not write text here\n        emit('stale', p.uri, r.headers.get('ETag'))\n    return Passage(p.uri, text[:20000], r.headers.get('ETag', p.etag),\n                   now(), p.version, state)\n\nasync def hydrate(ptrs, tokens):\n    sem = asyncio.Semaphore(10)\n    outs = await asyncio.gather(*(read_one(p, tokens[p.app], sem) for p in ptrs))\n    return split(outs)",
+  "steps": [
+   {
+    "do": "Write read_one for 200 and 304",
+    "done_when": "respx test: 304 returns the cached passage with state fresh"
+   },
+   {
+    "do": "Handle 403, 404 and 410 as drops with distinct events",
+    "done_when": "test asserts one access_lost and one tombstone event"
+   },
+   {
+    "do": "Add deadline and one retry",
+    "done_when": "test: a 2 s response falls back to snippet_fallback after about 1.35 s"
+   },
+   {
+    "do": "Compare content_hash on 200",
+    "done_when": "test: a changed body sets state changed and emits one stale event"
+   },
+   {
+    "do": "Cap each passage at 20 KB and run reads in parallel",
+    "done_when": "10 pointers with 300 ms mocks finish in under 600 ms"
+   },
+   {
+    "do": "Check nothing durable is written",
+    "done_when": "grep of DB and logs after a run finds no passage text"
+   }
+  ],
+  "config": {
+   "READ_DEADLINE_S": "1.2 // per read, from the design",
+   "RETRY_DELAY_MS": "150 // one retry only",
+   "MAX_PASSAGE_BYTES": "20000 // keeps the context pack inside budget",
+   "PARALLELISM": "10 // one read per chosen pointer"
+  },
+  "verify": [
+   "pytest tests/test_hydrate.py -q  # all pass",
+   "pytest tests/test_hydrate.py::test_no_text_persisted -q  # 1 passed"
+  ],
+  "pitfalls": [
+   "Treating a weak ETag as proof of equal bytes can miss a change: also compare the content hash on 200",
+   "A 403 is not a delete: emit access_lost, do not tombstone the pointer for everyone",
+   "Showing the snippet fallback as if it were live misleads the user: pass the state to qr_stamp",
+   "Logging the response body into traces breaks the no-copy rule"
+  ]
+ },
+ "qr_loop": {
+  "milestone": "M4",
+  "effort_days": 6,
+  "depends_on": [
+   "qr_scope",
+   "ix_lex",
+   "cf_struct",
+   "ac_filter"
+  ],
+  "stack": [
+   {
+    "part": "loop",
+    "pick": "plain Python loop with a closed tool set",
+    "why": "No framework needed for four controls"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an open tool registry",
+    "why": "Closed controls keep the permission filter in code"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/query/loop.py : bounded agent loop",
+   "tests/test_loop.py"
+  ],
+  "schema": "{\"control\":\"grep|filter|expand|skip\",\"args\":\"object\",\"done\":\"bool\"}",
+  "interface": "def run_loop(ctx, scope, question, budget) -> Evidence  # steps <= 8, observations <= 12000 tokens",
+  "code": "def run_loop(gw, ctx, scope, q, budget):\n    seen, ev = set(), []\n    for step in range(budget.steps):\n        act = gw.json(model=SMALL, schema=Action, prompt=render(q, ev[-3:]))\n        if act.done or budget.tokens_left <= 0:\n            break\n        hits = CONTROLS[act.control](ctx, scope, **act.args)             # filter applied inside each control\n        hits = [h for h in hits if h.id not in seen]\n        seen.update(h.id for h in hits)\n        ev.extend(trim(hits, 1500)); budget.tokens_left -= tokens(hits)\n    return Evidence(ev, steps=step + 1)",
+  "steps": [
+   {
+    "do": "Write the four controls on the lexical index",
+    "done_when": "each control returns only permitted hits"
+   },
+   {
+    "do": "Add the step and token budget",
+    "done_when": "loop stops at 8 steps"
+   },
+   {
+    "do": "Add skip for seen ids",
+    "done_when": "same hit never returned twice"
+   },
+   {
+    "do": "Add step logging",
+    "done_when": "trace has one row per step"
+   }
+  ],
+  "config": {
+   "MAX_STEPS": "8",
+   "TOKEN_CAP": "12000",
+   "EXPAND_WINDOW": "5"
+  },
+  "verify": [
+   "pytest tests/test_loop.py -q  # all passed",
+   "python -m brain.query.loop --demo 'decision last month'  # stops under 8 steps"
+  ],
+  "pitfalls": [
+   "Applying the filter after the loop leaks records into observations",
+   "No skip makes the loop re-read the same hit"
+  ]
+ }
+}

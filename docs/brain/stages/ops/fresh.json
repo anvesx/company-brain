@@ -1,0 +1,813 @@
+{
+ "group": {
+  "line": "Freshness lag tracking, a heartbeat that catches silent feed stops, and sweeps that catch up.",
+  "dumb": "We measure how late the index is, and a heartbeat notices when a feed goes quiet and asks for a catch-up sweep."
+ },
+ "comps": {
+  "op_lag": {
+   "line": "lag_s = now - source_modified_at, p95 per (tenant, source) by nearest rank: index ceil(0.95 x n)\nalert at 2 x target; webhook sources target 300 s, poll sources 2 x poll interval (design)",
+   "dumb": "For each app we ask one question: how long ago did the newest change happen in the app, versus when did the brain learn about it? We keep these delays for every change and look at the slow end, the 95th percentile. If a source's slow end is more than twice its goal, we raise an alert. We also alert if a source has said nothing for too long, because silence can mean a broken doorbell.",
+   "inn": "Per applied change from ix_fresh: {tenant_id, source, doc_id, source_modified_at, indexed_at}; per-source target_s; a heartbeat {source, last_event_at} each minute.",
+   "out": "Gauge series lag_p50, lag_p95, lag_max per (tenant, source) every 60 s; alerts {source, lag_p95_s, target_s, burn} sent to op_health and pl_obs.",
+   "store": "Reads the change stamps and the target table. Writes the lag time series (60 s resolution, kept 30 days) and alert state to the observability store (pl_obs).",
+   "fail": "Stamp stream stalls: a missing-data alert fires after 3 minutes with no stamps from a source that normally sends some per minute. Metrics write fails: buffered locally for 10 minutes (design) then dropped with a counter, and the alert path is not affected. Clock skew over 5 s between the app and the brain: flagged on the dashboard, p95 is shown with the skew estimate.",
+   "req": "Requirement: 'Monitor agents and systems; run evaluation suites as release gates'",
+   "hard": "Lag is only measurable for changes the brain saw; a change it never saw (a lost webhook) has no stamp. The sampling audit (op_audit) covers that gap.",
+   "prop": "Proposal: the index is a copy of pointers, so staleness is its main failure; a lag number per source is the first alarm.",
+   "deep": {
+    "purpose": "Say how late the index is, per source, against a stated target. Microsoft Graph notes webhook delivery can take up to 6 hours at the maximum and events can be lost, so lag must be measured, not assumed (t_t01, t_t54). It watches the part of freshness that is visible; op_audit watches the part that is not.",
+    "expected": [
+     "Each source has a p95 lag and a target on the dashboard, refreshed every 60 s",
+     "An alert fires when p95 exceeds 2 times the target for 5 consecutive minutes (design)",
+     "A source that sends nothing for 3 minutes is reported as silent, not as zero lag"
+    ],
+    "not_expected": [
+     "It does not repair anything; op_health and the sweep do that",
+     "It does not report a lag for changes the brain never received",
+     "It does not average lags; a mean hides the slow tail"
+    ],
+    "algorithm": {
+     "name": "Per-source lag percentile with silence detection",
+     "formula": "lag_i = indexed_at_i - source_modified_at_i;  p95 = sorted(lag)[ceil(0.95 x n) - 1];  alert if p95 > 2 x target for 5 min",
+     "steps": [
+      "For every applied change, compute lag_i from the source's own modified time and the time the index applied it",
+      "Keep a sliding 15-minute window of lags per (tenant, source) in a quantile sketch or sorted buffer",
+      "Every 60 s compute p50, p95, max and the sample count n",
+      "Compare p95 with the target; open an alert after 5 consecutive breaches",
+      "If n = 0 for 3 minutes on a source with a normal rate above 1 event per minute, raise a silence alert"
+     ],
+     "params": {
+      "target_webhook_s": "300 (design); well inside the 6 h worst case that Graph documents, tune from the first 2 weeks of real lag",
+      "target_poll_s": "2 x poll interval (design)",
+      "alert_multiple": "2 x target (t_t54 suggests a multiple of the connector target)",
+      "window": "15 min, evaluated every 60 s (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: number of changes in the window",
+      "lag_i: seconds between source modified time and index apply time",
+      "p95: the value that 95 percent of lags do not exceed",
+      "target: the stated goal in seconds"
+     ],
+     "formula_full": "p95 = lag_(k), k = ceil(0.95 x n), where lag_(1) <= ... <= lag_(n)",
+     "derivation": "Nearest-rank percentile picks an observed value, so it never invents a number. The slow tail matters because a user's question lands on the slowest changes, so the mean (which a few large lags barely move) is the wrong summary.",
+     "worked_example": "n=20 lags in seconds: 4,5,5,6,7,8,8,9,10,11,12,12,14,15,18,22,30,41,95,2600. k=ceil(0.95 x 20)=19, so p95 = 95 s. The mean is 146.1 s and the max 2,600 s. With target 300 s the p95 passes; the single 2,600 s lag appears in max and triggers a per-document report, not the alert. If three more lags of 600 s arrive in the same window, n=23, k=22, p95 becomes 600 s which is 2 x target, so after 5 minutes the alert fires.",
+     "complexity": "O(n log n) to sort a window; with a quantile sketch O(1) per insert and about 1 percent rank error.",
+     "failure_modes": [
+      "Few samples (n under 20): p95 equals the max and is noisy, so alert only when n is 20 or more, otherwise show the max",
+      "Source clock wrong: the lag goes negative or inflated; clamp at 0 and flag skew",
+      "Burst backfill: old documents indexed late would look like huge lag; backfill-lane changes are excluded from this gauge"
+     ],
+     "calibration": "After 14 days set each source's target at 1.5 times its observed p95, rounded up to a clean number, and review monthly."
+    },
+    "alternatives": [
+     {
+      "name": "Mean lag",
+      "why_rejected": "A few 2,600 s lags move the mean little while users hit them; p95 reflects the tail."
+     },
+     {
+      "name": "Only alert on queue depth",
+      "why_rejected": "A lost webhook leaves an empty queue and a stale index; lag against the source clock catches it."
+     }
+    ],
+    "security": [
+     "Tampering to hide staleness: a bad actor edits stamps to look fresh. Control: stamps are written by ix_fresh only, and the dashboard reads a separate append-only copy.",
+     "Information leak in alerts: a doc title in an alert shows a hidden document. Control: alerts carry source and counts only, never titles or text.",
+     "Cross-tenant mixing: a series without a tenant tag. Control: every series key includes tenant_id and a test checks that no query returns two tenants."
+    ],
+    "performance": {
+     "slo": "Gauge refreshed every 60 s; alert delay under 6 minutes from breach (5 min window plus 1 min tick)",
+     "complexity": "O(1) per change with a sketch; O(n log n) per window with sorting.",
+     "scaling": "At 10x sources the per-minute pass touches 10x series; shard by tenant and keep the 60 s tick."
+    },
+    "edge_cases": [
+     "Empty window (no changes): report silent and skip the percentile",
+     "Deleted document: lag measured from the source delete time if the app gives one, else from the tombstone time",
+     "Duplicate stamps from a replayed event: deduped by (doc_id, version)",
+     "Source modified time in the future: clamped to now and counted as a skew sample",
+     "Source with 1 change per hour: use the silence rule with a longer window of 3 times the normal gap",
+     "A new app joins: its manifest declares a target; a default of 2 x poll interval applies until set"
+    ],
+    "tests": [
+     {
+      "name": "percentile",
+      "given": "20 lags: 4,5,5,6,7,8,8,9,10,11,12,12,14,15,18,22,30,41,95,2600",
+      "expect": "p95 = 95 s, max = 2600 s"
+     },
+     {
+      "name": "alert fires",
+      "given": "target 300 s and p95 600 s for 5 consecutive minutes",
+      "expect": "alert opened once, sent to op_health"
+     },
+     {
+      "name": "silence",
+      "given": "source normally sends 3 per minute and sends 0 for 4 minutes",
+      "expect": "silent alert, no lag gauge value"
+     },
+     {
+      "name": "backfill excluded",
+      "given": "10,000 backfill changes with 3-day lag",
+      "expect": "p95 gauge unchanged"
+     }
+    ],
+    "cost_levers": [
+     "Quantile sketch instead of keeping every lag",
+     "Alert on p95 only so one slow document does not page a person"
+    ],
+    "feedback_events": [
+     "A person marking an alert as noise adjusts that source's target through a reviewed change"
+    ],
+    "analytics_events": [
+     {
+      "name": "fresh.lag",
+      "fields": [
+       "tenant_id",
+       "source",
+       "p50_s",
+       "p95_s",
+       "max_s",
+       "n",
+       "target_s"
+      ],
+      "when": "every 60 s per source"
+     },
+     {
+      "name": "fresh.silent",
+      "fields": [
+       "tenant_id",
+       "source",
+       "silent_for_s"
+      ],
+      "when": "when a source goes silent"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_freshllms",
+      "key_idea": "Measure time from a fact changing to the system answering correctly.",
+      "how": "The lag gauge is the system-side half; op_audit adds the answer-side check."
+     },
+     {
+      "ref": "p_stale-poison",
+      "key_idea": "Stale entries can be worse than none.",
+      "how": "Lag above target tags results from that source as possibly stale in qr_stamp."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_cocoindex",
+      "name": "CocoIndex",
+      "take": "Change detection and lineage that expose a per-source last-applied time."
+     }
+    ],
+    "industry": "Microsoft Graph documents that driveItem notification latency averages under 1 minute but can reach 6 hours, and sends lifecycle notices for missed events (t_t01, t_t54).",
+    "refs": [
+     "t_t01",
+     "t_t54",
+     "t_t55",
+     "p_freshllms",
+     "p_stale-poison",
+     "r_cocoindex"
+    ]
+   }
+  },
+  "op_audit": {
+   "line": "Random pointers checked live for existence, version and access; Chapman estimate N = (n1+1)(n2+1)/(m+1) - 1\nsample 400 per source per night (design); coverage = n2 / N",
+   "dumb": "Every night we pick random items and ask the real app: does this still exist, is it the same version, and can this user see it? We also pick items by asking the app a few random questions, and check whether we have them. From how many we find in both groups we can estimate how many items the app has, even if the app cannot give us a full list.",
+   "inn": "Per run: {tenant_id, source, n_pointer_sample, n_app_sample}; pointer rows from ix_ptr; live calls through the connector with the on-behalf-of token; random probe queries.",
+   "out": "Report {source, exist_rate, version_match_rate, access_match_rate, N_hat, coverage, ci95_low, ci95_high, missing_ids[]}; missing ids go to op_cov and the sweep.",
+   "store": "Reads pointers from the registry and calls the app live. Writes the audit report to the observability store and a repair hint list. No document text is kept.",
+   "fail": "App call fails: the item is counted as unchecked, not as missing; if more than 20% are unchecked the run is flagged inconclusive and rerun in 1 hour (up to 3 times). A 429 pauses the run for the Retry-After time and cuts the sample to half. Run exceeds 2 hours: stopped, partial report saved.",
+   "req": "Requirement: 'Monitor agents and systems; run evaluation suites as release gates'",
+   "hard": "Probe queries favour popular items, so the capture-recapture estimate is biased towards good coverage; stratified probes (per type and per age) reduce but do not remove it.",
+   "prop": "Proposal: only a sample taken from the live app can tell us about changes we never heard of; capture-recapture turns that sample into a coverage number.",
+   "deep": {
+    "purpose": "Catch what the monitors cannot see: missed deletes, missed edits, missed access changes and documents that were never indexed. It samples the truth in the live app and estimates coverage with a standard statistics method. Our inference, since no paper measures a pointer index against a full-copy index this way.",
+    "expected": [
+     "A planted deleted document is found missing within 3 nightly runs on average (random sample, design)",
+     "The report gives exist, version and access rates with a confidence interval, per source",
+     "An unreachable app produces an inconclusive run, never a pass"
+    ],
+    "not_expected": [
+     "It does not fix the index; it feeds op_cov and the sweep with ids",
+     "It does not store document text from the live calls",
+     "It does not use a service account to judge access; the access check uses a real user's on-behalf-of token"
+    ],
+    "algorithm": {
+     "name": "Random pointer audit with Chapman capture-recapture",
+     "formula": "N_hat = (n1 + 1)(n2 + 1) / (m + 1) - 1;  coverage = n2 / N_hat",
+     "steps": [
+      "Draw n_pointer random pointers from the registry for the source, stratified by type and modified date",
+      "For each, ask the app: exists? current version? can the test user read it? Compare with the pointer's stored version and ACL version",
+      "Draw n1 documents from the app with random probes (random words, random date windows) as capture 1",
+      "Count m = the number of those n1 that are present in the index of size n2",
+      "Compute N_hat and its 95 percent interval, then coverage = n2 / N_hat",
+      "Send missing ids and mismatches to op_cov and to ch_sweep, and write the report"
+     ],
+     "params": {
+      "sample_pointers": "400 per source per night (design); gives about 5 percent margin on a rate near 50%, tune by source size",
+      "probe_sample_n1": "400 (design)",
+      "confidence": "95 percent (standard)",
+      "inconclusive_if_unchecked_over": "20 percent (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n1: documents found in the app by random probes",
+      "n2: documents in the index for this source",
+      "m: documents found in both",
+      "N_hat: estimated number of documents in the app",
+      "coverage: share of the app that the index holds"
+     ],
+     "formula_full": "N_hat = (n1+1)(n2+1)/(m+1) - 1;  Var(N_hat) = (n1+1)(n2+1)(n1-m)(n2-m) / ((m+1)^2 (m+2))",
+     "derivation": "If the probes are an independent random sample, the fraction of probes already in the index (m/n1) estimates the index's share of the whole. Solving m/n1 = n2/N gives the Lincoln-Petersen estimate; the Chapman version adds 1 in two places to remove small-sample bias.",
+     "worked_example": "n1=400 probes, index n2=50,000, m=388 found in the index. N_hat = 401 x 50,001 / 389 - 1 = 51,542. Var = 401 x 50,001 x 12 x 49,612 / (389^2 x 390) = about 202,268, so sd = 450 and the 95 percent interval is 51,542 +/- 881. Coverage = 50,000 / 51,542 = 97.0 percent. So about 1,540 documents are missing, which op_cov and the sweep then chase.",
+     "complexity": "O(n_pointer + n1) live app calls per source per run, about 800 calls; at 1 call per 200 ms that is under 3 minutes.",
+     "failure_modes": [
+      "Probes are not independent (popular items are easier to find): the estimate says coverage is higher than true; stratify and compare with a count-based check from op_cov",
+      "m near 0 (poor coverage): the estimator explodes; report coverage under 5 percent and skip the interval",
+      "Documents renamed between draws: match on app id, not title"
+     ],
+     "calibration": "Plant 50 known documents and delete 50 known pointers each month; the estimate must find the plant within its interval or the method needs re-tuning."
+    },
+    "alternatives": [
+     {
+      "name": "Compare counts only",
+      "why_rejected": "Counts miss replaced documents (one missing, one extra) and miss stale versions; that is op_cov's job and this check adds identity and version."
+     },
+     {
+      "name": "Full re-listing every night",
+      "why_rejected": "Burns the app's rate limit (for example Jira's hourly points, t_t06) and the weekly sweep already does it."
+     }
+    ],
+    "security": [
+     "Probe queries leak what we search for: a random word could reveal a hidden project name in logs. Control: probes use generic dictionary words and the log keeps only counts and ids.",
+     "Wrong-user access check: auditing with an admin token hides access errors. Control: the access check runs with a test user's on-behalf-of token and a second planted user with no access.",
+     "Sample bias to hide a gap: an attacker keeps a hole in a rarely sampled stratum. Control: strata are sampled in proportion and a minimum of 20 per stratum.",
+     "Token passthrough: audit never reuses a user's real token from logs; it exchanges per run (t_t24)."
+    ],
+    "performance": {
+     "slo": "Nightly run per source under 15 minutes (design); app calls under 1,000 per run",
+     "complexity": "O(sample size) live calls plus O(1) arithmetic.",
+     "scaling": "At 10x sources, runs are spread over the night and limited to 10% of each app's hourly quota (design) so live sync is not starved."
+    },
+    "edge_cases": [
+     "Empty source (n2 = 0): report 'no data' and skip the estimate",
+     "Source with fewer than 400 documents: audit all of them (a census) and set coverage directly",
+     "Document updated between probe and check: version mismatch counted once as 'changed during audit', not as a miss",
+     "Concurrent audit and sweep on the same source: the audit waits for the sweep lock",
+     "Unicode titles or ids: compared by the app id string, byte exact",
+     "A new app joins: it exposes a probe method in the manifest (random search or date-window list); without one the audit uses pointer checks only"
+    ],
+    "tests": [
+     {
+      "name": "estimator",
+      "given": "n1=400, n2=50,000, m=388",
+      "expect": "N_hat = 51,542 (rounded), coverage 97.0%"
+     },
+     {
+      "name": "deleted in app",
+      "given": "10 pointers whose docs were deleted in the app",
+      "expect": "exist_rate falls by 10/400 = 2.5 points and the 10 ids go to the sweep"
+     },
+     {
+      "name": "inconclusive",
+      "given": "app returns 500 for 30% of checks",
+      "expect": "run flagged inconclusive, rerun scheduled in 1 hour"
+     },
+     {
+      "name": "access mismatch",
+      "given": "planted user lost access to 5 documents but ACL not updated",
+      "expect": "access_match_rate drops and the 5 ids are in missing_ids"
+     }
+    ],
+    "cost_levers": [
+     "Sample size set by source size, not fixed",
+     "Run in the backfill lane at off-peak hours and cap at 10 percent of the app quota"
+    ],
+    "feedback_events": [
+     "A person confirming a flagged missing item as a true miss or a false alarm tunes the stratification"
+    ],
+    "analytics_events": [
+     {
+      "name": "audit.run",
+      "fields": [
+       "tenant_id",
+       "source",
+       "n_pointer",
+       "n1",
+       "m",
+       "exist_rate",
+       "version_rate",
+       "access_rate",
+       "n_hat",
+       "coverage"
+      ],
+      "when": "at the end of each run"
+     },
+     {
+      "name": "audit.inconclusive",
+      "fields": [
+       "tenant_id",
+       "source",
+       "unchecked_rate"
+      ],
+      "when": "when over 20% of checks fail"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_stale-poison",
+      "key_idea": "Verify freshness at fetch time before answering.",
+      "how": "The audit checks the same properties on a sample, offline."
+     },
+     {
+      "ref": "p_freshllms",
+      "key_idea": "Build a freshness test set from your own apps.",
+      "how": "Planted and edited documents seed the audit's check of known changes."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_cocoindex",
+      "name": "CocoIndex",
+      "take": "Lineage and change detection that help reconcile a pointer with its source version."
+     }
+    ],
+    "industry": "Microsoft recommends a weekly reconciliation scan because delta feeds can replay or reset (t_t55); Dropbox and others do per-page change detection (t_t42).",
+    "refs": [
+     "t_t55",
+     "t_t54",
+     "t_t42",
+     "t_t06",
+     "t_t24",
+     "p_stale-poison",
+     "p_freshllms",
+     "r_cocoindex"
+    ]
+   }
+  },
+  "op_cov": {
+   "line": "Indexed live count against the app's own count call; gap allowed = max(10, 0.2% of N + created in window)\nper type; alert below 99% coverage (design)",
+   "dumb": "Many apps can cheaply tell you how many items they hold, without listing them. We ask, and compare that number with how many items we have indexed. If the gap is bigger than what recent changes can explain, something was missed, and we send the sweep to look. Not every app offers a count, so for those we lean on the sampling audit.",
+   "inn": "Per source and type: app_count from a cheap count call, index_live_count from the registry, tombstone_pending, created_in_window and deleted_in_window from the change stream.",
+   "out": "Coverage record {source, type, app_count, index_count, gap, allowed_gap, status ok|gap|no_count_api}; a gap raises a sweep request to ch_sweep and an alert to op_health.",
+   "store": "Reads counts from the app and the registry. Writes coverage rows to the observability store, hourly per source and type.",
+   "fail": "Count call fails: record no_count_api or error for the cycle and try again in 15 minutes, up to 3 times; after that, rely on op_audit and show 'unknown' on the dashboard, never 'ok'. App count changes during the check (over 2% in 1 minute): re-run once after 60 s. Registry count query times out at 10 s: skip this cycle.",
+   "req": "Requirement: 'Monitor agents and systems; run evaluation suites as release gates'",
+   "hard": "Some apps count only visible items or exclude trash; the definition of a countable object per app needs checking connector by connector.",
+   "prop": "Proposal: an exact count, where the app offers one, is the cheapest test for silent loss and costs one call per type.",
+   "deep": {
+    "purpose": "A cheap hourly smoke alarm. When an app can state how many objects of a type exist, a simple subtraction reveals a large silent loss before the nightly audit does. It does not prove coverage; it finds gross gaps. Where research found no count or delta API (for example Notion, Jira, GitHub, HubSpot, Linear, Figma) the sweep and poll cover it, and this card marks the source no_count_api.",
+    "expected": [
+     "A gap larger than the allowed gap triggers a sweep request within one cycle",
+     "Sources without a count call are shown as no_count_api, not as ok",
+     "Counts are compared per object type, so a missing type cannot hide behind a big one"
+    ],
+    "not_expected": [
+     "It does not check versions, content or access; op_audit does",
+     "It does not treat a negative gap (index above the app) as good; it may mean missed deletes",
+     "It does not list documents; it only subtracts counts"
+    ],
+    "algorithm": {
+     "name": "Count reconciliation with change-window allowance",
+     "formula": "gap = app_count - index_live_count;  allowed = max(10, 0.002 x N + created_in_window + deleted_in_window);  flag if |gap| > allowed",
+     "steps": [
+      "For each (source, type), call the app's count endpoint where one exists",
+      "Read index_live_count excluding tombstones; read created and deleted changes seen in the last cycle",
+      "Compute gap and allowed gap; flag if the absolute gap exceeds the allowance",
+      "A positive gap means documents missing from the index; a negative gap means documents that should have been tombstoned",
+      "Send a targeted sweep request for the (source, type) and open an alert if the flag persists for 2 cycles"
+     ],
+     "params": {
+      "floor": "10 objects (design); keeps tiny sources from flapping",
+      "relative": "0.2 percent of N (design); tune from observed noise over 2 weeks",
+      "cycle": "hourly (design); counts are cheap but not free against quotas"
+     }
+    },
+    "math": {
+     "definitions": [
+      "N: app count",
+      "created_in_window: objects created since the last cycle, not yet indexed",
+      "gap: app_count minus index_live_count",
+      "allowed: gap size that recent changes alone explain"
+     ],
+     "formula_full": "flag iff |app_count - index_count| > max(10, 0.002 x N + created_in_window + deleted_in_window)",
+     "derivation": "Between the app's count and ours there is always a small gap from in-flight changes. The allowance is that known in-flight number plus a small noise term, so only an unexplained gap raises an alert.",
+     "worked_example": "Jira issues: app_count = 12,480; index_count = 12,455; created in the last 10 minutes = 6; deleted = 2. allowed = max(10, 0.002 x 12,480 + 6 + 2) = max(10, 24.96 + 8) = 32.96. gap = 25, which is under 32.96, so status ok. If index_count were 12,400, gap = 80 > 32.96, so flag and request a sweep for Jira issues.",
+     "complexity": "O(1) per (source, type) per cycle: one app call and one registry count.",
+     "failure_modes": [
+      "App count includes items the connector skips (archived, private): counts differ forever; add a per-type exclusion in the manifest",
+      "Eventual consistency in the app's count: tolerate by re-checking after 60 s before alerting",
+      "Gap cancels (one missing, one extra): invisible here; op_audit identity checks find it"
+     ],
+     "calibration": "Run 2 weeks silent, record the distribution of |gap| minus the in-flight term, and set the relative term at the 99th percentile of that residual."
+    },
+    "alternatives": [
+     {
+      "name": "Always full listing",
+      "why_rejected": "Costs a full API read each hour; for Jira that spends a large share of an hourly points budget (t_t06)."
+     },
+     {
+      "name": "Rely only on sampling",
+      "why_rejected": "Sampling gives a statistical estimate with sampling error; a count is exact when the app provides it."
+     }
+    ],
+    "security": [
+     "A forged count: a compromised connector reports a matching count to hide a loss. Control: counts are called by the audit job's own credential, not by the connector under test.",
+     "Cross-tenant mixing: counting another tenant's objects with a shared token. Control: each count uses the tenant's own connector credential, and rows are keyed by tenant.",
+     "Information leak: counts can reveal confidential project sizes. Control: coverage rows are visible only to the tenant's admins and to the brain's operators on a need-to-know basis."
+    ],
+    "performance": {
+     "slo": "One count call per (source, type) per hour; the whole pass under 2 minutes for 200 sources",
+     "complexity": "O(s x t) calls for s sources and t types per cycle.",
+     "scaling": "At 10x sources the passes spread across the hour; each call is cheap but is metered in the cost meter."
+    },
+    "edge_cases": [
+     "App count zero and index count zero: ok",
+     "App count zero but index holds 500: all 500 flagged for tombstone check",
+     "Count call returns a cached number from the app: the 60 s recheck rule catches a stale reading",
+     "Source with 40 object types: counts run per type with a staggered start to stay under rate limits",
+     "Timezone or clock skew in created_in_window: use the change stream's own apply time",
+     "A new app joins: the manifest declares a count method or marks none; none sets no_count_api"
+    ],
+    "tests": [
+     {
+      "name": "within allowance",
+      "given": "app 12,480; index 12,455; created 6; deleted 2",
+      "expect": "status ok (gap 25 <= 32.96)"
+     },
+     {
+      "name": "flag",
+      "given": "app 12,480; index 12,400",
+      "expect": "status gap and a sweep request for that type"
+     },
+     {
+      "name": "no count api",
+      "given": "source declares none",
+      "expect": "status no_count_api and the dashboard shows unknown"
+     },
+     {
+      "name": "negative gap",
+      "given": "app 1,000; index 1,100",
+      "expect": "flagged: possible missed deletes, sweep requested"
+     }
+    ],
+    "cost_levers": [
+     "One count call replaces a full listing",
+     "Hourly cycle only; shorten it for sources that have lost events before"
+    ],
+    "feedback_events": [
+     "Operators marking a gap as expected (for example a known archive) adds a per-type exclusion"
+    ],
+    "analytics_events": [
+     {
+      "name": "cov.check",
+      "fields": [
+       "tenant_id",
+       "source",
+       "type",
+       "app_count",
+       "index_count",
+       "gap",
+       "allowed",
+       "status"
+      ],
+      "when": "per cycle per (source, type)"
+     },
+     {
+      "name": "cov.sweep_requested",
+      "fields": [
+       "tenant_id",
+       "source",
+       "type",
+       "gap"
+      ],
+      "when": "when a gap persists"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_freshllms",
+      "key_idea": "Freshness has to be measured with checks from your own apps.",
+      "how": "The count check is a cheap, frequent probe of the same property."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Incremental sync state per stream; shows how a source's count and state can be compared."
+     }
+    ],
+    "industry": "Microsoft's guidance is delta plus webhooks plus a periodic full reconciliation to find drift (t_t55); delta tokens expire, so a count check catches what a reset would hide (t_t02).",
+    "refs": [
+     "t_t02",
+     "t_t06",
+     "t_t55",
+     "p_freshllms",
+     "r_airbyte"
+    ]
+   }
+  },
+  "op_health": {
+   "line": "Error budget burn rate = error_rate / (1 - SLO); circuit breaker opens at burn above 10 over 5 min (design)\nhalf-open probe after 60 s, doubling to 15 min; repair task after 3 opens in 6 h",
+   "dumb": "Each connector has a small allowance for failures, like a monthly budget. If it burns through the allowance too fast, we stop calling that app for a while, so we do not hammer it or fill the logs. After a pause we send one test request. If it works we resume, and if it keeps breaking we open a repair task for a person.",
+   "inn": "Per connector call outcome {tenant_id, source, status, error_class, latency_ms, retry_after_s}; lag alerts from op_lag; SLO per connector.",
+   "out": "Breaker state closed|open|half_open per (tenant, source); a pause command to the workflow engine (ch_wf); repair task {source, since, error_summary, last_success_at}.",
+   "store": "Reads outcome counters from the observability store. Writes breaker state (in the registry), repair tasks and a state-change log.",
+   "fail": "State store unreachable: breaker defaults to the last known state for 5 minutes, then fails open to pause (a paused connector is safer than a hammering one). Breaker flaps (more than 4 transitions in 1 hour): hold open and open a repair task. A 429 with Retry-After is a pause for that time, not a counted failure.",
+   "req": "Requirement: 'Monitor agents and systems; run evaluation suites as release gates'",
+   "hard": "The burn threshold of 10 and the 60 s first probe are starting values that need real error data from each app.",
+   "prop": "Proposal: a sick connector must be paused and repaired by a person; error budgets make that decision a number, not a feeling.",
+   "deep": {
+    "purpose": "Stop a failing connector from wasting rate limit, spamming errors and hiding staleness, and give a person a clear repair ticket. A rate-limit hour (such as Jira's hourly points, t_t06) can leave data unsynced for the rest of the window, so pausing early and resuming cleanly matters (t_t09).",
+    "expected": [
+     "A connector with a burn rate above the threshold for 5 minutes is paused and a repair task exists",
+     "A paused connector gets one probe at 60 s, then 120 s, doubling up to 15 minutes",
+     "A 429 with Retry-After pauses calls for that time and does not consume the error budget"
+    ],
+    "not_expected": [
+     "It does not delete or alter indexed data when a connector is down",
+     "It does not retry a call itself; the workflow engine owns retries",
+     "It does not mark a source healthy because it is quiet"
+    ],
+    "algorithm": {
+     "name": "SLO error budget with burn-rate trigger and circuit breaker",
+     "formula": "burn = error_rate / (1 - SLO);  open if burn > 10 over 5 min and calls >= 20;  close after 3 consecutive probe successes",
+     "steps": [
+      "Count successes and errors per (tenant, source) in 1-minute buckets, ignoring 429 and 5xx-with-Retry-After as pauses",
+      "Every minute compute burn over the last 5 minutes and the last 1 hour",
+      "If the 5-minute burn is above 10 and at least 20 calls were made, set the breaker to open and send pause to ch_wf",
+      "While open, wait the probe delay (60 s, doubling to 15 min), then half-open: send one probe call",
+      "After 3 consecutive probe successes set closed and resume; on a probe failure return to open with the doubled delay",
+      "After 3 opens in 6 hours or an auth failure class, open a repair task naming the error"
+     ],
+     "params": {
+      "slo": "99 percent success over 30 days per connector (design); tune per app",
+      "open_burn": "10 over 5 min (design)",
+      "min_calls": "20 (design); prevents opening on 1 failure of 2 calls",
+      "probe_delay": "60 s doubling to 900 s (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "SLO: target success fraction",
+      "error_rate: errors divided by calls in the window",
+      "budget: 1 - SLO",
+      "burn: how many times faster than allowed the budget is being used"
+     ],
+     "formula_full": "burn = (errors / calls) / (1 - SLO)",
+     "derivation": "A burn of 1 means errors arrive exactly at the pace the SLO allows; a burn of 10 would use a 30-day budget in 3 days. Requiring both a high burn and a minimum call count avoids tripping on tiny samples.",
+     "worked_example": "SLO 99 percent, budget 1 percent. In 5 minutes: 200 calls, 30 errors. error_rate = 15 percent, burn = 0.15 / 0.01 = 15, above 10 and calls >= 20, so the breaker opens. The next probes: after 60 s fail, after 120 s fail, after 240 s succeed, then 3 successes are needed to close, with 1 call each.",
+     "complexity": "O(1) per call to update counters; O(c) per minute for c connectors.",
+     "failure_modes": [
+      "Low traffic source never reaches 20 calls: use the 1-hour burn with a minimum of 10 calls instead",
+      "Error class is the caller's fault (a 400 caused by our bug): count separately and open a repair task for us, not the app",
+      "Probe succeeds but real calls fail (a narrower fault): half-open sends 3 calls of mixed type before closing"
+     ],
+     "calibration": "After a month, set each connector's SLO to its achieved success rate minus 0.5 points, and review opens that were false alarms."
+    },
+    "alternatives": [
+     {
+      "name": "Fixed threshold (5 errors in a row)",
+      "why_rejected": "Opens on small samples and misses a steady 15 percent error rate; burn rate covers both."
+     },
+     {
+      "name": "Retry forever with backoff",
+      "why_rejected": "Keeps spending app quota and hides a dead connector; a breaker plus a repair task is visible."
+     }
+    ],
+    "security": [
+     "Denial of service by induced errors: a hostile app (or an attacker who can poison a response) forces a pause on a healthy connector. Control: pause is per tenant and source only, and a person can force resume with the reason audited.",
+     "Credential failure hidden as a pause: an expired or revoked token looks like an outage. Control: auth errors have their own class and open a repair task at once.",
+     "Secret in log: error messages contain a token. Control: error summaries are redacted by pattern before storing and tokens never enter breaker state."
+    ],
+    "performance": {
+     "slo": "Breaker decision within 60 s of the threshold crossing; probe call under 5 s",
+     "complexity": "O(1) per call, O(c) per minute.",
+     "scaling": "At 10x connectors counters are sharded by (tenant, source); the minute pass remains linear."
+    },
+    "edge_cases": [
+     "Zero calls in the window: state unchanged, no division",
+     "Breaker open while an old webhook arrives: events are queued in the bus, not dropped",
+     "Two connectors for one app (two workspaces): independent breakers per (tenant, source)",
+     "App maintenance window announced: manual hold with an expiry so the repair task is not opened",
+     "Clock skew: bucketing uses the monitor's clock only",
+     "A new app joins: it inherits the default SLO and the breaker; its manifest may set its own"
+    ],
+    "tests": [
+     {
+      "name": "opens",
+      "given": "200 calls with 30 errors in 5 min, SLO 99%",
+      "expect": "burn 15, breaker open, pause sent to ch_wf"
+     },
+     {
+      "name": "min calls",
+      "given": "10 calls with 5 errors",
+      "expect": "breaker stays closed (under 20 calls)"
+     },
+     {
+      "name": "429 handling",
+      "given": "5 responses 429 with Retry-After 30 s",
+      "expect": "calls paused 30 s, no budget spent"
+     },
+     {
+      "name": "repair task",
+      "given": "3 opens in 6 hours",
+      "expect": "one repair task with last_success_at and error summary"
+     }
+    ],
+    "cost_levers": [
+     "Pausing a failing connector saves app quota and downstream embedding work",
+     "One repair task per outage, not one per error"
+    ],
+    "feedback_events": [
+     "Closing a repair task records the root cause class used to refine error classes"
+    ],
+    "analytics_events": [
+     {
+      "name": "health.breaker",
+      "fields": [
+       "tenant_id",
+       "source",
+       "from_state",
+       "to_state",
+       "burn",
+       "calls"
+      ],
+      "when": "on every state change"
+     },
+     {
+      "name": "health.repair_task",
+      "fields": [
+       "tenant_id",
+       "source",
+       "error_class",
+       "opens_in_6h"
+      ],
+      "when": "when a task is opened"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Durable pause and resume of sync workflows; the breaker sends a signal rather than killing jobs."
+     }
+    ],
+    "industry": "Short rate-limit windows recover fast, but hours-long windows can leave data unsynced for the rest of the window (t_t09); Dropbox runs one queue and limit per connector so one bad API does not block others (t_t48).",
+    "refs": [
+     "t_t06",
+     "t_t09",
+     "t_t48",
+     "t_t54",
+     "r_temporal"
+    ]
+   }
+  },
+  "op_beat": {
+   "line": "Compares expected and actual counts per app and path; a feed that goes quiet raises an alert\nsilence over 1 hour = alert",
+   "dumb": "The worst failures make no noise: a feed stops, and everything still looks fine. This check expects some number of events and some number of indexed items for each app each hour. If the count is far below normal, someone is told. It catches the quiet failures that error logs never show.",
+   "inn": "From ch_bus and ix_stores: per app and path the count of events received and pointers written per interval; expected range from the last 4 weeks.",
+   "out": "Health state per (app, path) {ok, quiet, stalled} to op_health; a sweep request to ch_sweep when quiet.",
+   "store": "Stores counts per interval and the expected range; no content.",
+   "fail": "If its own counter store is down it raises an alarm itself; a first-day app has no baseline and is checked against a static floor; alert noise is reduced by a minimum of 2 consecutive misses.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: compare expected and actual counts per app and path every 15 minutes and alert on two misses, triggering a sweep.",
+   "hard": "The right sensitivity per app is not known; the first release alerts only on 2 consecutive intervals below a lower bound and tunes from false-alarm counts.",
+   "deep": {
+    "purpose": "A pointer index is only useful if it is fresh. Counting expected against actual, per app and path, turns a silent stop into an alert and triggers a sweep to catch up.",
+    "expected": [
+     "Calendar feed delivers 0 events for 2 hours on a weekday, a stalled alert and a sweep are triggered",
+     "A weekend dip within the usual range raises nothing"
+    ],
+    "not_expected": [
+     "It does not repair a feed; it detects and asks for a sweep",
+     "It does not read content"
+    ],
+    "algorithm": {
+     "name": "Count against baseline with hysteresis",
+     "formula": "stalled iff c_t < lo(app, hour, weekday) for 2 consecutive intervals; lo = max(floor, q05 of last 4 weeks)",
+     "steps": [
+      "Collect counts per app and path each interval",
+      "Compare to the baseline lower bound for that hour and weekday",
+      "Require 2 consecutive misses",
+      "Set state, alert op_health and request a ch_sweep",
+      "Record the outcome after the sweep"
+     ],
+     "params": {
+      "interval": "15 min",
+      "consecutive_misses": "2 (design)",
+      "window": "4 weeks (design)",
+      "floor": "1 event per hour for active apps"
+     }
+    },
+    "security": [
+     "A silently dead feed that hides recent changes: this check is the control",
+     "Counter tampering: the counter store is write-only for the pipeline and read-only for the check"
+    ],
+    "performance": {
+     "slo": "alert within 1 hour of a stall",
+     "complexity": "O(apps * paths) per interval",
+     "scaling": "Constant per app; fine to millions of pointers because it counts, never scans."
+    },
+    "edge_cases": [
+     "App in a planned maintenance window: suppressed by a calendar flag",
+     "Tenant with very low volume: floor is not applied, uses a per-tenant baseline",
+     "Clock skew on counts: counts are bucketed by server time",
+     "Backfill burst after an outage: counted but not used for baselines",
+     "New app with no history: static floor only"
+    ],
+    "tests": [
+     {
+      "name": "stall_detected",
+      "given": "App delivers 0 events for two 15-minute intervals below baseline",
+      "expect": "state stalled and an alert plus sweep request"
+     },
+     {
+      "name": "weekend_ok",
+      "given": "Weekend count within the usual range",
+      "expect": "state ok, no alert"
+     },
+     {
+      "name": "maintenance_quiet",
+      "given": "Maintenance window flag set",
+      "expect": "no alert"
+     }
+    ],
+    "cost_levers": [
+     "Counting only; negligible cost"
+    ],
+    "feedback_events": [
+     "False alarm count and time-to-detect per app are reported weekly",
+     "Sweeps triggered by the heartbeat are counted"
+    ],
+    "analytics_events": [
+     {
+      "name": "beat",
+      "fields": [
+       "app",
+       "path",
+       "count",
+       "lo",
+       "state"
+      ],
+      "when": "per interval"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_infra",
+      "key_idea": "Persistent memory needs reliability engineering: silent failures, drift and recovery",
+      "how": "op_beat catches the silent stall the paper warns about"
+     }
+    ],
+    "refs": [
+     "p26_infra"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "op_lag",
+   "b": "op_audit",
+   "l": "slow sources first",
+   "k": "n",
+   "d": "source, lag_p95_s, target_s; audit sample weight rises for slow sources"
+  },
+  {
+   "a": "op_audit",
+   "b": "op_health",
+   "l": "audit failure rate",
+   "k": "n",
+   "d": "source, exist_rate, version_rate, access_rate, inconclusive"
+  },
+  {
+   "a": "op_cov",
+   "b": "op_health",
+   "l": "persistent gap",
+   "k": "n",
+   "d": "source, type, gap, allowed, cycles flagged"
+  },
+  {
+   "a": "op_health",
+   "b": "pl_obs",
+   "l": "connector alerts",
+   "k": "d",
+   "d": "source, breaker state, burn, repair task id",
+   "x": 1
+  },
+  {
+   "a": "op_health",
+   "b": "so_cap",
+   "l": "pause capability use",
+   "k": "s",
+   "d": "source, breaker state; the connector must not call while open",
+   "x": 1
+  }
+ ]
+}

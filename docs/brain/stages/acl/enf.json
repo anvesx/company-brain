@@ -1,0 +1,953 @@
+{
+ "group": {
+  "line": "An in-search principal pre-filter, a hard ownership gate after ranking, a parallel on-behalf-of recheck of the top results, a pushed revocation cache and a hash-chained audit log enforce permission.",
+  "dumb": "Before searching, we turn the asker into a list of ids and make the search engine look only at what those ids may open. After ranking, plain code drops any chunk whose owner or zone does not match. For the few results left, we ask the app again with the user's own token, and drop anything unclear. People who lost access go on a short list sent to every search node, and every search leaves a tamper-evident record."
+ },
+ "comps": {
+  "ac_filter": {
+   "line": "User to principal set, pushed into BM25 and ANN search as a pre-filter; empty set = no results\ncandidates needed = k / s",
+   "dumb": "Before searching, we work out every person-id and group-id that stands for the asker. Then we tell the search engine to look only at documents whose access list shares one of them. Filtering after ranking would hide results but also starve the answer, so we never do it that way alone.",
+   "inn": "From qr_id: {tenant, user_principal, group_ids[], agent_scope}. From ac_store: principal sets and acl_version. From ac_neg: revoked principals {principal, until}. From ix_meta: filter attributes {source, type, modified_at}.",
+   "out": "Compiled filter {tenant, principal_tokens[], acl_version, deny[], source_filter} sent to the lexical and vector search, graph expansion and result cache key. Query decision row to the audit log.",
+   "store": "Reads ac_store, ac_neg and the user to groups reverse index. Stateless otherwise; a per-user principal-set cache of 30 s keyed by (tenant, user, membership_version).",
+   "fail": "No principal resolved or ac_store down for over 2 s: return an empty filter that matches nothing, flag degraded, never search unfiltered. Principal set over 1,000 tokens: collapse to group references, and if still over, fail closed and alert. Search engine rejects the filter: 1 retry after 100 ms, then fail closed.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: the search must be narrowed by permission inside the index query so that restricted text never becomes a candidate.",
+   "hard": "Which filter strategy wins at each selectivity (in-graph predicate, pre-scan, or brute force over the allowed set) needs measuring on our chosen engine.",
+   "deep": {
+    "purpose": "Compile who the asker is into a filter the search engine applies while it searches. Ranking first and filtering after leaks candidates to later stages and, when few documents are visible, returns almost nothing. A new app needs no change here; its documents carry principal tokens from ac_store like any other. An agent asking on a user's behalf carries the narrower agent_scope from qr_id.",
+    "expected": [
+     "A document is a candidate only if its access list shares a token with the asker's principal set",
+     "With selectivity 0.1%, the search still returns k results from the allowed set",
+     "An empty or unresolved principal set returns zero results, never everything"
+    ],
+    "not_expected": [
+     "It never filters after ranking as the only control",
+     "It never widens the asker's principal set beyond the user, the user's groups and the agent scope",
+     "It does not make the final access decision; ac_live does that for the top results"
+    ],
+    "algorithm": {
+     "name": "Principal-set pre-filter with selectivity-aware strategy and fail-closed default",
+     "formula": "visible(d) iff allow(d) intersect P(u) is not empty, and P(u) minus revoked; post-filter candidates needed = k / s",
+     "steps": [
+      "Take the asker's user principal and group ids from qr_id; add the user's groups from the reverse index to form P(u)",
+      "Remove principals that ac_neg holds as revoked; add the agent scope limit if the asker is an agent",
+      "Estimate selectivity s = allowed chunks / total chunks for P(u) from index statistics",
+      "If s is below the brute-force threshold, scan only the allowed set exactly; otherwise run the search with the predicate applied inside the graph or inverted-index traversal",
+      "Attach tenant id and acl_version to the filter; pass the same filter to graph expansion and the cache key",
+      "If P(u) is empty or any input is missing, emit a filter that matches nothing"
+     ],
+     "params": {
+      "brute_force_threshold": "s under 1% (default; tune on the chosen engine with recall measured against exact search)",
+      "principal_cap": "1,000 tokens per query (design; larger sets collapse to group references)",
+      "principal_cache_ttl": "30 s (design; revocations bypass it through ac_neg)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "k: results wanted",
+      "s: selectivity, the fraction of chunks the asker may see",
+      "N: candidates retrieved before filtering",
+      "P(u): principal set of the asker",
+      "allow(d): principals allowed on document d"
+     ],
+     "formula_full": "Post-filter needs N = k / s candidates for k visible results; pre-filter needs N = k",
+     "derivation": "If each retrieved candidate is visible with probability s, the expected visible count from N candidates is N x s. Setting N x s = k gives N = k / s. As s falls, N explodes, so filtering inside the search is the only way to keep recall.",
+     "worked_example": "k = 100 and s = 2%: post-filter must retrieve 100 / 0.02 = 5,000 candidates. At s = 0.1% it needs 100,000, which passes any sane retrieval cap, so a post-filter returns about 100,000 x 0.001 = 100 only if the cap is lifted, and about 5 at a 5,000 cap. Pre-filter returns 100 in both cases. A user in 40 groups has |P(u)| = 1 + 40 + 1 public token = 42 tokens, well under the 1,000 cap.",
+     "complexity": "Building P(u) is O(g) for g groups; search cost depends on the engine, with brute force over the allowed set O(s x N x dimension).",
+     "failure_modes": [
+      "Very selective filter makes the graph traversal disconnected and recall drop: switch to brute force below the threshold",
+      "Stale principal cache: revocations come through ac_neg, which bypasses the cache",
+      "Wrong tenant in the filter: tenant id is a mandatory term and the gv_tenant row-level check is the second line"
+     ],
+     "calibration": "Per engine and per tenant, sweep s from 0.01% to 50% and compare the filtered search with exact search; pick the threshold where recall@10 stays above 0.95 (default target, design)."
+    },
+    "alternatives": [
+     {
+      "name": "Post-filter after ranking",
+      "why_rejected": "Leaks restricted candidates to later stages and needs k / s candidates; p_acorn and t_t22 both argue for in-search filtering."
+     },
+     {
+      "name": "Separate index per user",
+      "why_rejected": "Storage and update cost scale with users times documents; shared index with a principal filter scales with documents."
+     }
+    ],
+    "security": [
+     "Filter bypass through a code path that queries without user context (the silent-skip bug named in t_t56): the search client refuses a query that carries no filter object and fails closed",
+     "Principal-set inflation by an attacker who adds themselves to many groups: group additions above the alert size are audited and the 1,000 token cap bounds the damage",
+     "Cache poisoning across users: the result cache key includes the principal-set hash, so one user's cached hits never serve another"
+    ],
+    "performance": {
+     "slo": "Filter compile p95 under 5 ms; filtered search p95 within 1.3x of the unfiltered search (design target)",
+     "complexity": "O(g) compile; engine-dependent search",
+     "scaling": "At 10x documents selectivity falls for narrow users; the brute-force switch and per-tenant namespaces keep recall; filter compile stays flat."
+    },
+    "edge_cases": [
+     "Empty principal set: matches nothing",
+     "User in 5,000 groups: collapsed to group references, and if above cap fails closed with an alert",
+     "Duplicate tokens: set semantics, one copy",
+     "Revocation arriving mid-query: the next query uses it; ac_live catches the current one",
+     "Unicode ids: compared as exact bytes",
+     "Clock skew: acl_version is a counter, not a timestamp",
+     "Agent with narrower scope than its owner: intersect, never union",
+     "A newly connected app is invisible until its first ACL write; its documents default to no access"
+    ],
+    "tests": [
+     {
+      "name": "sparse visibility",
+      "given": "user sees 0.1% of 1,000,000 chunks, k = 100",
+      "expect": "100 results, all from the allowed set"
+     },
+     {
+      "name": "fail closed on missing principal",
+      "given": "qr_id returns no principal",
+      "expect": "zero results and degraded = true"
+     },
+     {
+      "name": "revoked principal removed",
+      "given": "ac_neg holds group g7 for the user",
+      "expect": "no result whose only matching token is g7"
+     },
+     {
+      "name": "cross-user cache",
+      "given": "user A and user B send the same query with different principal sets",
+      "expect": "different cache keys, no shared results"
+     }
+    ],
+    "cost_levers": [
+     "Pre-filter returns k candidates instead of k / s, so the reranker sees fewer",
+     "30 s principal-set cache avoids repeated group lookups"
+    ],
+    "feedback_events": [
+     "Queries that return fewer than k results for a user are logged with s to tune the brute-force threshold"
+    ],
+    "analytics_events": [
+     {
+      "name": "filter.compiled",
+      "fields": [
+       "tenant_id",
+       "user_hash",
+       "principal_count",
+       "selectivity",
+       "strategy",
+       "ms"
+      ],
+      "when": "for every query"
+     },
+     {
+      "name": "filter.failclosed",
+      "fields": [
+       "tenant_id",
+       "reason"
+      ],
+      "when": "when an empty filter is emitted"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_acorn",
+      "key_idea": "Predicate-agnostic filtered search works inside the graph traversal instead of after it.",
+      "how": "We push the principal predicate into the search and fall back to exact scan when the filter is too selective."
+     },
+     {
+      "ref": "p_filtered-stale",
+      "key_idea": "Filtered multi-tenant ANN graphs under live updates need recall bounds on staleness.",
+      "how": "Used as a design reference for measuring recall under concurrent ACL patches (new single-author preprint, our inference for fit)."
+     },
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Authorization is a filter inside retrieval, evaluated per query with live permissions.",
+      "how": "Adopted as the two-gate shape: this pre-filter, then ac_live."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_vespa",
+      "name": "Vespa",
+      "take": "Hybrid ranking with per-query filters in one query; the model for pushing one predicate into lexical and vector search together."
+     },
+     {
+      "ref": "r_opensearch",
+      "name": "OpenSearch",
+      "take": "Document-level security as a query filter; we keep the shape and build the allow list ourselves."
+     }
+    ],
+    "industry": "Moveworks applies pre- and post-retrieval filtering over a mirrored permissions store (pr_moveworks). Elastic enforces document-level security with API keys (pr_elastic). Practitioner consensus is to filter inside the vector query (t_t22).",
+    "refs": [
+     "p_acorn",
+     "p_filtered-stale",
+     "p_multitenant-rag",
+     "t_t22",
+     "t_t56",
+     "pr_moveworks",
+     "pr_elastic",
+     "r_vespa",
+     "r_opensearch"
+    ]
+   }
+  },
+  "ac_live": {
+   "line": "Top results re-checked at the source with the user's own token; denied or unsure = dropped\nP(any slow) = 1 - (1 - q)^N",
+   "dumb": "The index can be a few seconds behind a sharing change, so for the last handful of results we ask the app itself whether this user can open each one, using the user's own token. If the app says no, or does not answer in time, the result is dropped. Nothing is shown on a maybe.",
+   "inn": "Top results from qr_rerank {uri, chunk_id, score}, up to 10 per query. Per-user, per-app token from so_obo (RFC 8693 exchange, audience-bound). Revoked list from ac_neg.",
+   "out": "Cleared results to qr_hyd; decision rows {user, uri, allowed, acl_version, checked_at, source_status} to ac_audit; denial and stale-ACL signals to ac_neg and ch_wf.",
+   "store": "Short decision cache in memory: (user, uri) to allowed with 30 s TTL (default). No tokens stored here; tokens live in the vault (so_oauth).",
+   "fail": "Per-check timeout 800 ms; whole recheck budget 1.2 s (design). A check that times out, returns 5xx or returns 429 counts as denied for display. Up to 2 backfill rounds ask the reranker for the next 10 when more than 3 are dropped. If the token exchange fails, the app's results are dropped and the user sees which source was unavailable.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: the index narrows by permission first and the source app has the last word on the few results shown, because index copies of permissions can lag.",
+   "hard": "Some apps have no cheap single-object access check; for them the recheck uses a metadata read or a permission-aware search call, and the cost and latency per app are not yet measured. Owner-id recheck cost per query is untested. Backed pattern: Onyx runs a post-retrieval censoring step (backend/ee/onyx/external_permissions/post_query_censoring.py) that drops chunks the user may not see, for sources with synced permissions (r_onyx). Its docs page does not describe it; the code does.",
+   "deep": {
+    "purpose": "Make the app the final authority on the top results, so index lag or a sync bug cannot show someone a document they lost access to. Per-user delegated tokens (RFC 8693 exchange, RFC 8707 audience binding, no token passthrough, t_t24) keep the check in the user's own authority. A new app joins by declaring an access-check call in its so_sdk manifest, or by exposing a read-metadata tool through the MCP bridge (so_mcp), which the recheck can call.",
+    "expected": [
+     "A result the user lost access to a few seconds ago is dropped before display",
+     "A source timeout drops the result and never shows it",
+     "Every decision is written to the audit log with the ACL version used"
+    ],
+    "not_expected": [
+     "It never uses an app-wide service token to decide a user's access",
+     "It never forwards the user's token to another service",
+     "It does not check the whole candidate list, only the top results"
+    ],
+    "algorithm": {
+     "name": "Parallel on-behalf-of access check on the top N with timeout, fail closed, bounded backfill",
+     "formula": "P(at least one slow check) = 1 - (1 - q)^N; display set = results with source_status = allowed",
+     "steps": [
+      "Skip any result whose principal path hits ac_neg and deny it without a source call",
+      "Fetch the user's audience-bound token for each app from so_obo",
+      "Issue the N checks in parallel through the connector (so_sdk), each with an 800 ms timeout",
+      "Mark each result allowed only on an explicit allow from the app; deny on deny, timeout, 4xx or 5xx",
+      "If more than 3 of N are dropped, ask qr_rerank for the next batch, at most 2 rounds",
+      "Write one audit row per decision and signal ac_neg and ch_wf for explicit denials of results the index thought visible"
+     ],
+     "params": {
+      "N": "10 results per round (matches the reranker output)",
+      "per_check_timeout": "800 ms (design; tune per app from measured p95)",
+      "decision_cache_ttl": "30 s (default; a revocation signal from ac_neg bypasses it)",
+      "max_backfill_rounds": "2 (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "N: results checked in parallel",
+      "q: chance one check is slow (over its p95 line)",
+      "T_check: per-call timeout",
+      "B: total recheck budget"
+     ],
+     "formula_full": "P(at least one slow) = 1 - (1 - q)^N; wall time = max over the N checks, capped at T_check",
+     "derivation": "Each check is slow with probability q, so all N are on time with probability (1 - q)^N. With parallel calls the wall time is the slowest one, so the timeout cap is what bounds latency, not the average.",
+     "worked_example": "N = 10 and q = 5% (p95): P(at least one slow) = 1 - 0.95^10 = 1 - 0.5987 = 40.1%. Without a cap, 4 in 10 queries wait for a slow call. With the 800 ms cap, wall time stays under 0.8 s and the slow result is dropped. Quota check: 10 checks x 1,000 queries per hour = 10,000 calls; at 2 points per call (the identity-read price in t_t06, assumed) that is 20,000 points of a 120,000-point Jira hour, about 17%.",
+     "complexity": "O(N) calls per round, O(1) wall time in N because the calls run in parallel.",
+     "failure_modes": [
+      "App rate limit hit by many users: per-(tenant, app) token bucket from so_rate; checks beyond it are denied, not queued past the budget",
+      "Source says allow but index says deny: the stricter outcome is not used; the app is the authority for display, and the mismatch is logged as index staleness",
+      "Token exchange outage: all results from that app are dropped, never shown on index trust alone"
+     ],
+     "calibration": "Set T_check per app at its measured p95 plus 20%; re-measure monthly; widen only if the drop rate from timeouts exceeds 2% of checks (design)."
+    },
+    "alternatives": [
+     {
+      "name": "Trust the index filter only",
+      "why_rejected": "Index copies lag a revoke by the sync interval; t_t23 argues a real-time check on candidates is needed before context reaches the model."
+     },
+     {
+      "name": "Check every candidate live",
+      "why_rejected": "Cost and latency scale with the candidate count and hit every app's rate limit; the pre-filter makes the top N the only ones worth checking."
+     }
+    ],
+    "security": [
+     "Confused deputy: an app-wide service token would answer for any user; only the user's exchanged, audience-bound token is used, and MCP forbids passthrough (t_t24)",
+     "Time-of-check gap: access lost after the check but before display is shortened by the 30 s cache ceiling and ac_neg push invalidation",
+     "A forged allow from a compromised connector: the decision is recorded with the connector id and probed by op_leak planted-document tests"
+    ],
+    "performance": {
+     "slo": "Recheck p95 under 900 ms for N = 10; drop rate from timeouts under 2%",
+     "complexity": "O(N) calls, parallel",
+     "scaling": "At 10x queries the app rate limit binds first; decision cache, ac_neg skip list and per-app buckets cut calls, and apps with no check API fall back to a metadata read."
+    },
+    "edge_cases": [
+     "Empty result list: no calls, empty answer path",
+     "All 10 denied: up to 2 backfill rounds, then return fewer results with a notice",
+     "Duplicate uris in the list: checked once",
+     "Concurrent revocation during the check: next query sees it, this one relied on the app's answer",
+     "Unicode in uris: passed as opaque strings",
+     "Token expired mid-check: one refresh through so_obo, then deny",
+     "App with no live check: marked recheck-by-metadata in its so_sdk manifest; an MCP-only app exposes a metadata tool",
+     "A personal row is rechecked against its owner id before any source call, so a stale personal row cannot reach another user."
+    ],
+    "tests": [
+     {
+      "name": "revoked access dropped",
+      "given": "user lost access in the app 10 s ago; index still lists the doc",
+      "expect": "result absent from output; audit row allowed = false"
+     },
+     {
+      "name": "timeout fails closed",
+      "given": "source takes 2 s on result r3",
+      "expect": "r3 dropped at 800 ms, other 9 shown"
+     },
+     {
+      "name": "no passthrough",
+      "given": "recheck call for app A",
+      "expect": "token audience equals app A's connector; no token reused for app B"
+     },
+     {
+      "name": "backfill bound",
+      "given": "6 of 10 denied",
+      "expect": "at most 2 more rounds, then a short list with a notice"
+     }
+    ],
+    "cost_levers": [
+     "30 s decision cache and ac_neg skip list avoid repeat source calls",
+     "Only the top N is checked, not the candidate list"
+    ],
+    "feedback_events": [
+     "Each deny of a document the index allowed becomes a stale-ACL event that triggers an immediate ACL refresh"
+    ],
+    "analytics_events": [
+     {
+      "name": "recheck.done",
+      "fields": [
+       "tenant_id",
+       "user_hash",
+       "app",
+       "n_checked",
+       "n_denied",
+       "n_timeout",
+       "ms"
+      ],
+      "when": "after each recheck round"
+     },
+     {
+      "name": "recheck.mismatch",
+      "fields": [
+       "tenant_id",
+       "app",
+       "uri_hash",
+       "acl_version"
+      ],
+      "when": "when the app denies what the index allowed"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_rag-privacy",
+      "key_idea": "Access checks must happen before content reaches the model, since output filtering alone leaks.",
+      "how": "The recheck runs before hydration and prompt assembly."
+     },
+     {
+      "ref": "p_participant-acl",
+      "key_idea": "Authorize against everyone in the session, not only the asker.",
+      "how": "When an agent or shared thread is involved, the recheck runs once per participant principal and the intersection is shown."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_cerbos",
+      "name": "Cerbos",
+      "take": "Policy rules such as sensitivity labels can sit on top of source ACLs; the recheck stays a source call and policy is a separate step."
+     },
+     {
+      "ref": "r_openfga",
+      "name": "OpenFGA",
+      "take": "Its check call is the shape of a single-object access question; ours is answered by the source app, not a mirrored graph."
+     }
+    ],
+    "industry": "Glean checks access at query time for some connectors such as SharePoint (pr_glean). Moveworks live connectors call the source with the user's OAuth token (pr_moveworks). Slack and Claude connectors inherit each user's permissions through per-user tokens (pr_slack-ai, pr_claude-connectors).",
+    "refs": [
+     "t_t23",
+     "t_t24",
+     "t_t25",
+     "t_t06",
+     "p_rag-privacy",
+     "p_participant-acl",
+     "pr_glean",
+     "pr_moveworks",
+     "pr_slack-ai",
+     "pr_claude-connectors",
+     "r_cerbos",
+     "r_openfga",
+     "r_onyx"
+    ]
+   }
+  },
+  "ac_neg": {
+   "line": "Revoked-principal cache, pushed to every query node, local TTL 5 s\nexposure <= T_detect + T_push (+ TTL if push fails)",
+   "dumb": "When someone loses access, waiting for the normal sync would leave a gap. This is a short list of people and groups whose access ended, sent straight to every search node. It is checked on every query until the main access list catches up.",
+   "inn": "Leaver events from ac_scim {principal, at}. Removed-entry signals from ac_src and ac_grp {tenant, uri|group_id, principal}. Denials from ac_live {tenant, uri, user}.",
+   "out": "Revoked set {tenant, principal, scope: all|group|uri, revoked_at, until_version} to ac_filter and ac_live; invalidation messages to qr_cache; applied-revocation record to ac_audit.",
+   "store": "Shared store of revocations {tenant, principal, scope, revoked_at, until_version} plus a per-node in-memory copy refreshed by push and expiring after 5 s without a refresh. Entries are deleted when ac_store reports a version at or past until_version.",
+   "fail": "Push channel down: each node pulls the shared store every 5 s, so exposure stays under the local TTL. Shared store down: nodes keep the last copy for 60 s, then fail closed for any principal flagged in the last 24 h. Duplicate or out-of-order messages: applied by revoked_at, the latest wins; no retry needed.",
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'",
+   "prop": "Proposal: access loss must take effect in seconds, ahead of the minutes that a normal access list refresh needs.",
+   "hard": "The 5 s local TTL and the push design are targets; end-to-end revocation latency per app has not been measured, and apps with no events rely on the sweep and ac_live.",
+   "deep": {
+    "purpose": "Close the gap between the moment access ends and the moment the access list store converges. The cache holds only what changed recently, so it stays small, and entries leave once ac_store catches up. Event-less apps join with a declared poll interval in the so_sdk manifest, and an MCP-only app reports removals through its bridge (so_mcp) change tool; either way the bound is stated per app.",
+    "expected": [
+     "A leaver is excluded from search on every node within the detect plus push time",
+     "If the push is lost, the local 5 s TTL still bounds exposure",
+     "An entry disappears when ac_store's version passes the revocation"
+    ],
+    "not_expected": [
+     "It does not grant access; it only removes",
+     "It does not replace ac_store or ac_live",
+     "It does not keep entries after the main list has caught up"
+    ],
+    "algorithm": {
+     "name": "Negative cache with push invalidation, short local TTL and version-based retirement",
+     "formula": "exposure_max = T_detect + T_push; if push fails, exposure_max = T_detect + T_ttl",
+     "steps": [
+      "Receive a revocation signal and write {principal, scope, revoked_at, until_version} to the shared store",
+      "Publish an invalidation to every query node; each node updates its in-memory copy and resets its 5 s refresh clock",
+      "On every query, ac_filter subtracts revoked principals and ac_live denies results in a revoked scope without a source call",
+      "A node that gets no refresh for 5 s pulls the shared store",
+      "Retire an entry when ac_store reports acl_version at or beyond until_version for the scope",
+      "Tell qr_cache to drop cached results for the principal"
+     ],
+     "params": {
+      "local_ttl": "5 s (design; matches the seconds-long target)",
+      "pull_interval": "5 s (design)",
+      "retention_cap": "24 h (default; entries older than this alert because the list should have converged)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T_detect: time from the real change to our signal",
+      "T_push: time to reach all nodes",
+      "T_ttl: local TTL",
+      "exposure: time a revoked user could still appear in results"
+     ],
+     "formula_full": "exposure_max = T_detect + min(T_push_ok, T_ttl) where T_push_ok is infinite when push fails",
+     "derivation": "If push works, nodes learn after T_push. If it fails, they learn at the next pull, which is at most T_ttl after the last refresh. The smaller wins.",
+     "worked_example": "Event path: T_detect 5 s, T_push 1 s: exposure about 6 s. Push lost: 5 + 5 = 10 s. Polled-only app with a 300 s poll: T_detect up to 300 s, so exposure up to 305 s, and ac_live closes the gap for results actually shown (its decision is made at display time). Memory: 1,000 revoked entries x 64 bytes = 64 KB per node.",
+     "complexity": "O(1) lookup in a hash set; O(r) memory for r live revocations.",
+     "failure_modes": [
+      "Message lost: pull every 5 s repairs it",
+      "Out-of-order messages: revoked_at ordering",
+      "Entry retired too early: retirement requires the store version, not a timer"
+     ],
+     "calibration": "Measure real T_detect per app for 30 days and publish the per-app exposure bound; lower the TTL only if the shared store handles the pull rate."
+    },
+    "alternatives": [
+     {
+      "name": "Wait for the normal ACL refresh",
+      "why_rejected": "The refresh interval is minutes to hours (Glean notes about 24 h for SharePoint without webhooks, pr_glean); too long for a leaver."
+     },
+     {
+      "name": "Long-lived deny list",
+      "why_rejected": "Grows without bound and masks a broken ACL sync; version-based retirement keeps it small and exposes sync bugs."
+     }
+    ],
+    "security": [
+     "Replayed old grant message that re-adds a revoked user: this component only removes; grants come from ac_store with a higher version",
+     "Flooding the cache with fake revocations to deny service to a team: only service identities from ac_scim, ac_src, ac_grp and ac_live can write, and each write is audited",
+     "Cross-tenant leak through a shared cache key: tenant id is part of every entry key"
+    ],
+    "performance": {
+     "slo": "Healthy-path exposure p95 under 10 s; lookup p99 under 1 ms",
+     "complexity": "O(1) lookup",
+     "scaling": "At 10x nodes push fan-out grows; use a pub/sub topic per tenant with a 5 s pull as the safety net."
+    },
+    "edge_cases": [
+     "Empty cache: no effect",
+     "Mass offboarding of 5,000 people: batched into one message, memory 320 KB",
+     "Duplicate revocations: collapse by (principal, scope)",
+     "Revocation then immediate re-grant: the re-grant arrives as a higher ac_store version and retires the entry",
+     "Clock skew: ordering uses revoked_at assigned by the shared store, not node clocks",
+     "Principal unknown to the brain: still recorded by id, harmless",
+     "An app without events declares its poll interval in its manifest so the stated bound is honest"
+    ],
+    "tests": [
+     {
+      "name": "leaver excluded fast",
+      "given": "ac_scim emits a leaver event at t0",
+      "expect": "no node returns that user's results from t0 + 10 s"
+     },
+     {
+      "name": "push lost",
+      "given": "push drops the message",
+      "expect": "nodes exclude the principal within 10 s through the pull"
+     },
+     {
+      "name": "retirement by version",
+      "given": "ac_store reaches the revoking version",
+      "expect": "entry removed, no residual deny"
+     },
+     {
+      "name": "tenant isolation",
+      "given": "revocation in tenant A",
+      "expect": "no effect on tenant B queries"
+     }
+    ],
+    "cost_levers": [
+     "Small hash set with version-based retirement keeps memory under 1 MB per node",
+     "Skip list saves source calls in ac_live for known-revoked principals"
+    ],
+    "feedback_events": [
+     "Entries older than the 24 h cap are logged as ACL sync bugs and reviewed"
+    ],
+    "analytics_events": [
+     {
+      "name": "revocation.applied",
+      "fields": [
+       "tenant_id",
+       "scope",
+       "detect_ms",
+       "push_ms"
+      ],
+      "when": "when a revocation reaches the nodes"
+     },
+     {
+      "name": "revocation.retired",
+      "fields": [
+       "tenant_id",
+       "age_s"
+      ],
+      "when": "when ac_store catches up"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_stale-poison",
+      "key_idea": "Stale index entries can be worse than none; freshness must be verified when serving.",
+      "how": "The cache fixes the gap for access, the same way the live recheck fixes it for content."
+     }
+    ],
+    "repos": [],
+    "industry": "Glean notes source permissions can change anytime and refreshes them separately from content (t_t20). Descope argues metadata filters lag and need a live check (t_t23). Our cache plus ac_live addresses both.",
+    "refs": [
+     "t_t20",
+     "t_t23",
+     "t_t57",
+     "p_stale-poison",
+     "pr_glean"
+    ]
+   }
+  },
+  "ac_audit": {
+   "line": "Append-only access record, hash-chained per tenant: h(i) = H(h(i-1) || row(i))\nbytes/day = queries x (1+n) x row",
+   "dumb": "Every search leaves a record: who asked, which results they were shown, which version of the access list was used, and whether we asked the app again. Records are only ever added, and each one is tied to the one before it, so tampering shows up. The record holds ids and hashes, not document text.",
+   "inn": "Query decision from ac_filter {tenant, principal, query_id, acl_version, filter_strategy}. Recheck decisions from ac_live {user, uri, allowed, acl_version, checked_at, source_status}. Change records from ac_src, ac_grp, ac_store, ac_neg.",
+   "out": "Rows appended to the shared audit log in pl_idp; shown-object rows to op_leak for planted-document checks.",
+   "store": "Writes an append-only table in the brain's audit table: {tenant, seq, principal, query_id, query_hash, uri_hash[], acl_version, recheck[], at, prev_hash, row_hash}. Never updated or deleted by this component.",
+   "fail": "Audit store down: buffer up to 10,000 rows or 60 s in memory, retry every 2 s; past the buffer, the query still fails closed for sensitive sources (no audit, no display) and alerts. Hash chain break found by the verifier: page the on-call, freeze writes to that tenant's chain segment and start a new segment.",
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'",
+   "prop": "Proposal: every disclosure records which access list version allowed it, so a leak can be traced to its cause.",
+   "hard": "How long rows must be kept, and how a person's rows are handled in an erasure request when the log must stay unalterable, is open; the plan is to store hashed uris and a query hash only.",
+   "deep": {
+    "purpose": "Prove after the fact who saw what and under which permission state. Rows carry hashes, never text, so the log itself is not a second copy of content. New apps need nothing here; their object uris are hashed like any other.",
+    "expected": [
+     "Every displayed result has a row with its acl_version and recheck outcome",
+     "Rows cannot be changed without breaking the hash chain",
+     "A leak investigation can replay which access list version allowed a result"
+    ],
+    "not_expected": [
+     "It never stores document text, snippets or the raw query text",
+     "It does not make decisions",
+     "It never updates or deletes rows"
+    ],
+    "algorithm": {
+     "name": "Hash-chained append-only log with per-tenant sequence",
+     "formula": "h(i) = H(h(i-1) || canonical(row(i))), seq(i) = seq(i-1) + 1",
+     "steps": [
+      "Collect decision, recheck and change records for one query or change",
+      "Canonicalise the row (fixed field order, UTC time) and replace uris and query text with salted hashes",
+      "Append with the next seq and the previous row hash; compute row_hash",
+      "Ship to the shared audit log (pl_idp)",
+      "A verifier recomputes the chain on a schedule and on demand and reports the first break"
+     ],
+     "params": {
+      "hash": "SHA-256 (design)",
+      "verify_interval": "1 h per tenant segment (default)",
+      "buffer": "10,000 rows or 60 s (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "Q: queries per day",
+      "n: objects shown per query",
+      "r: bytes per row",
+      "H: the hash function"
+     ],
+     "formula_full": "bytes per day = Q x (1 + n) x r; chain check cost O(rows)",
+     "derivation": "One query row plus one row per shown object, each r bytes. The chain adds 32 bytes per row for the hash.",
+     "worked_example": "Q = 1,000,000 queries per day, n = 8 objects shown, r = 200 bytes + 32 hash = 232: 1,000,000 x 9 x 232 = 2.09 GB per day, about 63 GB per month before compression. Verifying one day's chain is 9,000,000 hash steps, about seconds on one core.",
+     "complexity": "O(1) append; O(rows) full verification.",
+     "failure_modes": [
+      "Writer crash mid-append: the sequence number gap is detected and the segment restarts with a marker row",
+      "Two writers: per-tenant single writer lane keeps seq monotonic",
+      "Clock skew: ordering uses seq, time is informational"
+     ],
+     "calibration": "Compare storage per tenant against the cost meter monthly; move rows older than 90 days to cheaper storage while keeping chain checkpoints."
+    },
+    "alternatives": [
+     {
+      "name": "Plain mutable log table",
+      "why_rejected": "Tampering leaves no trace; the unalterable log is a requirement for the audit table."
+     },
+     {
+      "name": "Store query and result text for easy review",
+      "why_rejected": "The log would become a second, unprotected copy of company content."
+     }
+    ],
+    "security": [
+     "Insider edits or deletes a row to hide a disclosure: the hash chain breaks at that point and the verifier alerts",
+     "Log becomes a content leak: only hashes and ids are stored, with a per-tenant salt so hashes cannot be matched across tenants",
+     "Log injection through a crafted uri or query string: fields are canonicalised and length-capped before hashing"
+    ],
+    "performance": {
+     "slo": "Append p95 under 10 ms off the query path (async); 0 rows lost under a 60 s outage",
+     "complexity": "O(1) append",
+     "scaling": "At 10x queries volume is 20 GB per day in the example; shard chains by tenant and compress cold segments."
+    },
+    "edge_cases": [
+     "Query with zero results: still one row, n = 0",
+     "Very large result set: capped at the shown objects, not candidates",
+     "Duplicate record from retry: dedupe by (tenant, query_id, seq)",
+     "Concurrent queries: separate rows, one writer lane orders them",
+     "Unicode in query: only its hash is stored",
+     "Clock skew: seq decides order",
+     "Erasure of a source object: the stored uri hash remains but cannot be reversed to the uri"
+    ],
+    "tests": [
+     {
+      "name": "chain detects edit",
+      "given": "one row's acl_version is changed after write",
+      "expect": "verifier reports a break at that seq"
+     },
+     {
+      "name": "no text stored",
+      "given": "query 'salary plan' returns a restricted doc",
+      "expect": "row holds query_hash and uri_hash only"
+     },
+     {
+      "name": "buffered outage",
+      "given": "audit store down for 30 s",
+      "expect": "all rows delivered after recovery, in seq order"
+     },
+     {
+      "name": "recheck captured",
+      "given": "ac_live denies r3",
+      "expect": "row for r3 with allowed = false and source_status set"
+     }
+    ],
+    "cost_levers": [
+     "Hashes instead of text keep rows near 232 bytes",
+     "Cold-tier compression after 90 days with chain checkpoints"
+    ],
+    "feedback_events": [
+     "Investigations that find a disclosure add the case to op_leak's planted-document set"
+    ],
+    "analytics_events": [
+     {
+      "name": "audit.appended",
+      "fields": [
+       "tenant_id",
+       "seq",
+       "rows",
+       "ms"
+      ],
+      "when": "after each append batch"
+     },
+     {
+      "name": "audit.chain_break",
+      "fields": [
+       "tenant_id",
+       "seq"
+      ],
+      "when": "when the verifier finds a break"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_extraction-bench",
+      "key_idea": "Rate limiting and auditing query patterns help detect knowledge-extraction attacks.",
+      "how": "The log is the data source for per-user query pattern review."
+     }
+    ],
+    "repos": [],
+    "industry": "Slack's MCP server exposes audit-log visibility for tool use (t_t25). Copilot and Glean-style products rely on source-level audit plus their own logs; our log adds the ACL version per displayed result.",
+    "refs": [
+     "t_t25",
+     "p_extraction-bench",
+     "t_t56"
+    ]
+   }
+  },
+  "ac_gate": {
+   "line": "Code drops any chunk whose owner or zone is not allowed for the caller, before the model sees it\ndrop count = alarm",
+   "dumb": "Even if search is set up right, one mistake could bring up another person's private note, because notes that mean similar things sit close together. As a last check before any text reaches the model, code compares each chunk's owner and zone with who is asking and drops anything that does not belong. It is a plain rule, not a prompt, and every drop is counted.",
+   "inn": "From qr_rerank: ranked chunks {chunk_id, owner_id, zone, tenant_id, acl_ref}; caller {principal, allowed owners, allowed zones}.",
+   "out": "Allowed chunks to ac_live; counts {kept, dropped, reasons} to ac_audit and to op_leak as a canary signal.",
+   "store": "Reads chunk metadata and the caller's allowed sets; writes one audit row per query with counts. No chunk text is stored.",
+   "fail": "Fails closed: a chunk with a missing owner or zone is dropped; if the gate itself throws, the query returns no results and an alarm is raised; a drop rate above 0.1 percent over an hour opens an incident.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: a hard code gate after retrieval that drops any chunk whose owner or zone is not allowed for the caller, with a counted alarm.",
+   "hard": "The gate can only catch chunks that carry the right owner and zone; chunks written with wrong metadata at index time pass it, so an index-time metadata audit (op_audit) is still needed.",
+   "deep": {
+    "purpose": "Similar memories from different people sit close together in a shared vector space, so ordinary search can surface another user's private note without any attack. A hard code gate after retrieval makes sure that, whatever the search found, nothing outside the caller's owner and zone reaches the model.",
+    "expected": [
+     "A chunk whose owner is another user in the personal zone is dropped and counted",
+     "Every query writes the kept and dropped counts"
+    ],
+    "not_expected": [
+     "It does not replace the pre-filter in ac_filter; it is the last line",
+     "It does not use a model to decide"
+    ],
+    "algorithm": {
+     "name": "Set-membership gate on owner and zone",
+     "formula": "keep(c) = c.tenant == t and c.zone in Z and (c.zone != personal or c.owner == u)",
+     "steps": [
+      "Receive ranked chunks from the reranker",
+      "For each chunk check tenant, zone and owner against the caller's allowed sets",
+      "Drop and count each failure with a reason",
+      "Pass kept chunks on and write the audit row",
+      "Raise an alarm when the hourly drop rate passes the threshold"
+     ],
+     "params": {
+      "alarm_rate": "0.1 percent of retrieved chunks per hour (design)",
+      "fail_mode": "closed (missing metadata is a drop)"
+     }
+    },
+    "security": [
+     "Semantic leakage between users in a shared vector space: the gate is enforced in code on owner and zone, not in a prompt",
+     "Metadata tampering: owner and zone are written by the indexer from the source and are never taken from document text"
+    ],
+    "performance": {
+     "slo": "under 2 ms for 100 chunks",
+     "complexity": "O(n) over n chunks, set lookups",
+     "scaling": "At 10x chunk volume the cost stays linear; the metadata travels with each hit, so no extra lookups."
+    },
+    "edge_cases": [
+     "Chunk with null owner: dropped, reason missing_owner",
+     "User who just lost team membership: allowed set is read fresh from ac_neg, so the chunk is dropped",
+     "Agent acting for a user: the allowed set is the smaller of the agent scope and the owner's",
+     "Duplicate chunks from two stores: each is checked separately",
+     "Zone label changed mid-query: the query keeps the snapshot it started with and the change applies next query"
+    ],
+    "tests": [
+     {
+      "name": "cross_user_drop",
+      "given": "Two users' personal notes close in meaning, user A asks",
+      "expect": "B's chunk is dropped and dropped count is 1"
+     },
+     {
+      "name": "missing_owner",
+      "given": "Chunk without owner",
+      "expect": "dropped with reason missing_owner"
+     },
+     {
+      "name": "agent_narrow",
+      "given": "Agent scope excludes the personal zone",
+      "expect": "no personal chunk passes even if the owner may see it"
+     }
+    ],
+    "cost_levers": [
+     "Pure set lookups; no model or network cost"
+    ],
+    "feedback_events": [
+     "Security team reviews any query with a non-zero drop count",
+     "Drop reasons feed op_leak"
+    ],
+    "analytics_events": [
+     {
+      "name": "gate_result",
+      "fields": [
+       "query_id",
+       "kept",
+       "dropped",
+       "reasons"
+      ],
+      "when": "after every gate run"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_memleak",
+      "key_idea": "Cross-user leakage happens through ordinary similarity search with no attacker",
+      "how": "ac_gate is the hard post-retrieval ownership gate the paper argues is needed"
+     }
+    ],
+    "refs": [
+     "p26_memleak"
+    ]
+   }
+  },
+  "ac_lin": {
+   "line": "Card access = intersection of source access\nchanged policy flags it, recheck on use",
+   "dumb": "A summary can leak what the original hides. So every stored card or note remembers where it came from, and a person may see it only if they may see all of its sources. If a source's rules change, the note is marked suspect and checked again the next time it is about to be used.",
+   "inn": "From cp_exp: the derived_from list of source pointers. From ac_store: the asker's rights on each source.",
+   "out": "To ac_gate: the visibility of each card for this asker.",
+   "store": "Stores lineage edges for every derived object, kept even after a source is deleted; stores each decision with the policy version it used.",
+   "fail": "A deleted or disconnected source authorises no one: cards from it are withheld until the owner declassifies them. If a source's rights cannot be read the card is hidden, not shown.",
+   "req": "DevX proposal, from the 2026 company-brain paper review (batch 2)",
+   "prop": "Proposal: give every stored card a derived_from list and compute its visibility as the intersection of the asker's rights on all sources, rechecked lazily.",
+   "hard": "The paper is a requirements design with no experiments: leakage, over-restriction and overhead are only proposed as measures. Declassification by a language-model check is a screen for a person, not a replacement.",
+   "deep": {
+    "purpose": "A card drawn from a private thread must stay as private as the thread. Without lineage a card is only as private as whoever wrote it, which is wrong.",
+    "expected": [
+     "A card from a private source is invisible to someone who cannot read that source",
+     "A source whose rights change flags its cards as stale until rechecked"
+    ],
+    "not_expected": [
+     "It does not recompute everything when a policy changes",
+     "It does not declassify on its own"
+    ],
+    "algorithm": {
+     "name": "Composed access with lazy revalidation",
+     "formula": "access(card) = intersection over all ancestors x of rights(x); an excluded ancestor is a recorded declassification",
+     "steps": [
+      "Record an edge to every source when a card is made",
+      "On a policy change mark descendants stale without recomputing",
+      "When a stale card becomes a candidate, recompute with current policy in batches by group",
+      "Record the decision with the policy version"
+     ],
+     "params": {
+      "recompute": "lazy, on candidate",
+      "declassify": "owner-approved exclusion, survives recomputation"
+     }
+    },
+    "security": [
+     "Restrictions combine, they never replace each other",
+     "A deleted source never widens access"
+    ],
+    "performance": {
+     "slo": "under 10 ms per candidate card",
+     "complexity": "one intersection over the ancestor set",
+     "scaling": "Batch recomputes by group; cache per policy version."
+    },
+    "edge_cases": [
+     "Card with 20 sources: intersection of all 20",
+     "Source group renamed: edges survive",
+     "Declassified ancestor: exclusion kept after recompute"
+    ],
+    "tests": [
+     {
+      "name": "intersect",
+      "given": "Card from sources A and B, user reads only A",
+      "expect": "card hidden"
+     },
+     {
+      "name": "deleted_source",
+      "given": "Source of a card is deleted",
+      "expect": "card withheld until declassified"
+     },
+     {
+      "name": "unreadable_source",
+      "given": "Source rights cannot be read",
+      "expect": "card hidden"
+     }
+    ],
+    "cost_levers": [
+     "Lazy recompute avoids full rewrites"
+    ],
+    "feedback_events": [
+     "Withheld-card counts, declassification requests"
+    ],
+    "analytics_events": [
+     {
+      "name": "card_access_checked",
+      "fields": [
+       "card_id",
+       "asker",
+       "result",
+       "policy_version"
+      ],
+      "when": "per candidate"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26b_akasic",
+      "key_idea": "Authorization continuity: lineage edges and intersected access for derived memory",
+      "how": "ac_lin applies it to stored cards and notes"
+     }
+    ],
+    "refs": [
+     "p26b_akasic"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "ac_filter",
+   "b": "ac_audit",
+   "l": "filter used",
+   "k": "d",
+   "d": "Record {query_id, principal_count, acl_version, strategy}",
+   "x": 1
+  },
+  {
+   "a": "ac_filter",
+   "b": "qr_graph",
+   "l": "pre-filter",
+   "k": "s",
+   "d": "Same principal-set filter {principals[], acl_version} so graph expansion cannot walk to hidden nodes",
+   "x": 1
+  },
+  {
+   "a": "ac_filter",
+   "b": "qr_cache",
+   "l": "principal-set hash",
+   "k": "s",
+   "d": "Cache key part {tenant, principal_set_hash, acl_version}",
+   "x": 1
+  },
+  {
+   "a": "ac_live",
+   "b": "ac_neg",
+   "l": "denied at source",
+   "k": "d",
+   "d": "Denial {tenant, uri, user} for a result the index allowed",
+   "x": 1
+  },
+  {
+   "a": "ac_live",
+   "b": "ch_wf",
+   "l": "stale acl signal",
+   "k": "d",
+   "d": "Order {tenant, app, uri, reason: recheck_mismatch} to refresh the ACL now",
+   "x": 1
+  },
+  {
+   "a": "ac_live",
+   "b": "so_sdk",
+   "l": "access check",
+   "k": "s",
+   "d": "Per-object access probe {app, uri, user token ref}",
+   "x": 1
+  },
+  {
+   "a": "ac_neg",
+   "b": "ac_live",
+   "l": "revoked skip list",
+   "k": "s",
+   "d": "Revoked scopes {principal, scope, revoked_at} so no source call is spent",
+   "x": 1
+  },
+  {
+   "a": "ac_neg",
+   "b": "qr_cache",
+   "l": "invalidate principal",
+   "k": "s",
+   "d": "Drop cached answers for {tenant, principal}",
+   "x": 1
+  },
+  {
+   "a": "ac_neg",
+   "b": "ac_audit",
+   "l": "revocation applied",
+   "k": "d",
+   "d": "Record {principal, scope, detect_ms, push_ms}",
+   "x": 1
+  },
+  {
+   "a": "ac_audit",
+   "b": "op_leak",
+   "l": "shown objects",
+   "k": "d",
+   "d": "Rows {principal, uri_hash[], acl_version} checked against planted forbidden documents",
+   "x": 1
+  }
+ ]
+}

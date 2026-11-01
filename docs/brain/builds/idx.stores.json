@@ -1,0 +1,442 @@
+{
+ "ix_lex": {
+  "milestone": "M0",
+  "effort_days": 6,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "M0 engine",
+    "pick": "Postgres 16 full-text search (tsvector plus GIN) in one schema per tenant",
+    "why": "runs at T0 with the pointer registry; ranking is ts_rank, not true BM25, so label it as the stand-in"
+   },
+   {
+    "part": "BM25 engine",
+    "pick": "OpenSearch (Apache-2.0, r_opensearch) or Vespa (r_vespa), one index per tenant and generation",
+    "why": "real BM25 with document-level security options; the research marks the engine choice as undecided, so decide at M3 on a recall@20 test"
+   },
+   {
+    "part": "library option",
+    "pick": "tantivy via tantivy-py, check current docs",
+    "why": "embedded BM25 with segments, if a separate cluster is too heavy"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT put all tenants in one shared index with a tenant filter",
+    "why": "a filter bug becomes a cross-tenant leak; the card requires a shard set per tenant"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "pip install psycopg[binary]",
+   "docker run -d -p 9200:9200 -e discovery.type=single-node -e DISABLE_SECURITY_PLUGIN=true opensearchproject/opensearch:2  # M3, check current docs for the tag"
+  ],
+  "layout": [
+   "brain/index/lex.py : write and search functions",
+   "brain/index/bm25.py : reference scorer used by tests",
+   "migrations/020_lex.sql : per-tenant tables",
+   "tests/test_lex.py : exact id ranking and tenant isolation tests"
+  ],
+  "schema": "CREATE TABLE lex_chunk (\n  tenant_id text NOT NULL,\n  index_gen int NOT NULL,\n  chunk_id text NOT NULL,\n  doc_len int NOT NULL,\n  acl_ref text NOT NULL,\n  sensitivity text NOT NULL,\n  tombstoned boolean NOT NULL DEFAULT false,\n  PRIMARY KEY (tenant_id, index_gen, chunk_id)\n);\nCREATE TABLE lex_posting (\n  tenant_id text NOT NULL,\n  index_gen int NOT NULL,\n  term text NOT NULL,\n  chunk_id text NOT NULL,\n  tf int NOT NULL,\n  PRIMARY KEY (tenant_id, index_gen, term, chunk_id)\n);",
+  "interface": "def lex_search(tenant_id: str, index_gen: int, terms: list[str], allowed_acl_refs: set[str], k: int = 50) -> list[tuple[str, float]]  # [(chunk_id, bm25_score)], filtered by access list",
+  "code": "K1, B = 1.2, 0.75\n\ndef lex_search(conn, tenant_id, gen, terms, allowed, k=50):\n    n_docs, avgdl = conn.execute(\n        'SELECT count(*), avg(doc_len) FROM lex_chunk WHERE tenant_id=%s AND index_gen=%s AND NOT tombstoned',\n        (tenant_id, gen)).fetchone()\n    heap = {}\n    for t in terms:\n        rows = conn.execute(\n            '''SELECT p.chunk_id, p.tf, c.doc_len FROM lex_posting p\n               JOIN lex_chunk c USING (tenant_id, index_gen, chunk_id)\n               WHERE p.tenant_id=%s AND p.index_gen=%s AND p.term=%s\n                 AND NOT c.tombstoned AND c.acl_ref = ANY(%s)''',   # filter inside the walk\n            (tenant_id, gen, t, list(allowed))).fetchall()\n        df = len(rows)\n        if df == 0:\n            continue\n        idf = math.log(1 + (n_docs - df + 0.5) / (df + 0.5))\n        for chunk_id, tf, dl in rows:\n            part = tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / avgdl))\n            heap[chunk_id] = heap.get(chunk_id, 0.0) + idf * part\n    return heapq.nlargest(k, heap.items(), key=lambda x: x[1])\n\n# Tricky part: df here counts only readable rows, so for exact corpus IDF\n# keep a separate per-term document count table; the worked example\n# (N 1,000,000, n 1,000, tf 3, dl 300, avgdl 400) must score about 11.47.",
+  "steps": [
+   {
+    "do": "Create the two tables and a writer that adds postings with term counts only",
+    "done_when": "psql select count(*) from lex_posting shows rows and no column holds body text"
+   },
+   {
+    "do": "Write the reference BM25 scorer and check the card's worked example",
+    "done_when": "pytest tests/test_lex.py::test_worked_example prints a score of 11.47 within 0.01"
+   },
+   {
+    "do": "Write lex_search with the access filter in the query and tombstones skipped",
+    "done_when": "a chunk with an acl_ref outside the allowed set never appears, even with a count"
+   },
+   {
+    "do": "Add a per-tenant routing check so every read must carry tenant_id",
+    "done_when": "a bleed test that queries tenant A with tenant B terms returns 0 rows and a missing tenant_id raises"
+   },
+   {
+    "do": "Rank an exact identifier test set",
+    "done_when": "20 of 20 planted error codes appear in the top 3"
+   },
+   {
+    "do": "At M3 swap the engine to OpenSearch or Vespa behind the same function",
+    "done_when": "the same test file passes against the new engine and recall@20 is equal or better"
+   }
+  ],
+  "config": {
+   "BM25_K1": "1.2 // default, grid 0.9 1.2 1.6 on recall@20",
+   "BM25_B": "0.75 // default, grid 0.5 0.75 0.9",
+   "SEGMENT_FLUSH_MB": "64 // design value for the real engine",
+   "MAX_SEGMENTS": "50 // stop backfill writes above this"
+  },
+  "verify": [
+   "pytest tests/test_lex.py -q  # all passed including worked example and bleed test",
+   "python -m brain.index.lex_eval tests/queries.json  # recall@20 printed, exact id top3 = 20/20",
+   "psql -c \"select count(*) from lex_posting where tenant_id='t_a' and chunk_id in (select chunk_id from lex_chunk where tenant_id='t_b')\"  # 0"
+  ],
+  "pitfalls": [
+   "Postgres ts_rank is not BM25: scores differ and cannot be compared across shards, so fuse by rank, not score",
+   "Counting document frequency after the access filter changes IDF per asker: keep corpus counts separate from the filtered walk",
+   "Keeping word positions or text lets the original be rebuilt: store term frequency only"
+  ]
+ },
+ "ix_vec": {
+  "milestone": "M0",
+  "effort_days": 8,
+  "depends_on": [
+   "ix_embed",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "M0 engine",
+    "pick": "pgvector (r_pgvector) with an HNSW index on Postgres 16",
+    "why": "pointers, ACL rows and vectors share one database with real joins; check current docs for the version and halfvec support"
+   },
+   {
+    "part": "scale step",
+    "pick": "pgvectorscale (r_pgvectorscale) for a DiskANN-style index, or Qdrant (r_qdrant) with payload filters",
+    "why": "extends the Postgres plan, or adds a dedicated engine with filtering; decide on a measured recall and cost test"
+   },
+   {
+    "part": "quantisation",
+    "pick": "int8 scalar first, binary only with oversampling and rescoring",
+    "why": "the research reports about 95 percent memory cut for binary with recall 0.84 to 0.95 (t_t40), so rescore with full vectors"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT post-filter ANN results by ACL and do NOT share one collection across tenants",
+    "why": "post-filtering starves recall and leaks (t_t22, p_acorn); partition by tenant"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "psql -h localhost -U postgres -c 'CREATE EXTENSION IF NOT EXISTS vector'",
+   "pip install psycopg[binary] pgvector numpy"
+  ],
+  "layout": [
+   "brain/index/vec.py : upsert and search",
+   "migrations/021_vec.sql : per-generation vector tables and the HNSW index",
+   "brain/index/rescore.py : full-precision rescoring",
+   "tests/test_vec.py : recall and filter tests"
+  ],
+  "schema": "CREATE TABLE vec_chunk (\n  tenant_id text NOT NULL,\n  index_gen int NOT NULL,\n  chunk_id text NOT NULL,\n  embedding vector(1024) NOT NULL,\n  model_id text NOT NULL,\n  acl_ref text NOT NULL,\n  sensitivity text NOT NULL,\n  uri text NOT NULL,\n  tombstoned boolean NOT NULL DEFAULT false,\n  PRIMARY KEY (tenant_id, index_gen, chunk_id)\n) PARTITION BY LIST (tenant_id);\nCREATE INDEX vec_hnsw ON vec_chunk USING hnsw (embedding vector_ip_ops) WITH (m = 16, ef_construction = 200);",
+  "interface": "def vec_search(tenant_id: str, index_gen: int, query_vec: list[float], allowed_acl_refs: set[str], k: int = 50) -> list[tuple[str, float]]  # [(chunk_id, similarity)] after the access filter",
+  "code": "def vec_search(conn, tenant_id, gen, qv, allowed, k=50, ef_search=100, oversample=4):\n    conn.execute(f'SET LOCAL hnsw.ef_search = {int(ef_search)}')\n    conn.execute('SET LOCAL hnsw.iterative_scan = relaxed_order')   # keep scanning when filter drops rows\n    cand = conn.execute(\n        '''SELECT chunk_id, embedding FROM vec_chunk\n           WHERE tenant_id = %s AND index_gen = %s\n             AND NOT tombstoned AND acl_ref = ANY(%s)           -- filter inside the search\n           ORDER BY embedding <#> %s::vector\n           LIMIT %s''',\n        (tenant_id, gen, list(allowed), qv, k * oversample)).fetchall()\n    q = np.asarray(qv, dtype=np.float32)\n    rescored = [(cid, float(np.dot(q, np.asarray(emb, dtype=np.float32))))   # full precision\n                for cid, emb in cand]\n    return heapq.nlargest(k, rescored, key=lambda x: x[1])\n\n# Tricky part: with a plain HNSW index a selective filter can return fewer than\n# k rows. Check current docs for iterative scan support in your pgvector version;\n# if it is missing, raise ef_search or move that tenant to a partial index.\n# For int8 or binary indexes, store the full vector in a second column and\n# rescore from it exactly as above.",
+  "steps": [
+   {
+    "do": "Enable the extension and create the partitioned table for one tenant",
+    "done_when": "psql \\d+ vec_chunk shows a partition for the test tenant and the vec_hnsw index"
+   },
+   {
+    "do": "Write upsert that carries model_id, index_gen and acl_ref",
+    "done_when": "inserting 10,000 test vectors gives select count(*) = 10000 with no null model_id"
+   },
+   {
+    "do": "Write vec_search with the filter in the query and oversampled rescoring",
+    "done_when": "a test where 90 percent of rows are filtered out still returns k results"
+   },
+   {
+    "do": "Measure recall against exact search on a 10,000 vector sample",
+    "done_when": "recall@10 versus brute force is 0.95 or more at ef_search 100"
+   },
+   {
+    "do": "Run the tenant bleed test against the partition layout",
+    "done_when": "a query with the wrong tenant_id returns 0 rows and tests/test_vec.py::test_bleed passes"
+   },
+   {
+    "do": "Try int8 or halfvec storage and record memory and recall",
+    "done_when": "a table lists bytes per vector and recall for float32 and the quantised form"
+   }
+  ],
+  "config": {
+   "HNSW_M": "16 // graph degree, default, tune",
+   "EF_CONSTRUCTION": "200 // build quality, default",
+   "EF_SEARCH": "100 // query width, tune on recall and latency",
+   "OVERSAMPLE": "4 // fetch 4 x k then rescore with full vectors",
+   "QUANTISATION": "none at M0 // int8 or binary later, measure first"
+  },
+  "verify": [
+   "pytest tests/test_vec.py -q  # all passed including bleed and filter tests",
+   "python -m brain.index.vec_eval sample/  # recall@10 >= 0.95 vs exact",
+   "psql -c \"select count(*) from vec_chunk where model_id is null\"  # 0"
+  ],
+  "pitfalls": [
+   "Filtering after the ANN returns k rows can leave 0 results for a strict ACL: symptom is empty answers for users with few readable docs",
+   "Soft-deleted vectors can stay in raw index files (t_t17): tombstone for reads, then let ix_gc compact and reindex",
+   "Embeddings can be inverted back to text (t_t15): encrypt the volume with the tenant key and permission the index like text"
+  ]
+ },
+ "ix_snip": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_pii"
+  ],
+  "stack": [
+   {
+    "part": "cipher",
+    "pick": "cryptography library, AESGCM class",
+    "why": "AES-GCM with a 12 byte nonce and associated data, as the card specifies"
+   },
+   {
+    "part": "keys",
+    "pick": "per-tenant data key from the key service (a KMS such as AWS KMS, GCP KMS or Vault transit)",
+    "why": "keys never sit beside the data; check current docs for the envelope call"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16 table per tenant with a TTL sweep job",
+    "why": "simple rows, easy purge by chunk id; pg_cron or the app scheduler runs the sweep"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT reuse a nonce and do NOT store the key in the same database",
+    "why": "nonce reuse under one key breaks GCM; a key beside the data defeats encryption at rest"
+   }
+  ],
+  "install": [
+   "pip install cryptography psycopg[binary]",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "docker run -d -p 8200:8200 -e VAULT_DEV_ROOT_TOKEN_ID=dev hashicorp/vault  # dev key service for local tests"
+  ],
+  "layout": [
+   "brain/index/snip.py : put, get and sweep",
+   "migrations/022_snip.sql : the table",
+   "tests/test_snip.py : tamper, expiry and AAD binding tests",
+   "brain/index/keys.py : data key fetch and cache"
+  ],
+  "schema": "CREATE TABLE snippet (\n  tenant_id text NOT NULL,\n  chunk_id text NOT NULL,\n  nonce bytea NOT NULL CHECK (octet_length(nonce) = 12),\n  ciphertext bytea NOT NULL CHECK (octet_length(ciphertext) <= 1200),\n  tag bytea NOT NULL CHECK (octet_length(tag) = 16),\n  expires_at timestamptz NOT NULL,\n  key_version int NOT NULL,\n  PRIMARY KEY (tenant_id, chunk_id)\n);\nCREATE INDEX snippet_expiry ON snippet (expires_at);",
+  "interface": "def put_snippet(tenant_id: str, uri: str, chunk_id: str, masked_text: str, ttl_days: int = 7) -> bool  |  def get_snippet(tenant_id: str, uri: str, chunk_id: str) -> str | None  # None when expired or missing",
+  "code": "def cut_words(text, limit=300):\n    if len(text) <= limit:\n        return text\n    return text[:limit].rsplit(' ', 1)[0]\n\ndef put_snippet(conn, tenant_id, uri, chunk_id, masked_text, ttl_days=7):\n    key, ver = data_key(tenant_id)                      # from the key service\n    nonce = os.urandom(12)                              # fresh per row\n    aad = f'{tenant_id}|{uri}|{chunk_id}'.encode()\n    blob = AESGCM(key).encrypt(nonce, cut_words(masked_text).encode(), aad)\n    ct, tag = blob[:-16], blob[-16:]                    # library appends the 16 byte tag\n    conn.execute(\n        '''INSERT INTO snippet VALUES (%s,%s,%s,%s,%s, now() + make_interval(days => %s), %s)\n           ON CONFLICT (tenant_id, chunk_id) DO UPDATE SET nonce=EXCLUDED.nonce,\n             ciphertext=EXCLUDED.ciphertext, tag=EXCLUDED.tag,\n             expires_at=EXCLUDED.expires_at, key_version=EXCLUDED.key_version''',\n        (tenant_id, chunk_id, nonce, ct, tag, ttl_days, ver))\n    return True\n\ndef get_snippet(conn, tenant_id, uri, chunk_id):\n    row = conn.execute('SELECT nonce, ciphertext, tag, key_version FROM snippet WHERE tenant_id=%s AND chunk_id=%s AND expires_at > now()',\n                       (tenant_id, chunk_id)).fetchone()\n    if not row:\n        return None\n    key = data_key_version(tenant_id, row[3])\n    aad = f'{tenant_id}|{uri}|{chunk_id}'.encode()      # tricky part: AAD must match exactly\n    return AESGCM(key).decrypt(row[0], row[1] + row[2], aad).decode()",
+  "steps": [
+   {
+    "do": "Create the snippet table and the key fetch helper",
+    "done_when": "psql \\d snippet lists 7 columns and data_key returns 32 bytes in a test"
+   },
+   {
+    "do": "Write put_snippet with the 300 character cut, random nonce and AAD",
+    "done_when": "a 1,000 character input stores a ciphertext of 300 bytes or less"
+   },
+   {
+    "do": "Write get_snippet that checks expiry and decrypts with the same AAD",
+    "done_when": "round trip returns the first 300 characters and an expired row returns None"
+   },
+   {
+    "do": "Test tamper and AAD binding",
+    "done_when": "flipping one ciphertext byte, or asking with a different uri, raises InvalidTag"
+   },
+   {
+    "do": "Block live-only apps and restricted chunks before any write",
+    "done_when": "put_snippet for a restricted chunk writes 0 rows"
+   },
+   {
+    "do": "Add the TTL sweep and the purge by chunk id",
+    "done_when": "after the sweep select count(*) from snippet where expires_at < now() is 0"
+   }
+  ],
+  "config": {
+   "SNIPPET_MAX_CHARS": "300 // spec of this card",
+   "SNIPPET_TTL_DAYS": "7 // design default, per-app override",
+   "NONCE_BYTES": "12 // standard for AES-GCM",
+   "SWEEP_INTERVAL_MIN": "15 // how often expired rows are deleted"
+  },
+  "verify": [
+   "pytest tests/test_snip.py -q  # all passed including tamper and expiry",
+   "psql -c \"select max(octet_length(ciphertext)) from snippet\"  # 300 or less for ASCII text",
+   "psql -c \"select count(*) from snippet where expires_at < now() - interval '1 hour'\"  # 0"
+  ],
+  "pitfalls": [
+   "Cutting by bytes can split a multi-byte character: cut by characters at a word boundary, then check the encoded size",
+   "Forgetting to include uri in the AAD lets a row be moved to another document unnoticed",
+   "Rotating the tenant key without key_version makes old rows unreadable: store the version on every row"
+  ]
+ },
+ "ix_gc": {
+  "milestone": "M1",
+  "effort_days": 6,
+  "depends_on": [
+   "ix_lex",
+   "ix_vec",
+   "ix_ptr",
+   "ch_tomb"
+  ],
+  "stack": [
+   {
+    "part": "coordination",
+    "pick": "Postgres 16 tables for the reader-epoch registry and the purge ledger",
+    "why": "plain SQL, transactional with the pointer registry; no new system at M1"
+   },
+   {
+    "part": "scheduler",
+    "pick": "Temporal (or the project's durable workflow engine) for the compaction and probe workflow",
+    "why": "retries and a 1 hour erasure deadline need durable timers; check current docs"
+   },
+   {
+    "part": "compaction",
+    "pick": "REINDEX INDEX CONCURRENTLY on pgvector HNSW at M0, engine merge or force-merge on OpenSearch later",
+    "why": "dead entries in an HNSW graph are only removed by rebuild or vacuum; check current docs for the exact command per engine"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT hard-delete the instant a tombstone arrives",
+    "why": "a running search can still hold the old epoch; mark dead for reads first, reclaim after readers pass"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] temporalio",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "brew install temporal  # or docker run temporalio/auto-setup, for local runs"
+  ],
+  "layout": [
+   "brain/index/gc.py : mark, reclaim, compact, probe",
+   "migrations/023_gc.sql : reader epoch and purge ledger tables",
+   "brain/index/gc_workflow.py : durable workflow wrapper",
+   "tests/test_gc.py : epoch and probe tests"
+  ],
+  "schema": "CREATE TABLE reader_epoch (\n  reader_id text PRIMARY KEY,\n  epoch bigint NOT NULL,\n  started_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE TABLE purge_ledger (\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  chunk_count int NOT NULL,\n  tombstone_epoch bigint NOT NULL,\n  purged_at timestamptz,\n  probe_result text,\n  PRIMARY KEY (tenant_id, uri, tombstone_epoch)\n);",
+  "interface": "def run_gc_cycle(tenant_id: str) -> GcReport  # GcReport(marked: int, reclaimed: int, compacted_segments: int, probe_failures: int)",
+  "code": "MAX_READER_AGE_S = 60\nCOMPACT_DEAD_FRACTION = 0.20\n\ndef run_gc_cycle(db, stores, tenant_id):\n    marked = 0\n    for t in db.new_tombstones(tenant_id):                      # reason: delete, acl_loss, restricted, erasure\n        ids = db.chunk_ids_for(t.tenant_id, t.uri)\n        for s in (stores.vec, stores.lex, stores.snip):\n            s.mark_dead(tenant_id, ids)                         # reads skip at once\n        marked += len(ids)\n    db.execute('DELETE FROM reader_epoch WHERE started_at < now() - make_interval(secs => %s)',\n               (MAX_READER_AGE_S,))                              # tricky part: a stuck reader must not block reclaim forever\n    min_epoch = db.fetchval('SELECT coalesce(min(epoch), %s) FROM reader_epoch', (db.current_epoch(),))\n    reclaimed = 0\n    for t in db.dead_before(tenant_id, min_epoch):\n        ids = db.chunk_ids_for(t.tenant_id, t.uri)\n        for s in (stores.vec, stores.lex, stores.snip):\n            s.delete(tenant_id, ids)\n        probe = stores.probe(tenant_id, ids)                    # own vector and unique terms\n        db.execute('INSERT INTO purge_ledger VALUES (%s,%s,%s,%s,now(),%s) ON CONFLICT DO NOTHING',\n                   (t.tenant_id, t.uri, len(ids), t.tombstone_epoch, 'clean' if not probe else 'FOUND'))\n        reclaimed += len(ids)\n    compacted = sum(1 for seg in stores.segments(tenant_id)\n                    if seg.dead_fraction() > COMPACT_DEAD_FRACTION and stores.compact(seg))\n    return GcReport(marked, reclaimed, compacted, db.count_found(tenant_id))",
+  "steps": [
+   {
+    "do": "Create reader_epoch and purge_ledger and register an epoch at the start of every search",
+    "done_when": "during a running search select min(epoch) from reader_epoch equals that search's epoch"
+   },
+   {
+    "do": "Write mark_dead on all three stores",
+    "done_when": "after a tombstone the chunk disappears from lex, vec and snippet reads within one cycle"
+   },
+   {
+    "do": "Write reclaim by epoch with the 60 second reader age cap",
+    "done_when": "a reader left open 2 minutes does not block reclaim and the item is deleted"
+   },
+   {
+    "do": "Add compaction at 20 percent dead",
+    "done_when": "a segment at 25 percent dead is rewritten and a segment at 10 percent is not"
+   },
+   {
+    "do": "Add the probe and write the result to the ledger",
+    "done_when": "every ledger row for a test deletion shows probe_result = clean"
+   },
+   {
+    "do": "Time an erasure order end to end",
+    "done_when": "erasure reason rows reach purged_at within 1 hour and ordinary ones within 24 hours in the test run"
+   }
+  ],
+  "config": {
+   "COMPACTION_DEAD_FRACTION": "0.20 // design, tune on disk cost versus query cost",
+   "ERASURE_DEADLINE_H": "1 // design",
+   "ORDINARY_DEADLINE_H": "24 // design",
+   "MAX_READER_AGE_S": "60 // longer readers are dropped from the epoch table"
+  },
+  "verify": [
+   "pytest tests/test_gc.py -q  # all passed",
+   "psql -c \"select count(*) from purge_ledger where probe_result <> 'clean'\"  # 0",
+   "python -m brain.index.gc_drill --delete 100  # prints reclaimed 100 and probe_failures 0"
+  ],
+  "pitfalls": [
+   "Reclaiming before readers finish crashes or returns ghosts: always compare against the minimum active epoch",
+   "Marked-dead vectors stay in HNSW files until compaction (t_t17): an erasure is not done until the probe passes after compaction",
+   "A reader that never exits blocks all reclaim: drop epochs older than the max age"
+  ]
+ },
+ "ix_reidx": {
+  "milestone": "M5",
+  "effort_days": 12,
+  "depends_on": [
+   "ix_vec",
+   "ix_lex",
+   "ix_embed",
+   "ix_fetch",
+   "ix_gc",
+   "op_eval"
+  ],
+  "stack": [
+   {
+    "part": "generation table",
+    "pick": "Postgres 16 with one row per tenant and an atomic UPDATE for cutover",
+    "why": "the flip must be a single transaction in the pointer registry's database"
+   },
+   {
+    "part": "orchestration",
+    "pick": "Temporal (or the project's durable workflow engine) for the long backfill",
+    "why": "a rebuild takes hours or days and must resume after a crash; check current docs"
+   },
+   {
+    "part": "quality gate",
+    "pick": "the project's retrieval evaluation set with recall@20, latency and result overlap",
+    "why": "gate numbers come from labelled queries per tenant; Notion validates each generation before cutover (t_t58)"
+   },
+   {
+    "part": "pattern reference",
+    "pick": "Notion generation IDs and reindex then cut over (t_t43, t_t58)",
+    "why": "proven order: build beside, validate, switch, retire"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT delete or alter the old generation in place",
+    "why": "a bad model then has no rollback; keep it for 7 days"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] temporalio numpy",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "brew install temporal  # local workflow server"
+  ],
+  "layout": [
+   "brain/index/reidx.py : plan, dual-write flag, gate, cutover",
+   "migrations/024_generation.sql : generation table",
+   "brain/index/reidx_workflow.py : durable backfill workflow",
+   "tests/test_reidx.py : gate and atomic cutover tests"
+  ],
+  "schema": "CREATE TABLE index_generation (\n  tenant_id text PRIMARY KEY,\n  active_gen int NOT NULL,\n  building_gen int,\n  status text NOT NULL CHECK (status IN ('idle','building','gating','cutover','retiring','failed')),\n  target_model_id text,\n  gate_result jsonb,\n  cutover_at timestamptz,\n  CHECK (building_gen IS NULL OR building_gen > active_gen)\n);",
+  "interface": "def start_reindex(tenant_id: str, target_model_id: str) -> int  # returns building_gen; later: def try_cutover(tenant_id: str, gate: GateResult) -> bool",
+  "code": "MAX_OVERALL_DROP = 0.005     # 0.5 point\nMAX_TENANT_DROP = 0.02       # 2 points\n\ndef start_reindex(db, tenant_id, target_model_id):\n    with db.transaction():\n        row = db.fetchone('SELECT active_gen, building_gen FROM index_generation WHERE tenant_id=%s FOR UPDATE', (tenant_id,))\n        if row['building_gen'] is not None:\n            raise AlreadyBuilding(tenant_id)\n        g = row['active_gen'] + 1\n        db.execute(\"UPDATE index_generation SET building_gen=%s, status='building', target_model_id=%s WHERE tenant_id=%s\",\n                   (g, target_model_id, tenant_id))\n    enable_dual_write(tenant_id, g)          # every live change now writes both generations\n    enqueue_refetch(tenant_id, lane='backfill', target_gen=g)\n    return g\n\ndef gate_passes(g):\n    return (g.recall_new >= g.recall_old - MAX_OVERALL_DROP\n            and all(t.recall_new >= t.recall_old - MAX_TENANT_DROP for t in g.per_tenant))\n\ndef try_cutover(db, tenant_id, gate):\n    if not gate_passes(gate):\n        db.execute(\"UPDATE index_generation SET status='failed', gate_result=%s WHERE tenant_id=%s\", (json.dumps(gate.raw), tenant_id))\n        return False\n    n = db.execute(\n        '''UPDATE index_generation SET active_gen = building_gen, building_gen = NULL,\n             status='retiring', cutover_at = now(), gate_result = %s\n           WHERE tenant_id = %s AND status = 'gating' ''',            # tricky part: one atomic flip\n        (json.dumps(gate.raw), tenant_id)).rowcount\n    if n == 1:\n        schedule_retire(tenant_id, delay_days=7)  # old generation goes to ix_gc after the window\n    return n == 1",
+  "steps": [
+   {
+    "do": "Create index_generation and seed one row per tenant with active_gen 1",
+    "done_when": "psql select count(*) from index_generation equals the tenant count"
+   },
+   {
+    "do": "Write start_reindex with a row lock and the dual-write switch",
+    "done_when": "calling it twice raises AlreadyBuilding and new test writes land in both generations"
+   },
+   {
+    "do": "Write the backfill workflow that sends refetch orders in the backfill lane",
+    "done_when": "on a 1,000 document test tenant the new generation reaches 1,000 documents and live jobs are never delayed"
+   },
+   {
+    "do": "Write the gate with the 0.5 point overall and 2 point per tenant limits",
+    "done_when": "a synthetic drop of 0.6 point fails and a drop of 0.4 point passes"
+   },
+   {
+    "do": "Write the atomic cutover and a rollback that flips back inside 7 days",
+    "done_when": "during cutover a concurrent search never sees a mixed generation, checked by a 100 query loop"
+   },
+   {
+    "do": "Retire the old generation through ix_gc after 7 days",
+    "done_when": "the old generation's rows and index files are gone and the purge ledger shows a clean probe"
+   }
+  ],
+  "config": {
+   "GATE_RECALL_DROP_OVERALL": "0.005 // design, 0.5 point",
+   "GATE_RECALL_DROP_TENANT": "0.02 // design, 2 points",
+   "ROLLBACK_WINDOW_DAYS": "7 // keep the old generation this long",
+   "BACKFILL_CHUNKS_PER_S": "2000 // design ceiling, bounded by source rate limits"
+  },
+  "verify": [
+   "pytest tests/test_reidx.py -q  # all passed including atomic cutover",
+   "python -m brain.index.reidx_drill --tenant t_demo --model new  # prints gate PASS and active_gen 2",
+   "psql -c \"select tenant_id, active_gen, building_gen, status from index_generation\"  # building_gen is null after cutover"
+  ],
+  "pitfalls": [
+   "Skipping dual-write loses edits made during the backfill: symptom is the new generation missing the last day of changes at cutover",
+   "Cutting over without the per-tenant check hides one tenant's collapse behind a good average",
+   "Peak storage is old plus new: budget double disk for the rebuild window"
+  ]
+ }
+}

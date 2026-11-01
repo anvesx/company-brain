@@ -1,0 +1,552 @@
+{
+ "group": {
+  "line": "Drafts of case cards from closed cases and six reviewed libraries of know-how.",
+  "dumb": "When a case closes, a model drafts a card of what happened, what was decided and why. The owner reviews it, and it goes on one of six shelves anyone permitted can search."
+ },
+ "comps": {
+  "cp_exp": {
+   "line": "Drafts a case card from a closed case: situation, decision, reason, exception, outcome\nsix fields, every one cited",
+   "dumb": "The best know-how is in the head of an expert and shows up only in how they solved things. When a case closes, a model drafts a short card: what the situation was, what they chose, why, what would change the answer, and how it ended. Every line is tied to a source, and a person must review it before anyone else can see it.",
+   "inn": "From cp_hook: a closed case {ticket, thread, document links, resolution, owner}; the case's source passages through the owner's permission.",
+   "out": "Draft card {situation, decision, reason, exception, outcome, source_pointers[], owner} to zn_review.",
+   "store": "Writes drafts to the owner's personal zone; no copy is shared until review.",
+   "fail": "If the model output lacks a source for any field, that field is left empty and flagged; if the case has fewer than 3 usable passages no card is drafted; a failed draft is retried once, then queued for the owner to write by hand.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: draft a six-field cited case card from each closed case into the owner's personal zone, for the owner to review.",
+   "hard": "The papers show experience cards can help agents, but how much for a company of this kind is not measured; the first release tracks how many cards are reused.",
+   "deep": {
+    "purpose": "Experts rarely write down why. Cases already exist in tickets and threads; a draft card with cited fields lowers the cost of capture to a review, and the owner remains the author.",
+    "expected": [
+     "A closed incident yields a draft card with a cited decision and reason",
+     "An uncited field is left blank and flagged"
+    ],
+    "not_expected": [
+     "It does not publish anything",
+     "It does not draft from sources the owner cannot read"
+    ],
+    "algorithm": {
+     "name": "Six-field cited case card",
+     "formula": "card = {situation, decision, reason, exception, outcome, source[]}; each field must cite >= 1 passage or stay empty",
+     "steps": [
+      "Take a closed case and gather its passages with the owner's token",
+      "Ask the model to fill the six fields with citations",
+      "Check each cited passage supports the field",
+      "Drop or blank unsupported fields",
+      "Save the draft in the owner's personal zone and notify zn_review"
+     ],
+     "params": {
+      "min_passages": "3 (design)",
+      "fields": "situation, decision, reason, exception, outcome, source",
+      "retry": "1"
+     }
+    },
+    "security": [
+     "Leakage of case details into the shared library: drafts stay in the personal zone until reviewed and promoted",
+     "Hallucinated reasons: uncited fields are blanked"
+    ],
+    "performance": {
+     "slo": "under 8 s per draft",
+     "complexity": "one model call per case",
+     "scaling": "At 10x cases draft only for closed cases above a size or impact threshold."
+    },
+    "edge_cases": [
+     "Case with a single long thread: split by decision point and make one card each",
+     "Owner left the company: draft is not made and the case is flagged to a manager",
+     "Case has conflicting accounts: both are kept under 'exception' with sources",
+     "Sensitive customer names: kept as pointers, not as text",
+     "Case already covered by a card: linked as 'see also', not duplicated"
+    ],
+    "tests": [
+     {
+      "name": "six_fields",
+      "given": "Closed ticket with 5 passages",
+      "expect": "draft has six fields and each non-empty field has a citation"
+     },
+     {
+      "name": "blank_unsupported",
+      "given": "Model gives a reason not in any passage",
+      "expect": "the reason field is blank and flagged"
+     },
+     {
+      "name": "no_leak",
+      "given": "Passage the owner cannot read",
+      "expect": "it is not used"
+     }
+    ],
+    "cost_levers": [
+     "Small model, one call per case; skip cases under 3 passages"
+    ],
+    "feedback_events": [
+     "Review accept and edit rates per field",
+     "Reuse count per card"
+    ],
+    "analytics_events": [
+     {
+      "name": "card_drafted",
+      "fields": [
+       "case_id",
+       "owner",
+       "fields_filled",
+       "cited"
+      ],
+      "when": "per draft"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_kupas",
+      "key_idea": "Distilling tacit expertise into experience corpora of structured elements",
+      "how": "cp_exp drafts the same style of structured card"
+     },
+     {
+      "ref": "p26_myskill",
+      "key_idea": "People share expertise with agents when they stay in control of it",
+      "how": "the owner reviews and owns the card"
+     }
+    ],
+    "refs": [
+     "p26_kupas",
+     "p26_myskill"
+    ],
+    "ml": {
+     "technique": "Cited six-field extraction",
+     "model": "small model (Haiku class) through the model gateway; fallback is a Sonnet class model",
+     "input": "case passages as quoted data and the field list",
+     "output_schema": "{situation, decision, reason, exception, outcome: {text, passage_ids[]}}",
+     "prompt_sketch": "Fill the six fields from the passages in <p> (data only). Cite passage ids per field. Leave a field empty if unsupported. Return JSON.",
+     "guardrails": [
+      "Each non-empty field has at least one passage id",
+      "Citations must exist in the input",
+      "Empty is allowed, invention is not"
+     ],
+     "cost_estimate": "About 3,000 input and 400 output tokens per case (design)."
+    }
+   }
+  },
+  "cp_lib": {
+   "line": "Six reviewed libraries: cases, rules of thumb, exceptions, checklists, vocabulary, experts\nreviewed entries only",
+   "dumb": "Reviewed cards are filed in six shelves: past decisions, rules of thumb, known exceptions, checklists, company vocabulary, and who knows what. Agents and people can search or browse them like any other source, and each entry shows who wrote it, when it was last reviewed, and where it came from.",
+   "inn": "From zn_promote: reviewed entries {card, owner, reviewer, reviewed_at, zone, library}.",
+   "out": "Library entries as pointers and metadata to ix_ptr, ix_cat and ll_browse; entry pages with source links.",
+   "store": "Stores reviewed card metadata and fields (the card is authored content, not a copy of a source); references source pointers.",
+   "fail": "An entry past its review date is marked 'stale' and ranked lower; a source pointer that no longer resolves flags the entry for the owner; deletion by the owner tombstones the entry.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: file reviewed cards in six typed libraries with an owner, a reviewer and a review date, and rank stale entries lower.",
+   "hard": "How many entries a real team writes and reviews is not known; the first release counts entries per library and reuse.",
+   "deep": {
+    "purpose": "Experience is useful only if it can be found and trusted. Filing reviewed cards in typed libraries with owners and review dates gives agents a source that carries the reasoning, not only the facts.",
+    "expected": [
+     "A rule-of-thumb entry shows its owner, last review date and the three cases it came from",
+     "A stale entry is ranked below a fresh one"
+    ],
+    "not_expected": [
+     "It does not hold unreviewed drafts",
+     "It does not replace the source documents"
+    ],
+    "algorithm": {
+     "name": "Typed library with review dates",
+     "formula": "rank(entry) = base_rank * decay(age_since_review); stale if age > review_interval",
+     "steps": [
+      "Receive a promoted card and its library type",
+      "Store metadata and card fields, linked to source pointers",
+      "Index in ix_cat as a type with owner and period",
+      "Mark stale after the review interval",
+      "Notify the owner when a source pointer breaks"
+     ],
+     "params": {
+      "libraries": "decision cases, rules of thumb, exceptions, checklists, vocabulary, who-knows-what",
+      "review_interval": "180 days (design)",
+      "decay": "halves rank at 2x interval (design)"
+     }
+    },
+    "security": [
+     "Poisoned entries: only reviewed entries enter and every entry has an owner and a reviewer",
+     "Zone leaks: entries inherit the zone from the card and are filtered like any other source"
+    ],
+    "performance": {
+     "slo": "under 30 ms per lookup",
+     "complexity": "O(1) by id, O(log n) by type",
+     "scaling": "Entries are small; at 10x entries the library is a table in ix_stores with the same filters."
+    },
+    "edge_cases": [
+     "Owner leaves: entry passes to their manager for review",
+     "Two entries contradict: both stay, linked as 'conflicts', ranked by review date",
+     "Zone downgraded: entry is hidden from wider audiences immediately",
+     "Source deleted: entry stays but is marked 'source gone'",
+     "Entry edited: new version, old version tombstoned"
+    ],
+    "tests": [
+     {
+      "name": "stale_ranked_lower",
+      "given": "Two entries, one reviewed 400 days ago",
+      "expect": "older one ranks lower and shows 'stale'"
+     },
+     {
+      "name": "owner_shown",
+      "given": "Any entry",
+      "expect": "owner, reviewer and date are present"
+     },
+     {
+      "name": "zone_respected",
+      "given": "Entry in a team zone, user outside the team",
+      "expect": "entry is not returned"
+     }
+    ],
+    "cost_levers": [
+     "Metadata only in the index; card text is small"
+    ],
+    "feedback_events": [
+     "Reuse count per entry",
+     "Entries never opened in 180 days are listed for review"
+    ],
+    "analytics_events": [
+     {
+      "name": "entry_published",
+      "fields": [
+       "library",
+       "owner",
+       "reviewer",
+       "zone"
+      ],
+      "when": "per promoted entry"
+     },
+     {
+      "name": "entry_stale",
+      "fields": [
+       "entry_id",
+       "age_days"
+      ],
+      "when": "daily"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_clm",
+      "key_idea": "A corporate knowledge layer should be auditable and executable, with owners and lineage",
+      "how": "cp_lib keeps owner, reviewer and date per entry"
+     },
+     {
+      "ref": "p26_aquillm",
+      "key_idea": "Tacit knowledge capture needs a structure that stays searchable",
+      "how": "six typed libraries give the structure"
+     }
+    ],
+    "refs": [
+     "p26_clm",
+     "p26_aquillm"
+    ]
+   }
+  },
+  "cp_probe": {
+   "line": "Tests each card claim against the live source\nread only, as the contributor, before review",
+   "dumb": "A draft card is only a guess. Before a person reviews it, the brain looks at the real source and asks: is this claim still true, does it hold beyond this one case, is it too wide? It can only read, never change, and it reads as the person who wrote the case.",
+   "inn": "From cp_exp: a six-field draft with source pointers and the contributor's token.",
+   "out": "The same draft with each claim marked supported, narrowed, revised or unsupported, and the probe log.",
+   "store": "Writes the probe log beside the draft in the owner's personal zone. Nothing is changed in any app.",
+   "fail": "If a source cannot be read the claim is marked unchecked, not supported. If the probe budget (6 calls) runs out the remaining claims are marked unchecked. A probe never edits a draft silently; it proposes a change the owner sees.",
+   "req": "DevX proposal, from the 2026 company-brain paper review (batch 2)",
+   "prop": "Proposal: probe each claim of a draft card against the live source, read only and as the contributor, before the owner reviews it.",
+   "hard": "The paper's gain from probing is inside its error bars and its tasks are database and document exploration, not company knowledge; the first release logs how often a probe changes a claim.",
+   "deep": {
+    "purpose": "Cards go stale and one case may not transfer. A cheap read of the live source catches a changed name, a moved table or a claim that holds only for this customer, before the card reaches a shelf.",
+    "expected": [
+     "A card citing a renamed table is marked stale with the new name",
+     "A claim that holds only for one customer is narrowed to that customer"
+    ],
+    "not_expected": [
+     "It does not write, send or change anything in an app",
+     "It does not explore without a claim to test",
+     "It does not solve a future task"
+    ],
+    "algorithm": {
+     "name": "Propose, probe, commit",
+     "formula": "for each claim c: probe(c) in {support, narrow, revise, unsupported, unchecked}, at most 6 read calls per draft",
+     "steps": [
+      "Take each claim with its cited source",
+      "Pick a test: counterexample, an untouched slice, a stale name, a missing precondition",
+      "Run the read-only call with the contributor's token",
+      "Mark the claim and keep the call in the log",
+      "Pass the marked draft on to the duplicate check"
+     ],
+     "params": {
+      "probe_budget": "6 calls per draft (design)",
+      "tools": "read only",
+      "identity": "the contributor"
+     }
+    },
+    "security": [
+     "Probes run as the contributor, so a probe cannot read what the contributor cannot",
+     "Probe results are logged as pointers and hashes, not copied text",
+     "Read only, enforced by the connector scope not by the prompt",
+     "Reads and writes run with the asking user's own permissions, never a service identity."
+    ],
+    "performance": {
+     "slo": "under 20 s per draft",
+     "complexity": "up to 6 live reads and one model call",
+     "scaling": "At 10x drafts only probe claims that name a changeable object."
+    },
+    "edge_cases": [
+     "Contributor has left: draft is held, not probed",
+     "Source is behind a rate limit: claim marked unchecked",
+     "Two probes disagree: both are shown to the owner"
+    ],
+    "tests": [
+     {
+      "name": "narrow_scope",
+      "given": "A claim true only for one tenant",
+      "expect": "claim is narrowed and flagged"
+     },
+     {
+      "name": "stale_name",
+      "given": "Cited table was renamed",
+      "expect": "claim marked stale with the new name"
+     },
+     {
+      "name": "read_only",
+      "given": "A probe tries a write call",
+      "expect": "the call is refused by the connector"
+     }
+    ],
+    "cost_levers": [
+     "Small model; probe only claims that name a changeable object"
+    ],
+    "feedback_events": [
+     "Probe changed a claim, accept rate after a probe"
+    ],
+    "analytics_events": [
+     {
+      "name": "claim_probed",
+      "fields": [
+       "card_id",
+       "claim_id",
+       "result",
+       "calls"
+      ],
+      "when": "per claim"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26b_ground",
+      "key_idea": "Curator that probes the live environment before it saves a memory, with read-only tools",
+      "how": "cp_probe tests each card claim the same way, under the contributor's permissions"
+     }
+    ],
+    "refs": [
+     "p26b_ground"
+    ],
+    "ml": {
+     "technique": "Hypothesis-driven probing",
+     "model": "small model through the gateway",
+     "input": "one claim, its source pointer and the read-only tool list",
+     "output_schema": "{claim_id, result, evidence_pointer, proposed_change}",
+     "prompt_sketch": "Test this claim against the live source. Choose one test. Return the result and the pointer. Do not solve other tasks.",
+     "guardrails": [
+      "Read-only tools only",
+      "At most 6 calls",
+      "A claim with no test stays unchecked"
+     ],
+     "cost_estimate": "About 4,000 tokens per draft (design)."
+    }
+   }
+  },
+  "cp_dup": {
+   "line": "Five nearest cards after a tag prefilter\nnew, duplicate, clarify or conflict",
+   "dumb": "Before a new card goes on a shelf, the brain looks at the closest cards already there. If it says the same thing, it is dropped. If it adds a detail, it is merged. If it says the opposite, both are kept and a person decides.",
+   "inn": "From cp_probe: a probed draft. From cp_lib: the five nearest cards after a tag prefilter.",
+   "out": "The draft marked new, duplicate, clarify or conflict, with links to the cards it was compared with.",
+   "store": "Reads the case libraries; writes only the mark on the draft.",
+   "fail": "If the library search fails the draft is marked unchecked and goes to review with a note. A close match is never deleted automatically; the owner decides.",
+   "req": "DevX proposal, from the 2026 company-brain paper review (batch 2)",
+   "prop": "Proposal: compare each draft with its five nearest cards and mark it new, duplicate, clarify or conflict.",
+   "hard": "In the paper the 56 checks were written by its developers with one model and gave the same action in 37 of 56 repeats; the mark advises the reviewer and decides nothing.",
+   "deep": {
+    "purpose": "Without this, the shelves fill with near-copies of the same case and with cards that disagree.",
+    "expected": [
+     "A near-copy is marked duplicate and linked",
+     "A card that reverses an older one is marked conflict and both are shown"
+    ],
+    "not_expected": [
+     "It does not delete or merge cards",
+     "It does not decide which of two conflicting cards is right"
+    ],
+    "algorithm": {
+     "name": "Nearest-five comparison",
+     "formula": "candidates = top 5 by tag prefilter then similarity; mark in {new, duplicate, clarify, conflict}",
+     "steps": [
+      "Prefilter library cards by tag and situation",
+      "Take the five nearest",
+      "Ask a small model to mark the draft against each",
+      "Keep the strongest mark",
+      "Pass to the evidence tier"
+     ],
+     "params": {
+      "neighbours": "5",
+      "min_similarity": "enforced, value set per shelf (design)"
+     }
+    },
+    "security": [
+     "Compares only cards the contributor may see, so it cannot hint at a hidden card",
+     "Reads and writes run with the asking user's own permissions, never a service identity."
+    ],
+    "performance": {
+     "slo": "under 5 s per draft",
+     "complexity": "one search and one model call",
+     "scaling": "Prefilter by tag so cost does not grow with the library."
+    },
+    "edge_cases": [
+     "No close match: marked new",
+     "Match on a card the contributor cannot see: not used",
+     "Several conflicts: all are listed"
+    ],
+    "tests": [
+     {
+      "name": "duplicate",
+      "given": "Draft says the same as card C",
+      "expect": "marked duplicate with link to C"
+     },
+     {
+      "name": "conflict",
+      "given": "Draft reverses card D",
+      "expect": "marked conflict, both kept"
+     },
+     {
+      "name": "unreadable_source",
+      "given": "Library search fails",
+      "expect": "draft marked unchecked and sent to review"
+     }
+    ],
+    "cost_levers": [
+     "Prefilter by tag first"
+    ],
+    "feedback_events": [
+     "Reviewer overrides of the mark"
+    ],
+    "analytics_events": [
+     {
+      "name": "dup_checked",
+      "fields": [
+       "card_id",
+       "mark",
+       "neighbours"
+      ],
+      "when": "per draft"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26b_sap",
+      "key_idea": "Collision checker over the five nearest memories before a memory is accepted",
+      "how": "cp_dup does the same for case cards"
+     }
+    ],
+    "refs": [
+     "p26b_sap"
+    ]
+   }
+  },
+  "cp_trust": {
+   "line": "One case is a prediction, three make it core\nten clean cycles make it an anchor",
+   "dumb": "A card should earn trust. One case is a guess. When three different cases agree, it becomes a rule. When it survives ten reviews with no contradiction, it becomes firm and is hard to change. A person still approves, and evidence sets the tier.",
+   "inn": "From cp_dup: a checked draft. From the review log: later cases that agree or contradict.",
+   "out": "The draft with an evidence tier (prediction, core or anchor) and the cases behind it.",
+   "store": "Reads the review log; writes the tier and its evidence list on the card.",
+   "fail": "With no evidence the card stays a prediction. A contradiction drops a core card back to prediction and tells the owner. The tier never rises on approval alone.",
+   "req": "DevX proposal, from the 2026 company-brain paper review (batch 2)",
+   "prop": "Proposal: tier each card by independent cases and clean review cycles, in addition to owner approval.",
+   "hard": "The tier numbers (3 cases, 10 cycles) are the paper's examples and its test was small; a position paper by one author. They are configurable here and untested on company cases. Whether approval alone or evidence gating should decide is an open choice for the owner.",
+   "deep": {
+    "purpose": "Owners approve agreeable cards that are wrong. A rule that needs independent agreement keeps one bad case from becoming a firm rule.",
+    "expected": [
+     "A card seen in three independent cases becomes core",
+     "A contradiction returns a core card to prediction"
+    ],
+    "not_expected": [
+     "It does not replace owner review",
+     "It does not decay cards by age; the source stays the truth"
+    ],
+    "algorithm": {
+     "name": "Evidence-gated tiers",
+     "formula": "tier = anchor if cycles_clean >= 10; core if independent_cases >= 3; else prediction",
+     "steps": [
+      "Count independent cases that agree",
+      "Count review cycles with no contradiction",
+      "Set the tier",
+      "On a contradiction move down one tier and notify the owner"
+     ],
+     "params": {
+      "core_cases": "3 (paper example)",
+      "anchor_cycles": "10 (paper example)"
+     }
+    },
+    "security": [
+     "Independence is checked by contributor and source so one person cannot count three times",
+     "The tier is set by code from the review log; a model cannot raise it",
+     "Tier changes are logged with their evidence"
+    ],
+    "performance": {
+     "slo": "under 1 s per card",
+     "complexity": "two counts",
+     "scaling": "Recompute on review events only."
+    },
+    "edge_cases": [
+     "Three cases from one contributor count as one",
+     "A card with no later cases stays a prediction forever",
+     "Two cases agree and one contradicts: tier stays prediction and the owner is told"
+    ],
+    "tests": [
+     {
+      "name": "promote",
+      "given": "Three independent cases agree",
+      "expect": "tier becomes core"
+     },
+     {
+      "name": "demote",
+      "given": "A contradicting case arrives",
+      "expect": "tier drops one level, owner told"
+     },
+     {
+      "name": "one_person",
+      "given": "Three cases from one contributor",
+      "expect": "counts as one, stays prediction"
+     }
+    ],
+    "cost_levers": [
+     "No model calls"
+    ],
+    "feedback_events": [
+     "Tier changes, owner overrides"
+    ],
+    "analytics_events": [
+     {
+      "name": "tier_changed",
+      "fields": [
+       "card_id",
+       "from",
+       "to",
+       "evidence"
+      ],
+      "when": "on change"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26b_kl",
+      "key_idea": "Evidence-gated revision tiers: prediction, core, anchor",
+      "how": "cp_trust uses the same three tiers for case cards"
+     },
+     {
+      "ref": "p26b_sap",
+      "key_idea": "A 0 to 10 trust score from examples, caveats, recency and Bayesian-averaged votes",
+      "how": "its evidence terms can rank cards within a tier"
+     }
+    ],
+    "refs": [
+     "p26b_kl",
+     "p26b_sap"
+    ]
+   }
+  }
+ },
+ "edges": []
+}

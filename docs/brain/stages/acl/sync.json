@@ -1,0 +1,864 @@
+{
+  "group": {
+    "line": "Directory feeds, identity mapping, per-app sharing-list adapters and cycle-safe group flattening land in one versioned access list store.",
+    "dumb": "The brain keeps its own copy of who may open each document, but never the document itself. It learns who the people and groups are from the company login system, asks each app who can open each object, flattens groups inside groups, and saves the answer with a version number. A sharing change is a small edit, not a re-read of the document."
+  },
+  "comps": {
+    "ac_scim": {
+      "line": "SCIM 2.0 and identity-provider feeds, events first\nstale <= min(push 10 s, poll 300 s) + apply 5 s",
+      "dumb": "SCIM is a standard way for a company's login system (the identity provider) to list its people and groups. We listen for its change events and also re-read the whole list on a timer. When someone leaves or changes team, the brain hears about it and updates who may see what.",
+      "inn": "Identity-provider feed per tenant: users {scim_id, idp_subject, emails[], active, department, modified_at}, groups {group_id, display_name, members[], modified_at}, offboarding events {principal, at, reason}. Units: UTC timestamps, ids as strings.",
+      "out": "Normalised directory records {tenant, principal_candidate, groups[], active, directory_version} to ac_id and ac_grp; leaver event {principal, at} to ac_neg within the event path.",
+      "store": "Reads the identity provider through the connector. Writes a per-tenant directory snapshot table and a directory cursor (last modified_at seen, last full-list hash) in the the brain's own record store.",
+      "fail": "Event feed down: poll every 300 s takes over (default), alert after 3 missed polls (15 min). Full list fails midway: keep the last good snapshot, retry 3 times with 1 s, 4 s, 16 s backoff, then page. A feed that returns 0 users when the last snapshot had more than 50 is rejected as a bad read, never applied.",
+      "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'",
+      "prop": "Proposal: the brain syncs people and groups as data so permission checks never depend on a live directory call at query time.",
+      "hard": "Not every identity provider emits leaver events; for those the 300 s poll is the bound, and a verified shorter poll rate per provider is still to be measured.",
+      "deep": {
+        "purpose": "Keep the brain's copy of people, groups and active status current, so access lists can be resolved without asking the directory on every query. A new identity provider joins by filling the connector manifest (so_sdk) with its list and event endpoints; an app that ships an MCP server for its directory can join through the MCP bridge (so_mcp).",
+        "expected": [
+          "A user marked inactive in the directory is flagged revoked in ac_neg within the event path time",
+          "A full reconcile finds and repairs any difference between the snapshot and the directory",
+          "Group membership changes reach ac_grp before the next query pre-filter is built"
+        ],
+        "not_expected": [
+          "It does not decide who may see a document; it only reports who exists and who belongs where",
+          "It does not store passwords, tokens or directory attributes beyond the fields listed in inn",
+          "It never applies a feed that looks truncated"
+        ],
+        "algorithm": {
+          "name": "Event-first directory sync with a poll backstop and a full-list reconcile",
+          "formula": "staleness_max = min(T_event_max, T_poll) + T_apply",
+          "steps": [
+            "Receive an identity-provider event or timer tick and read changed records since the directory cursor",
+            "Validate the batch: reject empty or sharply shrunk lists, check tenant id on every record",
+            "Apply records idempotently keyed by (tenant, scim_id, modified_at); a repeated record changes nothing",
+            "Emit a leaver event to ac_neg first, then group records to ac_grp, then identity records to ac_id",
+            "Advance the cursor only after the batch commits (at-least-once, same rule as t_t04)",
+            "Once a day, read the full list and diff it against the snapshot; repair and count drift"
+          ],
+          "params": {
+            "T_poll": "300 s (default; tune per identity provider after measuring its event loss rate)",
+            "T_apply": "5 s (design budget for validate, write and emit)",
+            "full_reconcile_interval": "24 h (default; shorten for tenants with high churn)",
+            "shrink_guard": "reject if new list is under 50% of the old (design; tune after 90 days of churn data)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "T_event_max: longest delay of the identity provider's push path",
+            "T_poll: polling interval",
+            "T_apply: time to validate, write and emit",
+            "staleness_max: longest time the brain can disagree with the directory"
+          ],
+          "formula_full": "staleness_max = min(T_event_max, T_poll) + T_apply, with the event path counted only while the event feed is healthy",
+          "derivation": "Either the push arrives or the next poll does, whichever is sooner, so the wait is the smaller of the two. Applying the change adds a fixed cost. If push is down, T_event_max is infinite and the poll bound alone holds.",
+          "worked_example": "Push delay 10 s, poll 300 s, apply 5 s: healthy staleness = min(10,300) + 5 = 15 s. Push down: min(inf,300) + 5 = 305 s. For comparison, Gemini Enterprise lists identity sync intervals of 30 min to 7 days (pr_gemini-enterprise): 1,800 s is 5.9 times our poll-only bound.",
+          "complexity": "O(c) per cycle for c changed records; the daily reconcile is O(U + G) for U users and G groups. 100,000 users at 100 records per page is 1,000 requests.",
+          "failure_modes": [
+            "Duplicate or replayed event: idempotent key makes it a no-op",
+            "Directory returns a partial page: shrink guard rejects it and the previous snapshot stays",
+            "Clock skew between provider and brain: compare modified_at values from the provider only, never against local time"
+          ],
+          "calibration": "Measure event loss per provider for 30 days. If more than 1 event in 1,000 never arrives, lower T_poll to 120 s for that tenant. Re-check each quarter."
+        },
+        "alternatives": [
+          {
+            "name": "Query the directory live on every search",
+            "why_rejected": "Adds a directory call and its rate limit to the query path; Glean and Gemini Enterprise both sync identity as data instead (t_t20, pr_gemini-enterprise)."
+          },
+          {
+            "name": "Poll only, no events",
+            "why_rejected": "Leaver latency becomes the poll interval; the event path gives seconds for providers that support it."
+          }
+        ],
+        "security": [
+          "Forged directory event that adds a user to an admin group: only events from a registered identity-provider endpoint with a verified signature or token are accepted, and group changes that add members to a group above 10,000 members raise an alert",
+          "Truncated or empty feed used to wipe all access (denial) or a replay to restore a leaver: shrink guard plus the modified_at ordering stop both",
+          "Directory credentials leaking into logs: tokens stay in the vault (so_oauth) and records are logged by id only"
+        ],
+        "performance": {
+          "slo": "Healthy leaver-to-revoked p95 under 15 s; poll-only under 305 s",
+          "complexity": "O(c) per cycle, O(U + G) daily",
+          "scaling": "At 10x users (1M) the daily full list takes 10,000 page requests; shard by tenant and page in parallel within the identity provider's rate limit, and lean on the delta cursor between reconciles."
+        },
+        "edge_cases": [
+          "Empty feed: treated as a bad read, last snapshot kept, alert raised",
+          "User renamed or email changed: matched by scim_id and idp_subject, so the principal is unchanged",
+          "Same email in two tenants: records are keyed by tenant first, so they never merge",
+          "Two groups with the same display name: keyed by group_id, never by name",
+          "Unicode in names or emails: stored as received, compared after Unicode normalisation (NFC) and lowercase",
+          "Clock skew: ordering uses provider modified_at only",
+          "Huge tenant with 1M users: paged sync, resumable from the cursor after a crash",
+          "A new app that has its own users (no directory): joins through the so_sdk manifest, which lists its user endpoint so ac_id can map those users"
+        ],
+        "tests": [
+          {
+            "name": "leaver fast path",
+            "given": "directory marks user u1 inactive at t0 with the event feed healthy",
+            "expect": "ac_neg holds u1 within 15 s and the audit row records source = event"
+          },
+          {
+            "name": "truncated feed rejected",
+            "given": "snapshot has 2,000 users and the next list returns 400",
+            "expect": "batch rejected, snapshot unchanged, alert raised"
+          },
+          {
+            "name": "poll backstop",
+            "given": "event feed is silent and u2 is deactivated at t0",
+            "expect": "u2 revoked at or before t0 + 305 s"
+          },
+          {
+            "name": "replay is a no-op",
+            "given": "the same group change delivered 3 times",
+            "expect": "one membership change, directory_version increases once"
+          }
+        ],
+        "cost_levers": [
+          "Delta cursor between full lists keeps requests to changed records only",
+          "Daily reconcile runs off-peak and is paced to a share of the provider rate limit"
+        ],
+        "feedback_events": [
+          "Each drift row found by the daily reconcile raises a ticket and feeds the per-provider event loss estimate"
+        ],
+        "analytics_events": [
+          {
+            "name": "directory.synced",
+            "fields": [
+              "tenant_id",
+              "provider",
+              "path",
+              "records",
+              "ms",
+              "drift_found"
+            ],
+            "when": "after every committed batch"
+          },
+          {
+            "name": "directory.leaver",
+            "fields": [
+              "tenant_id",
+              "principal",
+              "path",
+              "latency_ms"
+            ],
+            "when": "when a leaver event is emitted"
+          }
+        ],
+        "papers": [],
+        "repos": [
+          {
+            "ref": "r_openfga",
+            "name": "OpenFGA",
+            "take": "Relations such as group membership are stored as data; we keep our own snapshot and do not depend on a remote relation store."
+          }
+        ],
+        "industry": "Glean folds users, groups and memberships into one identity schema refreshed by crawls (t_t20). Gemini Enterprise runs identity syncs on a schedule separate from content syncs (pr_gemini-enterprise). We copy the separation and add an event path.",
+        "refs": [
+          "t_t20",
+          "pr_gemini-enterprise",
+          "t_t04",
+          "r_openfga"
+        ]
+      }
+    },
+    "ac_id": {
+      "line": "One company principal per app user: idp_subject, then scim_id, then verified email\nunmapped = no access",
+      "dumb": "Every app has its own idea of who a user is: a Slack id, a Jira account id, an email. This part decides which real person each one is, using the most reliable proof first. If it cannot be sure, it gives that app user no access at all.",
+      "inn": "Directory records from ac_scim {principal_candidate, idp_subject, scim_id, emails[] with verified flag}. App user records from connectors {app, tenant, app_user_id, email, email_verified, display_name}.",
+      "out": "Principal map rows {tenant, app, app_user_id, principal_id, match_rule, confidence, mapped_at} to ac_store and the map snapshot to ac_grp. Unmapped list {tenant, app, app_user_id} to the audit log.",
+      "store": "Reads directory snapshot and app user records. Writes the principal map table in the the brain's own record store, keyed by (tenant, app, app_user_id), with a history column.",
+      "fail": "Lookup store down: serve the last map snapshot for up to 60 s, then fail closed (no principal, no access) and alert. Two principals claim one email: map neither, queue for an admin to resolve, never pick one. Backlog over 10,000 unmapped users: pause new-app onboarding and alert.",
+      "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'",
+      "prop": "Proposal: sharing lists name app users, and the brain must translate them to company people before it can filter by permission.",
+      "hard": "Contractors and guests with no directory entry have no verified key; the policy for them (mapped by invited email only, or never mapped) is still open.",
+      "deep": {
+        "purpose": "Turn each app's user id into exactly one company principal, or into none. Wrong maps are the root of a permission leak, so the rule is strict and ordered. A new app joins through the so_sdk manifest by naming which of its user fields hold the email and the verified flag; an MCP-only app declares the same fields in its MCP bridge (so_mcp) mapping.",
+        "expected": [
+          "A user known by idp_subject maps to that principal even if the email changed",
+          "A user known only by a verified email maps by email and records match_rule = email",
+          "A user with no verified key maps to nothing and appears in the unmapped list"
+        ],
+        "not_expected": [
+          "It never maps by display name",
+          "It never maps by an email the app has not verified",
+          "It never merges two principals automatically"
+        ],
+        "algorithm": {
+          "name": "Ordered deterministic identity resolution with strict fail-closed fallthrough",
+          "formula": "principal(u) = first match over [idp_subject, scim_id, verified_email]; none if no rule matches or rules disagree",
+          "steps": [
+            "Normalise keys: lowercase email with NFC normalisation, trim, strip plus-tags only if the tenant policy says so",
+            "Try idp_subject; if it hits exactly one principal, accept",
+            "Else try scim_id; else try verified email; each rule must hit exactly one principal",
+            "If two rules hit different principals, map nothing and queue a conflict for an admin",
+            "Write the map row with match_rule and mapped_at; keep prior rows as history",
+            "Recompute affected rows when ac_scim reports a changed email or a leaver"
+          ],
+          "params": {
+            "rule_order": "idp_subject, scim_id, verified_email (design; strongest and least reusable key first)",
+            "email_verified_required": "true (default; unverified emails are untrusted claims)",
+            "unmapped_alert_threshold": "1% of an app's users (tune after the first month)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "U: users in one app",
+            "M: users mapped",
+            "coverage: M / U",
+            "conflict: two rules point at different principals"
+          ],
+          "formula_full": "coverage = M / U; accept only if exactly one principal satisfies the highest-priority rule that hits",
+          "derivation": "Priority order means a stronger key overrides a weaker one. Requiring exactly one hit removes ambiguity, so the false-match rate is bounded by the key quality, not by a similarity score.",
+          "worked_example": "A Jira site has U = 1,200 users. 1,104 match by idp_subject, 60 by scim_id, 24 by verified email, 12 have no key. M = 1,188, coverage = 99.0%. The 12 unmapped users get no access through the brain. Unmapped rate 1.0% equals the alert threshold, so an admin is notified.",
+          "complexity": "O(1) per lookup with hash indexes on each key; O(U) to remap an app.",
+          "failure_modes": [
+            "Email reuse after a leaver: the leaver's row is closed at the leaver event, so a new hire with the same email gets a fresh principal",
+            "Alias addresses: not matched unless the directory lists them as emails[]",
+            "Shared mailbox used as login: lands in conflict, never auto-mapped"
+          ],
+          "calibration": "Review the unmapped and conflict queues weekly for the first 2 months; relax rules only by explicit admin action, and never by lowering the verified-email requirement."
+        },
+        "alternatives": [
+          {
+            "name": "Fuzzy match on name and email similarity",
+            "why_rejected": "A false match gives one person another's access; an exact-key rule fails safe."
+          },
+          {
+            "name": "Ask the app for the user's directory id each time",
+            "why_rejected": "Adds an app call to every permission check and most apps do not return an identity-provider subject."
+          }
+        ],
+        "security": [
+          "Account takeover by registering an unverified email that equals a victim's: only verified emails count and the app's verified flag is checked on every map write",
+          "Confused-deputy mapping where a guest shares an email with an employee: a conflict stops the map and an admin resolves it",
+          "Map poisoning through a connector that reports a forged email: records are accepted only from the registered connector for that tenant and app"
+        ],
+        "performance": {
+          "slo": "Lookup p95 under 5 ms; remap after a directory change under 30 s",
+          "complexity": "O(1) lookup, O(U) per-app remap",
+          "scaling": "At 10x users the indexed lookup stays flat; remap is batched per app and sharded by tenant."
+        },
+        "edge_cases": [
+          "Empty email: only the id rules apply; if none hit, unmapped",
+          "User with two accounts in one app: both map to the same principal; allowed and logged",
+          "Concurrent directory change and map write: compare-and-set on mapped_at so the newer wins",
+          "Case differences and Unicode lookalikes in email: normalised before compare; lookalike domains do not match",
+          "Leaver whose app account lives on: the map row is closed, so the app user has no principal",
+          "Very large app with 500,000 users: remap runs as paged batches resumable by cursor"
+        ],
+        "tests": [
+          {
+            "name": "strong key wins",
+            "given": "user with idp_subject S1 -> principal P1 and email that matches principal P2",
+            "expect": "maps to P1, match_rule = idp_subject, conflict logged"
+          },
+          {
+            "name": "unverified email ignored",
+            "given": "app user with email a@x.com, email_verified = false, no other key",
+            "expect": "unmapped; no principal row written"
+          },
+          {
+            "name": "two principals one email",
+            "given": "two directory entries both list b@x.com",
+            "expect": "neither mapped, conflict queued, audit row written"
+          },
+          {
+            "name": "leaver closes row",
+            "given": "leaver event for P1",
+            "expect": "all P1 map rows closed within 30 s"
+          }
+        ],
+        "cost_levers": [
+          "Hash-indexed in-memory map; no model call and no app call at query time"
+        ],
+        "feedback_events": [
+          "Admin resolution of a conflict is stored and replayed so the same conflict does not reopen"
+        ],
+        "analytics_events": [
+          {
+            "name": "identity.mapped",
+            "fields": [
+              "tenant_id",
+              "app",
+              "rule",
+              "coverage_pct"
+            ],
+            "when": "after each app remap"
+          },
+          {
+            "name": "identity.conflict",
+            "fields": [
+              "tenant_id",
+              "app",
+              "app_user_id"
+            ],
+            "when": "when two rules disagree"
+          }
+        ],
+        "papers": [],
+        "repos": [],
+        "industry": "Glean filters stale or fake users from its identity schema (t_t20). Elastic and Moveworks mirror source permissions into stores keyed by the user (pr_elastic, pr_moveworks); all depend on a reliable user-to-person map.",
+        "refs": [
+          "t_t20",
+          "pr_moveworks",
+          "pr_elastic"
+        ]
+      }
+    },
+    "ac_src": {
+      "line": "Per-app ACL adapters read each object's sharing list; hash-diff skips unchanged lists\ncost = N x points / budget",
+      "dumb": "Each app keeps its own list of who may open a file, channel or ticket. This part asks the app for that list, one object at a time, in the form the app offers. It only stores the list if it changed, and it never looks at the document text.",
+      "inn": "Refresh orders from ch_wf {tenant, app, uri, reason}. Per-app capability descriptor {acl_api, rate_limits}. Source sharing list as returned by the app: entries {app_principal, role, inherited_from}.",
+      "out": "Raw ACL {uri, entries[{app_principal, role}], acl_hash, fetched_at} to ac_grp; removal signal to ac_neg when an entry disappears; ACL change record to ac_audit.",
+      "store": "Reads the app through so_sdk. Writes last-seen acl_hash per (tenant, uri) in the the brain's own record store so unchanged lists are skipped.",
+      "fail": "App returns 429: honour Retry-After, back off 1 s, 2 s, 4 s, up to 5 tries, then park the order for the next hour window. App returns 403 for an object: treat the object as hidden from all, set its ACL to empty and alert. Timeout 10 s: retry 3 times, then leave the old ACL marked stale (never widen).",
+      "req": "Requirement: 'answer with citations; respect source permissions'",
+      "prop": "Proposal: each app has a different sharing model, so a per-app adapter reads it and the common record keeps only {uri, principal, role}.",
+      "hard": "Sharing models that inherit from a parent folder or project (Drive, Jira roles) need a parent-ACL cache; its invalidation rules are still being specified.",
+      "deep": {
+        "purpose": "Fetch the authoritative sharing list for each object from its app, so the brain filters by what the app itself says. Each app has its own adapter; a new app joins by adding an acl_api entry to its so_sdk connector manifest, or by exposing a sharing-list tool through the MCP bridge (so_mcp).",
+        "expected": [
+          "An unchanged list is detected by hash and costs no write",
+          "A removed principal is signalled to ac_neg in the same run",
+          "Inherited access is recorded with its parent so a parent change refreshes the children"
+        ],
+        "not_expected": [
+          "It never reads document text",
+          "It never widens access when the app errors; a failed read leaves the old list marked stale",
+          "It does not decide who is allowed; it reports what the app says"
+        ],
+        "algorithm": {
+          "name": "Per-app ACL adapter with hash-diff and quota-paced refresh",
+          "formula": "refresh_hours = N_objects x points_per_read / (hourly_budget x acl_share)",
+          "steps": [
+            "Take a refresh order from ch_wf and look up the app's acl_api in the capability descriptor",
+            "Reserve quota from so_rate for the read; wait if the ACL share of the quota is used",
+            "Read the sharing list (batch endpoint where the app has one) and sort entries by (principal, role)",
+            "Hash the sorted list; if equal to the stored acl_hash, stop",
+            "Otherwise diff against the stored list; send removed principals to ac_neg and the full list to ac_grp",
+            "Store the new acl_hash and fetched_at"
+          ],
+          "params": {
+            "acl_share_of_quota": "50% (design; same ceiling t_t06 suggests for backfill, tune per app)",
+            "retry_limit": "5 tries with 1 s, 2 s, 4 s backoff then park (default)",
+            "parent_cache_ttl": "300 s (default; invalidated by parent change events)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "N_objects: objects whose ACL must be read",
+            "points_per_read: quota cost of one read",
+            "hourly_budget: the tenant's hourly quota",
+            "acl_share: fraction of quota given to ACL reads"
+          ],
+          "formula_full": "refresh_hours = N_objects x points_per_read / (hourly_budget x acl_share)",
+          "derivation": "Total cost divided by the points per hour we may spend gives the hours needed. A full refresh that takes many hours is not viable, so refreshes must be driven by change events and by parent-level lists.",
+          "worked_example": "Jira Standard tenant with 2,000 users: budget = 100,000 + 10 x 2,000 = 120,000 points per hour (t_t06). Take acl_share 50% = 60,000 points. If one ACL read costs 2 points (the identity-read price in t_t06; our assumption for ACL reads), 300,000 objects need 600,000 points = 10 hours. Reading project roles once per project (300 projects) costs 600 points: 36 seconds of quota.",
+          "complexity": "O(E log E) to sort and hash E entries per object; O(1) skip when the hash matches.",
+          "failure_modes": [
+            "Quota exhausted mid-window: orders park until the next hour, and the old ACL stays marked stale",
+            "Adapter bug returns an empty list for a shared file: an empty list is treated as suspect when the stored list was non-empty, and is held for review before it narrows access to zero",
+            "Parent ACL changes but child orders are not issued: ch_sweep reconciliation catches it within one sweep"
+          ],
+          "calibration": "Measure real points per ACL read per app on one week of traffic and replace the assumed 2 points; set acl_share so live sync never drops below its freshness target."
+        },
+        "alternatives": [
+          {
+            "name": "Read the ACL only at query time",
+            "why_rejected": "Cannot pre-filter the search; ac_live already does this for the top results only."
+          },
+          {
+            "name": "Refresh every object on a fixed schedule",
+            "why_rejected": "At 10 hours per full pass in the example, the cost rules it out; event-driven refresh covers it."
+          }
+        ],
+        "security": [
+          "Over-privileged connector token reads more than sharing lists: the adapter scope is limited to permission-read scopes and p_mcp-audit style review is run before a connector is enabled",
+          "Poisoned sharing entry from a user-controlled field (for example a group name with control text): entries are stored as ids and roles only, never as display text passed to a model",
+          "A failed read silently widens access: failures keep the old list marked stale and never grant"
+        ],
+        "performance": {
+          "slo": "ACL change to updated list p95 under 60 s for event-capable apps; sweep-only apps within one sweep interval",
+          "complexity": "O(E log E) per object",
+          "scaling": "At 10x objects the quota, not the CPU, is the limit; read at parent level and use change events to cut reads by one to two orders of magnitude."
+        },
+        "edge_cases": [
+          "Object with no sharing entries: stored as empty, meaning visible to nobody",
+          "Very large list (50,000 entries): paged, hashed incrementally, and large groups stored by id",
+          "Duplicate entries: collapsed by (principal, role)",
+          "Concurrent orders for the same uri: single-flight by uri so only one read runs",
+          "Object deleted between order and read: app returns 404, the order is dropped and a tombstone is expected from ch_tomb",
+          "Unicode channel or folder names: ids used, names never keyed on",
+          "A new app arrives with no ACL API: it is marked live-only (qr_live) until an acl_api is declared in the manifest"
+        ],
+        "tests": [
+          {
+            "name": "unchanged list skipped",
+            "given": "two reads of one object return identical entries",
+            "expect": "second read writes nothing and emits no event"
+          },
+          {
+            "name": "removal signalled",
+            "given": "entry for user u3 disappears from a Drive file",
+            "expect": "ac_neg receives u3 for that uri within the run"
+          },
+          {
+            "name": "quota respected",
+            "given": "ACL share 60,000 points per hour and 70,000 points of orders",
+            "expect": "60,000 points used, remaining orders parked to the next hour"
+          },
+          {
+            "name": "fail never widens",
+            "given": "app returns 500 for a read",
+            "expect": "old list kept, marked stale, no new principals added"
+          }
+        ],
+        "cost_levers": [
+          "Hash-diff skips unchanged lists",
+          "Read parent-level lists once instead of per child",
+          "ACL changes never trigger re-embedding (t_t44)"
+        ],
+        "feedback_events": [
+          "Every ac_live denial for an object the index thought visible triggers an immediate refresh order and is counted as an ACL staleness event"
+        ],
+        "analytics_events": [
+          {
+            "name": "acl.fetched",
+            "fields": [
+              "tenant_id",
+              "app",
+              "uri_hash",
+              "changed",
+              "points",
+              "ms"
+            ],
+            "when": "after each ACL read"
+          },
+          {
+            "name": "acl.stale",
+            "fields": [
+              "tenant_id",
+              "app",
+              "uri_hash",
+              "reason"
+            ],
+            "when": "when an object is marked stale"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_facts-rag",
+            "key_idea": "Access control is a first-class design input for enterprise retrieval, not an add-on.",
+            "how": "The sharing list is fetched and stored as its own data so access can change without touching content."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_onyx",
+            "name": "Onyx",
+            "take": "Syncs per-user document permissions from connectors; we copy the idea of per-source permission sync and keep pointers, not content."
+          }
+        ],
+        "industry": "Glean connectors retrieve each source's permissions map and mirror it into the index, and SharePoint falls back to about 24 hours without webhook scope (pr_glean). Elastic keeps document-level security for selected connectors (pr_elastic).",
+        "refs": [
+          "t_t06",
+          "t_t44",
+          "t_t20",
+          "pr_glean",
+          "pr_elastic",
+          "p_facts-rag",
+          "r_onyx",
+          "p_mcp-audit"
+        ]
+      }
+    },
+    "ac_grp": {
+      "line": "Cycle-safe nested group flattening, versioned snapshots, huge groups stay as ids\nO(V + E) per flatten",
+      "dumb": "Groups can contain other groups, and sometimes loop back on themselves. This part works out the full list of people behind a group without getting stuck in a loop. For big groups it keeps only the group name and looks up the members when needed.",
+      "inn": "Raw ACL entries from ac_src {uri, app_principal, role}. Group records and memberships from ac_scim and app-native groups {group_id, members[], member_groups[]}. Principal map snapshot from ac_id.",
+      "out": "Principal set per object {uri, principals[], group_refs[], membership_version} to ac_store. Membership-removed signal to ac_neg. Snapshot id to ac_audit.",
+      "store": "Reads the group graph and map snapshots. Writes immutable membership snapshots {group_id, members, version} and a reverse index user to groups in the the brain's own record store.",
+      "fail": "Cycle found: break at the repeated node, keep going, log the cycle once. Group graph over 100,000 nodes or depth over 20: stop, keep the last good snapshot, alert. Snapshot write fails: retry 3 times at 1 s, 4 s, 16 s, then serve the previous version and mark objects stale.",
+      "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'",
+      "prop": "Proposal: sharing lists name groups, nested groups can contain cycles, and a flat principal set is what the search filter needs.",
+      "hard": "The member-count threshold that switches a group to lazy expansion is a guess until real group sizes are measured.",
+      "deep": {
+        "purpose": "Turn nested groups into flat principal sets without looping, and keep a version of every membership so a query can say which snapshot it used. Apps with their own group model join through the so_sdk manifest by listing the endpoint that returns members and member groups.",
+        "expected": [
+          "A group that contains itself through a chain is flattened once with no error",
+          "Two objects sharing one 50,000-member group each store a group reference, not 50,000 users",
+          "Every flatten result carries the membership version it was built from"
+        ],
+        "not_expected": [
+          "It never grants access that no path in the graph supports",
+          "It does not store document text",
+          "It never expands a group above the lazy threshold into per-object copies"
+        ],
+        "algorithm": {
+          "name": "Depth-first transitive closure with a visited set, versioned snapshots and a lazy threshold",
+          "formula": "members(G) = union of direct users of G and members(H) for each unvisited child H; cost O(V + E)",
+          "steps": [
+            "Load group G and mark it visited",
+            "Add G's direct users to the result",
+            "For each child group H not yet visited, recurse; if H is visited, skip it (this breaks cycles)",
+            "If the result would pass the lazy threshold T, store G's id as a group reference instead of the members",
+            "Write an immutable snapshot with a new membership_version",
+            "Build the reverse index user to groups so a query can list a user's groups quickly"
+          ],
+          "params": {
+            "lazy_threshold_T": "10,000 members (default; tune after measuring the group size distribution)",
+            "max_depth": "20 levels (default; deeper is treated as a data error)",
+            "snapshot_retention": "7 snapshots or 24 h, whichever is larger (design)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "V: groups visited",
+            "E: membership edges followed",
+            "T: lazy threshold",
+            "D: documents sharing a group",
+            "n: members in that group"
+          ],
+          "formula_full": "Eager storage = D x n entries; lazy storage = D references + n reverse-index rows; flatten time O(V + E)",
+          "derivation": "Each group and edge is visited at most once because of the visited set, so the cost is linear. Eager copies multiply the group size by every document that shares it; lazy storage adds the group once.",
+          "worked_example": "Group A contains B and C. B contains D and A (a cycle). D has 40 users, C has 25, and 5 users are in both. Flatten A: visit A, B, D, skip A again, visit C. Unique members = 40 + 25 - 5 = 60. Storage: 500 documents shared with a 50,000-member group = 25,000,000 eager entries versus 500 references plus 50,000 reverse-index rows.",
+          "complexity": "O(V + E) per flatten; O(1) reference per large group per object.",
+          "failure_modes": [
+            "Very deep or wide graph: depth cap and node cap stop runaway work",
+            "Membership changes while flattening: the snapshot is built from one membership_version, never a mix",
+            "Reverse index drifts from forward data: the daily reconcile in ac_scim rebuilds and compares them"
+          ],
+          "calibration": "Chart group sizes after the first sync. Set T at the size where eager storage passes 5% of the ACL store, then re-check monthly."
+        },
+        "alternatives": [
+          {
+            "name": "Expand every group eagerly on every object",
+            "why_rejected": "Storage multiplies by the number of shared documents, as the 25,000,000 entry example shows."
+          },
+          {
+            "name": "Never flatten; resolve groups at query time only",
+            "why_rejected": "Puts a recursive graph walk in every query and breaks pre-filtering for nested groups."
+          }
+        ],
+        "security": [
+          "A planted cycle or enormous nested group used to exhaust memory (denial of service): visited set, depth cap and node cap bound the work",
+          "Stale snapshot keeps a removed member: the membership version is part of the filter and ac_neg takes the removal immediately",
+          "An attacker who can edit a group adds themselves to an admin group: membership changes that add members to groups above T raise an alert and are audited"
+        ],
+        "performance": {
+          "slo": "Flatten of a 10,000-member nested group p95 under 200 ms; group change visible to ac_store within 30 s",
+          "complexity": "O(V + E)",
+          "scaling": "At 10x groups the reverse index and lazy references keep storage near linear; flatten is parallel by tenant."
+        },
+        "edge_cases": [
+          "Empty group: yields an empty set; objects shared only with it are visible to nobody",
+          "Group contains itself: skipped on revisit",
+          "Duplicate members through two paths: set union keeps one",
+          "Concurrent edit during flatten: built from one snapshot version",
+          "Group of 1,000,000 members: stays a reference; user side resolves membership",
+          "Unicode group names: ids are the keys, names are display only",
+          "An app with no nested groups joins through so_sdk with a flat member list and skips recursion"
+        ],
+        "tests": [
+          {
+            "name": "cycle safe",
+            "given": "A contains B, B contains A, B has user u1",
+            "expect": "members(A) = {u1}, finishes, one cycle logged"
+          },
+          {
+            "name": "overlap counted once",
+            "given": "D has 40 users, C has 25, 5 shared",
+            "expect": "60 unique members"
+          },
+          {
+            "name": "lazy switch",
+            "given": "group of 50,000 members shared by 500 documents, T = 10,000",
+            "expect": "500 references stored, no per-document member copies"
+          },
+          {
+            "name": "version stamped",
+            "given": "flatten after a membership change",
+            "expect": "membership_version increments and appears on every output row"
+          }
+        ],
+        "cost_levers": [
+          "Lazy references avoid multiplying storage by shared documents",
+          "Reverse index answers a user's groups without a graph walk"
+        ],
+        "feedback_events": [
+          "Group-size distribution and cycle counts feed the threshold review"
+        ],
+        "analytics_events": [
+          {
+            "name": "group.flattened",
+            "fields": [
+              "tenant_id",
+              "group_id",
+              "members",
+              "depth",
+              "cycles",
+              "ms",
+              "membership_version"
+            ],
+            "when": "after every flatten"
+          }
+        ],
+        "papers": [],
+        "repos": [
+          {
+            "ref": "r_spicedb",
+            "name": "SpiceDB",
+            "take": "Its list-what-this-user-can-see call shows the reverse direction we need; we keep our own reverse index instead of a separate relation store."
+          },
+          {
+            "ref": "r_openfga",
+            "name": "OpenFGA",
+            "take": "Treats group nesting as relations resolved by graph walk; we flatten ahead of time for speed and keep lazy resolution only for large groups."
+          }
+        ],
+        "industry": "Glean folds users, groups and memberships into one identity schema refreshed separately from content (t_t20). Gemini Enterprise captures users tied to ACL groups in identity syncs (pr_gemini-enterprise).",
+        "refs": [
+          "t_t20",
+          "pr_gemini-enterprise",
+          "r_spicedb",
+          "r_openfga",
+          "p_filtered-stale"
+        ]
+      }
+    },
+    "ac_store": {
+      "line": "Document id to principal and group ids, kept apart from content; compare-and-set on acl_version\nACL edit never re-embeds",
+      "dumb": "This is the table that says, for each document, which people and groups may open it. It lives apart from the document data, so a sharing change is a small update and nothing has to be re-read or re-embedded. Each row has a version number so an old update cannot overwrite a newer one.",
+      "inn": "Principal sets from ac_grp {tenant, uri, principals[], group_refs[], membership_version}. Principal map rows from ac_id. Delete orders from gv_erase {tenant, uri}.",
+      "out": "Principal set per uri with acl_version to ac_filter; acl_ref and acl_version stamps patched into the lexical and vector index payloads; version stamps to ac_audit.",
+      "store": "Owns the ACL table in the the brain's own record store: key (tenant_id, doc_id), fields principals[], group_refs[], acl_version, acl_hash, updated_at. Encrypted with the tenant key from gv_kms.",
+      "fail": "Write conflict on acl_version: the lower version is dropped, no retry needed. Store unavailable: queries fail closed after 2 s (no ACL, no results); index payload patches retry 5 times at 1 s, 2 s, 4 s, 8 s, 16 s, then land in the dead-letter queue and alert. Payload patch lags: ac_live is the check.",
+      "req": "Requirement: 'answer with citations; respect source permissions'",
+      "prop": "Proposal: permissions stored as data apart from content can change in seconds without re-reading or re-embedding any document.",
+      "hard": "How much of the principal set to copy into each index payload (all of it, or only an acl_ref resolved at query time) is open; it trades filter speed for patch cost. Store the permission hash apart from the text hash, so a permission change patches the entry without re-embedding (c2_notion_vec).",
+      "deep": {
+        "purpose": "Hold the authoritative allow list for every pointer, with a version that makes updates safe to apply out of order. Keeping it apart from content means a sharing change is a metadata patch, never a re-embed (t_t44). New apps need no change here: their lists arrive as principal sets from ac_grp through the so_sdk manifest.",
+        "expected": [
+          "A newer acl_version always wins over an older one, whatever order updates arrive",
+          "An ACL edit updates index payloads without re-embedding the document",
+          "A delete order removes the row and its payload stamps"
+        ],
+        "not_expected": [
+          "It never stores document text or snippets",
+          "It never answers a query with a principal set older than the one the ACL fetcher last wrote, unless the store is down and the query fails closed",
+          "It does not evaluate who may see; it stores the sets"
+        ],
+        "algorithm": {
+          "name": "Versioned key-value store with compare-and-set and payload patching",
+          "formula": "apply(update) iff update.acl_version > row.acl_version, else drop",
+          "steps": [
+            "Receive a principal set with its acl_version",
+            "Compare-and-set on (tenant, doc_id): write only if the version is higher",
+            "Patch acl_ref and acl_version into the index payload of every chunk of the document (metadata patch, no embedding)",
+            "Emit the new version to ac_audit and the principal set to ac_filter's cache",
+            "Drop rows when gv_erase sends a delete order"
+          ],
+          "params": {
+            "principals_in_payload": "acl_ref only plus up to 64 inline principal tokens (design; revisit after measuring filter latency)",
+            "patch_batch": "500 chunks per call (default; tune per engine)",
+            "row_encryption": "tenant data key from gv_kms (design)"
+          }
+        },
+        "math": {
+          "definitions": [
+            "D: documents",
+            "p: average principals per document",
+            "b: bytes per principal id",
+            "C: chunks per document"
+          ],
+          "formula_full": "ACL table size = D x p x b; payload patch cost = C requests per ACL change, no embedding calls",
+          "derivation": "Sizes multiply linearly. Because the vector is not touched on an ACL change, the cost of a sharing edit is metadata writes only, while a text change would also pay for re-embedding.",
+          "worked_example": "200,000 documents x 12 principals x 16 bytes = 38.4 MB. A sharing change on a 40-chunk document is 40 metadata patches (one batch call) and 0 embedding calls. A 1,000-document folder permission change is 1,000 x 40 = 40,000 patches at 500 per call = 80 calls.",
+          "complexity": "O(1) read and write by key; O(C) patches per ACL change.",
+          "failure_modes": [
+            "Out-of-order updates: the version compare drops the older one",
+            "Payload patch lost: the ACL table is still right; a periodic reconcile compares payload stamps with the table and repairs",
+            "Hot key on a popular document: reads are cached for 5 s and invalidated by version change"
+          ],
+          "calibration": "Track patch lag p95; if it passes 30 s, switch more documents to acl_ref-only payloads and resolve at query time."
+        },
+        "alternatives": [
+          {
+            "name": "Store the ACL inside each chunk only",
+            "why_rejected": "A sharing change would rewrite every chunk and there would be no single source of truth to audit."
+          },
+          {
+            "name": "Resolve permissions only from the source at query time",
+            "why_rejected": "Cannot pre-filter the search and leaves the query exposed to every app's rate limit; used only as the live recheck."
+          }
+        ],
+        "security": [
+          "Direct read of the table by another tenant or a stolen credential: tenant id is in the key, row-level policy from gv_tenant is the second check, and rows are encrypted with the tenant key",
+          "Replay of an old principal set to restore a revoked user: the version compare drops it",
+          "Poisoned update writes an overly wide set: only ac_grp's service identity can write, and every write goes to the audit log with its version"
+        ],
+        "performance": {
+          "slo": "Read p95 under 10 ms; write-to-payload-patch p95 under 30 s",
+          "complexity": "O(1) by key; O(C) patch",
+          "scaling": "At 10x documents the table stays keyed and shardable by tenant; patch fan-out is bounded by batching and runs on the live lane, never the backfill lane."
+        },
+        "edge_cases": [
+          "Empty principal set: stored as empty, visible to nobody",
+          "Document with 5,000 chunks: patch in 10 batches of 500, resumable",
+          "Duplicate update with the same version: idempotent no-op",
+          "Two concurrent writers: the higher version wins, the other is dropped",
+          "Delete arrives before the first ACL write: tombstone row blocks late writes",
+          "Unicode in doc id: ids are opaque bytes, compared exactly",
+          "New app first sync: rows written in the backfill lane without slowing live ACL patches"
+        ],
+        "tests": [
+          {
+            "name": "newer version wins",
+            "given": "update v5 then update v4 for the same doc",
+            "expect": "row stays v5; v4 dropped"
+          },
+          {
+            "name": "no re-embed",
+            "given": "change one share on a 40-chunk document",
+            "expect": "40 payload patches, 0 embedding calls"
+          },
+          {
+            "name": "fail closed",
+            "given": "ACL store unreachable for 3 s",
+            "expect": "query returns no results and a degraded flag"
+          },
+          {
+            "name": "delete blocks late write",
+            "given": "gv_erase deletes doc d1, then an old ACL write for d1 arrives",
+            "expect": "write rejected by tombstone"
+          }
+        ],
+        "cost_levers": [
+          "ACL edits are metadata patches, so no embedding spend (t_t44)",
+          "acl_ref payloads reduce patch volume for widely shared folders"
+        ],
+        "feedback_events": [
+          "Payload-versus-table mismatches found by the reconcile are counted and traced to their cause"
+        ],
+        "analytics_events": [
+          {
+            "name": "acl.applied",
+            "fields": [
+              "tenant_id",
+              "uri_hash",
+              "acl_version",
+              "patched_chunks",
+              "ms"
+            ],
+            "when": "after each committed ACL write"
+          },
+          {
+            "name": "acl.dropped",
+            "fields": [
+              "tenant_id",
+              "uri_hash",
+              "incoming_version",
+              "row_version"
+            ],
+            "when": "when an older update is dropped"
+          }
+        ],
+        "papers": [
+          {
+            "ref": "p_acorn",
+            "key_idea": "Permission and source filters must run inside the ANN search, not after it.",
+            "how": "The store keeps a compact allow list that the filter compiler pushes into the search."
+          }
+        ],
+        "repos": [
+          {
+            "ref": "r_opensearch",
+            "name": "OpenSearch",
+            "take": "Its document-level security keeps an allow list per document; we keep the list in our own table and patch the index copy."
+          },
+          {
+            "ref": "r_qdrant",
+            "name": "Qdrant",
+            "take": "Payload filters on vectors; we patch payload fields on ACL change instead of re-inserting vectors."
+          }
+        ],
+        "industry": "Notion hashes each span and makes metadata changes a cheap patch with no re-embed (t_t44). Copilot connectors carry an ACL with every item (t_t21).",
+        "refs": [
+          "t_t44",
+          "t_t21",
+          "t_t22",
+          "p_acorn",
+          "r_opensearch",
+          "r_qdrant",
+          "c2_notion_vec"
+        ]
+      }
+    }
+  },
+  "edges": [
+    {
+      "a": "ac_scim",
+      "b": "ac_grp",
+      "l": "group changes",
+      "k": "s",
+      "d": "Group records {group_id, members[], member_groups[], directory_version} from the identity provider"
+    },
+    {
+      "a": "ac_id",
+      "b": "ac_grp",
+      "l": "principal map",
+      "k": "s",
+      "d": "Map snapshot {app, app_user_id, principal_id, mapped_at} used to resolve app-native members"
+    },
+    {
+      "a": "ac_src",
+      "b": "ac_neg",
+      "l": "access removed",
+      "k": "d",
+      "d": "Removed entry {tenant, uri, app_principal} found by the ACL hash diff"
+    },
+    {
+      "a": "ac_src",
+      "b": "ac_audit",
+      "l": "acl change",
+      "k": "d",
+      "d": "Record {uri_hash, old_acl_hash, new_acl_hash, fetched_at}"
+    },
+    {
+      "a": "ac_grp",
+      "b": "ac_neg",
+      "l": "member removed",
+      "k": "d",
+      "d": "Removal {tenant, group_id, principal, membership_version}"
+    },
+    {
+      "a": "ac_grp",
+      "b": "ac_audit",
+      "l": "snapshot",
+      "k": "d",
+      "d": "Record {group_id, membership_version, members, cycles}"
+    },
+    {
+      "a": "ac_store",
+      "b": "ix_vec",
+      "l": "acl payload patch",
+      "k": "s",
+      "d": "Metadata patch {chunk_id, acl_ref, acl_version}; no embedding call"
+    },
+    {
+      "a": "ac_store",
+      "b": "ix_lex",
+      "l": "acl payload patch",
+      "k": "s",
+      "d": "Metadata patch {chunk_id, acl_ref, acl_version} for the keyword index"
+    },
+    {
+      "a": "ac_store",
+      "b": "ac_audit",
+      "l": "acl version",
+      "k": "d",
+      "d": "Record {uri_hash, acl_version, written_at}"
+    }
+  ]
+}

@@ -1,0 +1,444 @@
+{
+ "pl_idp": {
+  "milestone": "M0",
+  "effort_days": 5,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "OIDC provider",
+    "pick": "Keycloak (container) or Ory Hydra plus Kratos",
+    "why": "Both issue signed JWTs and publish a JWKS. Pick Keycloak for one container and a built-in admin console; check current docs for the exact image tag."
+   },
+   {
+    "part": "token verify",
+    "pick": "PyJWT with its JWKS client",
+    "why": "Verify signature, issuer, audience and expiry in a few lines. Do not hand-roll signature checks."
+   },
+   {
+    "part": "audit store",
+    "pick": "Postgres 16 table with a trigger that blocks UPDATE and DELETE",
+    "why": "Plain SQL keeps the chain verifiable with one query. Do not pick a blockchain or a log service with no per-tenant query."
+   },
+   {
+    "part": "hash",
+    "pick": "SHA-256 from Python hashlib",
+    "why": "Standard, fast, no dependency."
+   }
+  ],
+  "install": [
+   "pip install 'pyjwt[crypto]' 'psycopg[binary]'",
+   "docker run -d --name kc -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev",
+   "docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/idp/verify.py : token to principal",
+   "brain/idp/audit.py : append and verify the hash chain",
+   "migrations/010_audit.sql : audit_log table and block-edit trigger",
+   "tests/test_audit_chain.py : tamper and ordering tests"
+  ],
+  "schema": "CREATE TABLE audit_log (\n  tenant_id text NOT NULL,\n  seq bigint NOT NULL,\n  principal text NOT NULL,\n  action text NOT NULL,\n  resource text NOT NULL,\n  outcome text NOT NULL,\n  ts timestamptz NOT NULL DEFAULT now(),\n  prev_hash bytea NOT NULL,\n  row_hash bytea NOT NULL,\n  PRIMARY KEY (tenant_id, seq)\n);\nCREATE FUNCTION audit_block() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'audit_log is append-only'; END $$ LANGUAGE plpgsql;\nCREATE TRIGGER audit_no_edit BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_block();",
+  "interface": "def verify_token(bearer: str) -> Principal  # raises Unauthorized\ndef append_audit(tenant_id: str, principal: str, action: str, resource: str, outcome: str) -> tuple[int, str]  # (seq, row_hash hex)\ndef verify_chain(tenant_id: str) -> int | None  # first bad seq, or None if intact",
+  "code": "import hashlib, json\n\ndef _h(prev: bytes, row: dict) -> bytes:\n    body = json.dumps(row, sort_keys=True, separators=(',', ':')).encode()\n    return hashlib.sha256(prev + body).digest()\n\ndef append_audit(conn, tenant_id, principal, action, resource, outcome):\n    with conn.transaction():\n        # the tricky part: one writer per tenant, or two inserts fork the chain\n        conn.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (tenant_id,))\n        r = conn.execute('SELECT seq, row_hash FROM audit_log WHERE tenant_id=%s ORDER BY seq DESC LIMIT 1', (tenant_id,)).fetchone()\n        seq, prev = (r[0] + 1, bytes(r[1])) if r else (1, hashlib.sha256(tenant_id.encode()).digest())\n        row = {'tenant_id': tenant_id, 'seq': seq, 'principal': principal, 'action': action, 'resource': resource, 'outcome': outcome}\n        rh = _h(prev, row)\n        conn.execute('INSERT INTO audit_log(tenant_id,seq,principal,action,resource,outcome,prev_hash,row_hash) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)',\n                     (tenant_id, seq, principal, action, resource, outcome, prev, rh))\n    return seq, rh.hex()\n\ndef verify_chain(conn, tenant_id):\n    prev = hashlib.sha256(tenant_id.encode()).digest()\n    for seq, p, a, res, o, rh in conn.execute('SELECT seq,principal,action,resource,outcome,row_hash FROM audit_log WHERE tenant_id=%s ORDER BY seq', (tenant_id,)):\n        row = {'tenant_id': tenant_id, 'seq': seq, 'principal': p, 'action': a, 'resource': res, 'outcome': o}\n        if _h(prev, row) != bytes(rh):\n            return seq\n        prev = bytes(rh)\n    return None",
+  "steps": [
+   {
+    "do": "Start Keycloak, create a realm per environment, one client for the brain API and one for agents",
+    "done_when": "Token request returns a JWT whose JWKS URL resolves"
+   },
+   {
+    "do": "Add a tenant_id claim through a protocol mapper",
+    "done_when": "Decoded token shows tenant_id"
+   },
+   {
+    "do": "Write verify_token with PyJWT: signature, issuer, audience, expiry, tenant claim",
+    "done_when": "Valid token returns a Principal; a 6-minute-old token raises Unauthorized"
+   },
+   {
+    "do": "Apply the audit migration and the block-edit trigger",
+    "done_when": "UPDATE on audit_log fails with 'append-only'"
+   },
+   {
+    "do": "Write append_audit with the per-tenant advisory lock",
+    "done_when": "50 parallel appends give seq 1..50 with no gap"
+   },
+   {
+    "do": "Write verify_chain and a scheduled job every 15 minutes",
+    "done_when": "Editing a row as superuser makes verify return that seq"
+   },
+   {
+    "do": "Set row-level security on every tenant table keyed on a session setting",
+    "done_when": "A tenant A session sees zero rows of tenant B"
+   }
+  ],
+  "config": {
+   "OIDC_ISSUER": "https://idp.example/realms/brain // must equal the iss claim",
+   "OIDC_AUDIENCE": "brain-api // reject tokens for other audiences",
+   "ACCESS_TOKEN_TTL_S": "300 // short life limits replay",
+   "JWKS_CACHE_S": "600 // refetch once on unknown key id",
+   "AUDIT_VERIFY_INTERVAL_S": "900 // catch tampering before the daily anchor"
+  },
+  "verify": [
+   "pytest tests/test_audit_chain.py -q  # all passed, includes tamper and 50-parallel tests",
+   "psql -c \"select count(*) from audit_log where tenant_id='a'\"  # equals appends made by the test",
+   "curl -s -H 'Authorization: Bearer <expired>' localhost:8000/health  # 401"
+  ],
+  "pitfalls": [
+   "Skipping the audience check lets a token for another service work here; symptom: foreign tokens return 200",
+   "Hashing a Python dict without sort_keys gives different bytes on replay; symptom: verify fails on untouched rows",
+   "Forgetting the advisory lock forks the chain under load; symptom: two rows with the same prev_hash",
+   "Running the app as the table owner lets it drop the trigger; use a separate role with INSERT and SELECT only"
+  ]
+ },
+ "pl_gw": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [
+   "pl_idp"
+  ],
+  "stack": [
+   {
+    "part": "proxy",
+    "pick": "LiteLLM proxy (self-hosted)",
+    "why": "Gives one OpenAI-style endpoint, model routing, fallbacks and per-key budgets; check current docs for version and config keys. Alternative: agentgateway if you also want MCP traffic in the same proxy."
+   },
+   {
+    "part": "meter store",
+    "pick": "Postgres 16 table spend_meter",
+    "why": "Atomic decrement with one UPDATE; the same database the brain already runs."
+   },
+   {
+    "part": "redaction",
+    "pick": "Microsoft Presidio analyzer plus regex rules for secrets",
+    "why": "Detects emails, phones and names. Do not rely on the model vendor's own filter: it runs after the data left."
+   },
+   {
+    "part": "client",
+    "pick": "openai Python SDK pointed at the gateway base_url",
+    "why": "Callers never see a vendor key."
+   }
+  ],
+  "install": [
+   "pip install litellm presidio-analyzer presidio-anonymizer 'psycopg[binary]'",
+   "python -m spacy download en_core_web_sm",
+   "litellm --config gateway/litellm.yaml --port 4000"
+  ],
+  "layout": [
+   "gateway/litellm.yaml : model list, tiers, fallbacks",
+   "brain/gw/guard.py : budget check, redact, call",
+   "migrations/020_spend.sql : spend_meter table",
+   "tests/test_gw_guard.py : budget, redaction, fallback tests"
+  ],
+  "schema": "CREATE TABLE spend_meter (\n  tenant_id text NOT NULL,\n  team_id text NOT NULL,\n  day date NOT NULL,\n  used numeric NOT NULL DEFAULT 0,\n  budget numeric NOT NULL,\n  PRIMARY KEY (tenant_id, team_id, day)\n);\nCREATE TABLE gw_call (\n  id text PRIMARY KEY,\n  tenant_id text NOT NULL,\n  team_id text NOT NULL,\n  task_class text NOT NULL,\n  model_used text,\n  tokens_in int, tokens_out int, cost numeric,\n  redactions int, fallback_used boolean,\n  ts timestamptz DEFAULT now()\n);",
+  "interface": "def call(tenant_id: str, team_id: str, task_class: str, messages: list[dict], max_tokens: int, deadline_ms: int, idem_key: str) -> GwResponse  # raises BudgetExceeded, UpstreamDown\ndef embed(tenant_id: str, team_id: str, texts: list[str], model: str) -> list[list[float]]",
+  "code": "TIERS = {'plan': ['small-model', 'small-fallback'], 'context': ['small-model', 'small-fallback'], 'answer': ['large-model', 'large-fallback']}\n\ndef call(conn, client, tenant_id, team_id, task_class, messages, max_tokens, deadline_ms, idem_key):\n    prior = conn.execute('SELECT 1 FROM gw_call WHERE id=%s', (idem_key,)).fetchone()\n    if prior:\n        raise DuplicateCall(idem_key)  # retried call must not double charge\n    clean, n_red = redact(messages)\n    est = estimate_cost(clean, max_tokens, TIERS[task_class][0])\n    # the tricky part: check and reserve in ONE statement so two calls at the edge cannot both pass\n    ok = conn.execute(\n        '''UPDATE spend_meter SET used = used + %s\n           WHERE tenant_id=%s AND team_id=%s AND day=current_date AND used + %s <= budget''',\n        (est, tenant_id, team_id, est)).rowcount\n    if ok == 0:\n        raise BudgetExceeded(team_id)\n    for i, model in enumerate(TIERS[task_class]):\n        try:\n            r = client.chat.completions.create(model=model, messages=clean, max_tokens=max_tokens, timeout=deadline_ms / 1000)\n            actual = price(model, r.usage.prompt_tokens, r.usage.completion_tokens)\n            conn.execute('UPDATE spend_meter SET used = used - %s + %s WHERE tenant_id=%s AND team_id=%s AND day=current_date', (est, actual, tenant_id, team_id))\n            log_call(conn, idem_key, tenant_id, team_id, task_class, model, r.usage, actual, n_red, i > 0)\n            return GwResponse(r.choices[0].message.content, model, actual, n_red, i > 0)\n        except (TimeoutError, UpstreamError):\n            continue\n    conn.execute('UPDATE spend_meter SET used = used - %s WHERE tenant_id=%s AND team_id=%s AND day=current_date', (est, tenant_id, team_id))\n    raise UpstreamDown()",
+  "steps": [
+   {
+    "do": "Write litellm.yaml with a small and a large model, each with a fallback",
+    "done_when": "litellm /health lists 4 models"
+   },
+   {
+    "do": "Create spend_meter and gw_call, seed one team with budget 1000",
+    "done_when": "select shows the row"
+   },
+   {
+    "do": "Implement redact() with Presidio plus secret regexes",
+    "done_when": "Test prompt with jane@example.com leaves as [EMAIL], count 1"
+   },
+   {
+    "do": "Implement the one-statement reserve and refund as in the code",
+    "done_when": "Two parallel calls with room for one: exactly one succeeds"
+   },
+   {
+    "do": "Add fallback loop and the idempotency check",
+    "done_when": "Killing the primary model gives fallback_used true; a repeated idem_key is refused"
+   },
+   {
+    "do": "Require a verified principal from pl_idp on the proxy",
+    "done_when": "Call with no token returns 401"
+   },
+   {
+    "do": "Route all five brain callers (ix_ctx, ix_embed, qr_rw, qr_ans, op_cost reader) through call()",
+    "done_when": "grep finds no vendor SDK import outside gateway/"
+   }
+  ],
+  "config": {
+   "BUDGET_PERIOD": "day // per team per day",
+   "RETRY_BACKOFF_MS": "300 // one retry before fallback",
+   "DEADLINE_MS_QUERY": "3000 // query path limit",
+   "REDACT_ENTITIES": "EMAIL,PHONE,PERSON,API_KEY // extend per tenant",
+   "BACKFILL_BUDGET": "separate team_id 'backfill' // keeps indexing from starving queries"
+  },
+  "verify": [
+   "pytest tests/test_gw_guard.py -q  # budget, redaction, fallback, meter tests pass",
+   "psql -c \"select used from spend_meter where team_id='t1'\"  # equals sum of gw_call.cost",
+   "grep -rn 'import anthropic\\|import openai' brain/ | grep -v gw/  # no output"
+  ],
+  "pitfalls": [
+   "Checking the budget in one statement and charging in another lets two calls pass at the limit; symptom: used exceeds budget",
+   "Redacting after logging stores personal data in gw_call; redact first",
+   "Charging the estimate and never correcting it drifts the meter; always replace with actual cost",
+   "Letting a stage hold its own vendor key defeats the gateway; symptom: spend missing from the meter"
+  ]
+ },
+ "pl_pol": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "pl_idp"
+  ],
+  "stack": [
+   {
+    "part": "engine",
+    "pick": "Open Policy Agent (Rego), run as a sidecar or the Go library",
+    "why": "CNCF graduated, rules in git, test runner built in. Alternative: Cedar if you prefer a typed policy language; pick one, not both."
+   },
+   {
+    "part": "bundle store",
+    "pick": "a git repo plus OPA bundle polling from object storage",
+    "why": "Rule review is a pull request. Do not edit rules on a live server."
+   },
+   {
+    "part": "client",
+    "pick": "HTTP POST to OPA /v1/data with a 50 ms timeout",
+    "why": "Fail closed on timeout."
+   },
+   {
+    "part": "tests",
+    "pick": "opa test with table-driven cases",
+    "why": "Every rule ships with allow and deny cases."
+   }
+  ],
+  "install": [
+   "brew install opa",
+   "docker run -d -p 8181:8181 -v $PWD/policy:/policy openpolicyagent/opa:latest run --server /policy",
+   "opa test policy/ -v"
+  ],
+  "layout": [
+   "policy/brain.rego : deny, approval and allow rules",
+   "policy/brain_test.rego : test cases per rule",
+   "brain/pol/check.py : client with timeout and audit write",
+   "policy/data.json : tool allowlist and sensitivity labels"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"required\": [\"tenant_id\", \"principal\", \"action\", \"resource\", \"context\"],\n  \"properties\": {\n    \"tenant_id\": {\"type\": \"string\"},\n    \"principal\": {\"type\": \"object\", \"required\": [\"id\", \"owner\", \"scopes\", \"acting\"]},\n    \"action\": {\"type\": \"string\"},\n    \"resource\": {\"type\": \"string\"},\n    \"context\": {\"type\": \"object\", \"properties\": {\"app\": {\"type\": \"string\"}, \"sensitivity\": {\"type\": \"string\"}, \"channel\": {\"type\": \"string\"}}}\n  }\n}",
+  "interface": "def check(req: dict) -> Decision  # Decision {decision: 'allow'|'deny'|'needs_approval', rule_ids: list[str], reason: str, policy_version: str}; never raises, returns deny on error",
+  "code": "import httpx, json\n\nOPA = 'http://localhost:8181/v1/data/brain/decision'\n\ndef check(req, audit):\n    try:\n        r = httpx.post(OPA, json={'input': req}, timeout=0.05)\n        r.raise_for_status()\n        res = r.json()['result']\n        # the tricky part: an empty result means no rule matched, which must be deny, not allow\n        decision = res.get('decision', 'deny') if res else 'deny'\n        rule_ids = res.get('rule_ids', []) if res else []\n        version = res.get('policy_version', 'unknown') if res else 'unknown'\n        out = {'decision': decision, 'rule_ids': rule_ids, 'reason': res.get('reason', 'no_match') if res else 'no_match', 'policy_version': version}\n    except (httpx.HTTPError, KeyError, ValueError):\n        out = {'decision': 'deny', 'rule_ids': [], 'reason': 'engine_error', 'policy_version': 'unknown'}\n    audit(req['tenant_id'], req['principal']['id'], req['action'], req['resource'], out['decision'])\n    return out\n\n# policy/brain.rego\n# package brain\n# default decision := {\"decision\": \"deny\", \"rule_ids\": [], \"reason\": \"default_deny\"}\n# decision := {\"decision\": \"needs_approval\", \"rule_ids\": [\"r_high_delete\"], \"reason\": \"high sensitivity delete\"} {\n#   input.action == \"delete\"; input.context.sensitivity == \"high\"\n# }",
+  "steps": [
+   {
+    "do": "Write brain.rego with default deny and three rules (allowlisted tool, high-sensitivity approval, agent scope)",
+    "done_when": "opa eval returns deny for an unknown action"
+   },
+   {
+    "do": "Write brain_test.rego with an allow and a deny case per rule",
+    "done_when": "opa test policy/ -v shows all PASS"
+   },
+   {
+    "do": "Run OPA as a sidecar with bundle polling every 60 s",
+    "done_when": "Pushing a new bundle changes policy_version in decisions within 60 s"
+   },
+   {
+    "do": "Write check() with the 50 ms timeout and fail-closed handling",
+    "done_when": "Stopping OPA makes check() return deny with engine_error"
+   },
+   {
+    "do": "Write the audit row for every decision through pl_idp append_audit",
+    "done_when": "Each check adds one audit_log row"
+   },
+   {
+    "do": "Wire the gateway and the action layer to call check() before every tool call or write",
+    "done_when": "A tool not on the allowlist is refused end to end"
+   }
+  ],
+  "config": {
+   "OPA_TIMEOUT_MS": "50 // fail closed after this",
+   "BUNDLE_POLL_S": "60 // how fast rule changes spread",
+   "APPROVAL_EXPIRY_H": "24 // pending approvals then deny",
+   "DECISION_CACHE_S": "5 // keyed on the full input"
+  },
+  "verify": [
+   "opa test policy/ -v  # every rule shows PASS",
+   "python -c \"from brain.pol.check import check; print(check({...unknown action...}))\"  # decision deny",
+   "docker stop opa && python -m pytest tests/test_pol_failclosed.py -q  # passed"
+  ],
+  "pitfalls": [
+   "Treating an empty OPA result as allow; symptom: unknown actions pass",
+   "Editing rules on a running server; symptom: decisions with no matching git commit",
+   "Putting per-document access lists into policy data; symptom: slow decisions and huge bundles (use the access-list stage)",
+   "No timeout on the call; symptom: a stalled engine stalls every tool call"
+  ]
+ },
+ "pl_obs": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "tracing",
+    "pick": "OpenTelemetry SDK plus OpenTelemetry Collector",
+    "why": "Vendor-neutral spans and trace-id propagation across stages."
+   },
+   {
+    "part": "trace backend",
+    "pick": "Grafana Tempo or Jaeger, one container",
+    "why": "Search by trace id. Do not pick a backend that cannot export OTLP."
+   },
+   {
+    "part": "eval gate",
+    "pick": "GitHub Actions (or your CI) job running pytest eval suites with ragas metrics",
+    "why": "The CI job exit code is the release gate; protect the main branch on it."
+   },
+   {
+    "part": "incident log",
+    "pick": "Postgres table incident plus a markdown post-mortem template",
+    "why": "One query for open incidents; no extra service."
+   }
+  ],
+  "install": [
+   "pip install opentelemetry-sdk opentelemetry-exporter-otlp ragas 'psycopg[binary]'",
+   "docker run -d -p 4317:4317 -p 16686:16686 jaegertracing/all-in-one:latest",
+   "docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/obs/tracing.py : tracer setup and span helper",
+   "evals/gate.py : run suites, compare to thresholds, exit code",
+   "evals/thresholds.json : per-suite minimum",
+   "migrations/030_obs.sql : eval_run and incident tables",
+   "docs/postmortem-template.md : incident template"
+  ],
+  "schema": "CREATE TABLE eval_run (\n  run_id text PRIMARY KEY,\n  suite text NOT NULL,\n  commit_sha text NOT NULL,\n  metric numeric NOT NULL,\n  threshold numeric NOT NULL,\n  pass boolean NOT NULL,\n  ts timestamptz DEFAULT now()\n);\nCREATE TABLE incident (\n  id bigserial PRIMARY KEY,\n  severity smallint NOT NULL CHECK (severity BETWEEN 1 AND 4),\n  owner text NOT NULL,\n  opened_at timestamptz DEFAULT now(),\n  closed_at timestamptz,\n  trace_ids text[],\n  timeline jsonb NOT NULL DEFAULT '[]'\n);",
+  "interface": "python evals/gate.py --commit <sha>  # exit 0 pass, exit 1 fail; prints one line per suite\ndef span(name: str, **attrs) -> ContextManager  # attrs are ids and counts only, never text",
+  "code": "import json, sys, uuid\n\ndef gate(conn, commit_sha, results, thresholds):\n    \"\"\"results: {suite: metric}. zero_leak is special: any leak fails, no margin.\"\"\"\n    failed = []\n    for suite, metric in results.items():\n        if suite == 'zero_leak':\n            ok = metric == 0\n            thr = 0\n        else:\n            thr = thresholds[suite]\n            ok = metric >= thr\n        conn.execute('INSERT INTO eval_run(run_id,suite,commit_sha,metric,threshold,pass) VALUES (%s,%s,%s,%s,%s,%s)',\n                     (str(uuid.uuid4()), suite, commit_sha, metric, thr, ok))\n        print(f'{suite}: {metric} (min {thr}) {\"PASS\" if ok else \"FAIL\"}')\n        if not ok:\n            failed.append(suite)\n    # the tricky part: a suite that is missing or timed out counts as a failure, not a skip\n    missing = [s for s in thresholds if s not in results]\n    failed += missing\n    return 1 if failed else 0\n\nif __name__ == '__main__':\n    thresholds = json.load(open('evals/thresholds.json'))\n    results = run_all_suites(sys.argv[sys.argv.index('--commit') + 1])\n    sys.exit(gate(connect(), sys.argv[-1], results, thresholds))",
+  "steps": [
+   {
+    "do": "Add OpenTelemetry tracer setup and wrap each stage entry point in span()",
+    "done_when": "One query shows one trace id with a span per stage in Jaeger"
+   },
+   {
+    "do": "Add a test that greps exported spans for a planted secret",
+    "done_when": "Test passes with zero hits"
+   },
+   {
+    "do": "Create eval_run and incident tables",
+    "done_when": "\\d shows both tables"
+   },
+   {
+    "do": "Write 20 real labelled queries as the first suite (recall and citation)",
+    "done_when": "pytest evals/ runs 20 cases and prints a metric"
+   },
+   {
+    "do": "Write gate.py and set thresholds to baseline minus 2 points",
+    "done_when": "A deliberately broken index makes gate.py exit 1"
+   },
+   {
+    "do": "Add the CI job and require it in branch protection",
+    "done_when": "A pull request with a failing suite cannot merge"
+   },
+   {
+    "do": "Add the zero_leak suite from op_leak with no margin",
+    "done_when": "One planted cross-tenant result fails the gate"
+   }
+  ],
+  "config": {
+   "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317 // collector address",
+   "TRACE_SAMPLE_HEALTHY": "0.1 // keep all errors, sample healthy at 10%",
+   "SPAN_BUFFER": "10000 // drop oldest after this",
+   "RECALL_MARGIN": "0.02 // threshold = baseline - margin"
+  },
+  "verify": [
+   "python evals/gate.py --commit HEAD  # exit 0 on a good build",
+   "python evals/gate.py --commit HEAD --inject-leak; echo $?  # prints 1",
+   "curl -s localhost:16686/api/traces?service=brain | head  # trace JSON returns"
+  ],
+  "pitfalls": [
+   "Putting document text in span attributes; symptom: tenant content in the trace store",
+   "Treating a timed-out suite as skipped; symptom: green builds with no eval run",
+   "Re-baselining after a failure; symptom: thresholds fall every month",
+   "Letting services block on the collector; symptom: request latency spikes when it is down"
+  ]
+ },
+ "pl_mem": {
+  "milestone": "M3",
+  "effort_days": 6,
+  "depends_on": [
+   "pl_idp",
+   "pl_obs"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 tables lesson and lesson_test",
+    "why": "SQL gives scope filters, versions and supersession with plain constraints. Do not start with a vector-only memory product: scope and history matter more than similarity."
+   },
+   {
+    "part": "similarity",
+    "pick": "pgvector 0.7 or later with embeddings from the gateway",
+    "why": "Used only for the conflict check and ranking within scope; check current docs for index syntax."
+   },
+   {
+    "part": "embedding calls",
+    "pick": "pl_gw embed()",
+    "why": "Keeps cost metered."
+   },
+   {
+    "part": "tests",
+    "pick": "pytest with a generated test file per lesson",
+    "why": "Links each lesson to the eval gate in pl_obs."
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]' pgvector",
+   "psql -c 'CREATE EXTENSION IF NOT EXISTS vector'",
+   "docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16"
+  ],
+  "layout": [
+   "brain/mem/lessons.py : add, supersede, serve",
+   "migrations/040_lessons.sql : tables",
+   "evals/lesson_tests/ : generated test cases, one file per lesson",
+   "tests/test_lessons.py : scope, supersede and conflict tests"
+  ],
+  "schema": "CREATE TABLE lesson (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  scope text NOT NULL,            -- 'user:<id>' | 'team:<id>' | 'tenant'\n  rule_text text NOT NULL,\n  source text NOT NULL,           -- 'correction' | 'unsupported_claim' | 'postmortem'\n  version int NOT NULL,\n  valid_from timestamptz NOT NULL DEFAULT now(),\n  valid_to timestamptz,\n  superseded_by bigint REFERENCES lesson(id),\n  embedding vector(1024),\n  UNIQUE (tenant_id, scope, version)\n);\nCREATE TABLE lesson_test (\n  id bigserial PRIMARY KEY,\n  lesson_id bigint NOT NULL REFERENCES lesson(id),\n  query text NOT NULL,\n  must_not_contain text,\n  should_support text\n);",
+  "interface": "def add_lesson(tenant_id: str, scope: str, rule_text: str, source: str, query: str, bad: str, fix: str) -> int | Held  # returns lesson id, or Held when it conflicts\ndef serve(tenant_id: str, scope_chain: list[str], query: str, k: int = 10) -> list[Lesson]",
+  "code": "def add_lesson(conn, gw, tenant_id, scope, rule_text, source, query, bad, fix):\n    emb = gw.embed(tenant_id, 'mem', [rule_text], 'embed-model')[0]\n    # the tricky part: look only inside the same tenant and scope, and only at active lessons\n    near = conn.execute(\n        '''SELECT id, 1 - (embedding <=> %s::vector) AS sim FROM lesson\n           WHERE tenant_id=%s AND scope=%s AND superseded_by IS NULL\n           ORDER BY embedding <=> %s::vector LIMIT 1''', (emb, tenant_id, scope, emb)).fetchone()\n    if near and near[1] >= 0.85:\n        return Held(near[0], near[1])  # review decides: supersede or discard\n    ver = conn.execute('SELECT coalesce(max(version),0)+1 FROM lesson WHERE tenant_id=%s AND scope=%s', (tenant_id, scope)).fetchone()[0]\n    lid = conn.execute(\n        'INSERT INTO lesson(tenant_id,scope,rule_text,source,version,embedding) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id',\n        (tenant_id, scope, rule_text, source, ver, emb)).fetchone()[0]\n    conn.execute('INSERT INTO lesson_test(lesson_id,query,must_not_contain,should_support) VALUES (%s,%s,%s,%s)', (lid, query, bad, fix))\n    return lid\n\ndef serve(conn, gw, tenant_id, scope_chain, query, k=10):\n    q = gw.embed(tenant_id, 'mem', [query], 'embed-model')[0]\n    return conn.execute(\n        '''SELECT id, rule_text FROM lesson\n           WHERE tenant_id=%s AND scope = ANY(%s) AND superseded_by IS NULL\n             AND (valid_to IS NULL OR valid_to > now())\n           ORDER BY embedding <=> %s::vector LIMIT %s''', (tenant_id, scope_chain, q, k)).fetchall()",
+  "steps": [
+   {
+    "do": "Apply the lesson migration and enable pgvector",
+    "done_when": "\\d lesson shows an embedding column"
+   },
+   {
+    "do": "Write add_lesson with the scoped conflict check",
+    "done_when": "A near-duplicate rule returns Held, a new one returns an id"
+   },
+   {
+    "do": "Write supersede(old, new) setting superseded_by and valid_to",
+    "done_when": "Old lesson no longer appears in serve(), still present in the table"
+   },
+   {
+    "do": "Write serve() filtered by scope chain and active status",
+    "done_when": "A user lesson is not returned for another user"
+   },
+   {
+    "do": "Generate a pytest case from each lesson_test row into evals/lesson_tests/",
+    "done_when": "Eval gate in pl_obs runs the new case"
+   },
+   {
+    "do": "Connect qr_cite unsupported claims and thumbs-down fixes as sources",
+    "done_when": "A reported bad answer produces a lesson and a test within one minute"
+   }
+  ],
+  "config": {
+   "CONFLICT_SIMILARITY": "0.85 // tune on labelled pairs",
+   "K_SERVED": "10 // tune by eval, 5/10/20",
+   "HELD_EXPIRY_DAYS": "7 // then drop the held write",
+   "EMBED_DIM": "1024 // must match the embedding model"
+  },
+  "verify": [
+   "pytest tests/test_lessons.py -q  # scope, supersede, conflict tests pass",
+   "psql -c 'select count(*) from lesson_test'  # equals lessons created",
+   "python evals/gate.py --commit HEAD  # includes lesson tests, exit 0"
+  ],
+  "pitfalls": [
+   "Searching conflicts across all tenants; symptom: one tenant's rule held by another's",
+   "Deleting a superseded lesson; symptom: no history and old tests lose their link",
+   "Serving every active lesson; symptom: planner prompt grows and answers worsen (cap k)",
+   "Storing the raw bad answer with document text; symptom: content copied into the lessons table (store ids and short claims only)"
+  ]
+ }
+}

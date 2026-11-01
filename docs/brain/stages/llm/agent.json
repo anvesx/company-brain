@@ -1,0 +1,722 @@
+{
+ "group": {
+  "line": "Each agent is a principal with a named owner and a token no wider than that owner, metered by a two-level token bucket, woken by change pushes, and given no write tool at all.",
+  "dumb": "An agent gets its own name and a named human owner, like an employee. Its pass can open only what its owner can open, and often less. A meter stops one busy agent from using up everyone's turn. An agent can ask to be told when something changes, so it does not have to keep checking. And the brain only reads: if an agent wants to change something in another app, that request goes to the separate action layer, which has its own rules."
+ },
+ "comps": {
+  "ll_agent": {
+   "line": "Per-agent principal {agent_id, owner_id, tenant_id, grant, status}; token valid for 15 min (design)\neffective access = agent grant AND owner's current access AND the document's own list",
+   "dumb": "An agent is treated like an employee, not a script. It has its own id, a named human owner and a short-lived pass. The pass lets it see only what its owner can see right now, and only inside the areas the owner gave it. If the owner loses access, the agent loses it at the same moment.",
+   "inn": "Agent record {agent_id, owner_id, tenant_id, grant{sources[], collections[]}, status active|suspended|retired, expires_at}; a token request from the agent runtime with agent_id and a client credential.",
+   "out": "A signed access token {sub=agent_id, act_owner=owner_id, tenant, aud=brain URI, scope, exp<=15 min} and an effective-principal set used by the access filter (ac_filter).",
+   "store": "Reads the agent registry and the owner's current identity record (from pl_idp and ac_id). Writes token-issue rows and status changes to the audit log with the agent id and the owner id.",
+   "fail": "Owner deprovisioned: agent set to suspended within 60 s of the identity event (design) and its tokens refuse at the next call. Token endpoint unreachable for 10 s: existing tokens keep working until their 15-minute expiry, then calls fail closed. Registry write fails: no token is issued; the runtime retries 3 times at 1, 2, 4 s.",
+   "req": "Requirement: 'It has its own name, mailbox, scoped credentials and a named human owner'",
+   "hard": "Whether an agent may hold a grant wider than its owner (for a shared team agent with a group owner) is not decided; today the grant is capped at the owner's access.",
+   "prop": "Proposal: the brain must know which agent is asking and who owns it, because an agent that reads more than its owner is a data leak.",
+   "deep": {
+    "purpose": "Make an agent accountable. Each action traces to an agent and a human owner, and the agent can never see more than its owner. A shared-channel agent also meets the participant rule: it uses the narrowest access across everyone present, not only the asker.",
+    "expected": [
+     "A token for an agent cannot read a document its owner cannot read, even if the grant lists the source",
+     "Suspending an agent makes the next call fail within one token lifetime, and the revocation fast path refuses it at once",
+     "Every audit row shows agent_id, owner_id and acted_by=agent"
+    ],
+    "not_expected": [
+     "An agent is not given a human's password or session cookie",
+     "A grant does not create access to a document; it only narrows what the owner already has",
+     "A retired agent id is never reused"
+    ],
+    "algorithm": {
+     "name": "Delegated principal with scope intersection",
+     "formula": "effective(agent, doc) = grant_allows(agent, doc.source, doc.collection) AND owner_can_read(owner, doc) AND doc.acl allows owner",
+     "steps": [
+      "Authenticate the agent runtime with its client credential and look up the agent record; refuse if status is not active",
+      "Load the owner's current identity and group set; refuse if the owner is deprovisioned",
+      "Build the effective principal set as owner groups restricted to the agent's grant sources and collections",
+      "Mint a token with audience set to the brain URI, scope read, and expiry of at most 15 minutes",
+      "On each query, the access filter uses the effective set; a live recheck uses the on-behalf-of exchange for the owner",
+      "On owner or status change, publish a revocation event so cached tokens are refused at once"
+     ],
+     "params": {
+      "token_ttl": "15 min (design); bounds the revoke delay even if the fast path fails",
+      "suspend_delay": "60 s (design) from the identity event",
+      "grant_cap": "owner's access (design); widening needs an explicit policy decision"
+     }
+    },
+    "math": {
+     "definitions": [
+      "G: documents the agent's grant covers",
+      "O: documents the owner can read now",
+      "E: effective set the agent can read",
+      "n: number of documents considered"
+     ],
+     "formula_full": "E = G intersect O, so |E| <= min(|G|, |O|)",
+     "derivation": "Access is the intersection of two sets, so adding a grant can only help the agent up to what the owner already has; removing an owner permission removes it from E at once because O is read at call time.",
+     "worked_example": "Owner reads 1,200 documents in the Jira project and the Drive folder. The agent grant covers 300 documents in Drive plus the whole GitHub source (4,000 documents). The owner has no GitHub access, so E = 250 Drive documents (50 of the 300 are outside the owner's access) and 0 GitHub documents. |E| = 250 <= min(4,300, 1,200).",
+     "complexity": "O(g + o) to intersect group sets with hash sets; under 2 ms for 10,000 groups. At query time the filter is a set-membership test in the index, not a scan.",
+     "failure_modes": [
+      "Owner groups are cached too long: the agent keeps access after removal; bounded by the 15-minute token and the revocation fast path",
+      "A grant lists a collection that was renamed: the filter matches nothing and the agent sees less, which fails safe"
+     ],
+     "calibration": "Run the leak test (op_leak) with planted agents whose owners lack one source; the expected set must equal the intersection computed by hand for 100 percent of probes."
+    },
+    "alternatives": [
+     {
+      "name": "One shared service account for all agents",
+      "why_rejected": "No owner, no per-agent audit trail, and a bug in one agent exposes everything the account can read."
+     },
+     {
+      "name": "Agent inherits the owner's own login token",
+      "why_rejected": "Cannot be narrowed or audited separately, and a leaked agent log would leak the owner's full session."
+     }
+    ],
+    "security": [
+     "Privilege escalation through a wide grant: an admin sets a grant larger than the owner. Control: the intersection with the owner's live access makes the extra grant inert.",
+     "Confused deputy: another service replays an agent token. Control: audience bound to the brain URI and rejected elsewhere (t_t24).",
+     "Orphan agent: an owner leaves and the agent keeps running. Control: ac_scim deprovision event suspends the agent, and a weekly report lists agents whose owner is inactive.",
+     "Prompt-driven scope creep: a document tells the agent to request more access. Control: the agent cannot change its own grant; only a person with the owner role can."
+    ],
+    "performance": {
+     "slo": "Token mint under 50 ms p95; suspension effective under 60 s after the identity event (design)",
+     "complexity": "O(g + o) set intersection per token mint, cached per (agent, owner version).",
+     "scaling": "At 10x agents (for example 10,000 per tenant) mint load rises; cache the owner group set for 60 s and mint in batches, with the owner version in the cache key."
+    },
+    "edge_cases": [
+     "Agent without an owner (owner deleted): status set to suspended, never active with a null owner",
+     "Owner is on leave or a contractor with an expiry date: agent expiry cannot exceed the owner's",
+     "Two agents with the same display name: the id differs; the audit shows the id, and the display name is not unique",
+     "Agent in a shared channel with 5 participants: authorize on the intersection of all five people's access, per the participant rule (p_participant-acl)",
+     "Clock skew of 20 s between nodes: token validation allows 30 s leeway on exp and nbf",
+     "A new use case adds a team agent: it joins by a registry record plus a grant; no brain code changes"
+    ],
+    "tests": [
+     {
+      "name": "scope intersection",
+      "given": "owner cannot read GitHub; agent grant lists GitHub",
+      "expect": "search by the agent returns 0 GitHub hits"
+     },
+     {
+      "name": "owner removed",
+      "given": "ac_scim deprovisions the owner at t0",
+      "expect": "agent suspended by t0+60 s and the next call returns 401"
+     },
+     {
+      "name": "token expiry",
+      "given": "token with exp 15 min old",
+      "expect": "401 and a refresh path; no data returned"
+     },
+     {
+      "name": "audit fields",
+      "given": "agent calls search",
+      "expect": "audit row has agent_id, owner_id and acted_by=agent"
+     }
+    ],
+    "cost_levers": [
+     "Cache the owner group set per owner version so token mints do no identity round trip",
+     "Short tokens avoid a revocation list lookup on every call"
+    ],
+    "feedback_events": [
+     "Owners mark an agent as over- or under-scoped; each mark opens a grant review"
+    ],
+    "analytics_events": [
+     {
+      "name": "agent.token_minted",
+      "fields": [
+       "tenant_id",
+       "agent_id",
+       "owner_id",
+       "effective_group_count",
+       "ttl_s"
+      ],
+      "when": "on every token mint"
+     },
+     {
+      "name": "agent.suspended",
+      "fields": [
+       "tenant_id",
+       "agent_id",
+       "owner_id",
+       "reason"
+      ],
+      "when": "when status changes to suspended or retired"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_participant-acl",
+      "key_idea": "Authorize against everyone in the session, not only the asker.",
+      "how": "Shared-channel agents use the intersection of participants' access."
+     },
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "Scoped tokens, tool allow-lists and audit are the enterprise MCP baseline.",
+      "how": "Token scope, a fixed tool list and an audit row per call implement it."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_openfga",
+      "name": "OpenFGA",
+      "take": "Model owner-to-agent delegation as a relation so a permission check is one lookup."
+     },
+     {
+      "ref": "r_cerbos",
+      "name": "Cerbos",
+      "take": "Policy rules on top of ACLs, for example sensitivity labels an agent may never read."
+     }
+    ],
+    "industry": "The MCP authorization spec requires audience-bound tokens and forbids passing the client's token upstream (t_t24); Slack's MCP server uses user tokens with per-tool scopes and admin approval (t_t25).",
+    "refs": [
+     "t_t24",
+     "t_t25",
+     "p_participant-acl",
+     "p_mcp-enterprise",
+     "p_multitenant-rag",
+     "r_openfga",
+     "r_cerbos"
+    ]
+   }
+  },
+  "ll_quota": {
+   "line": "Two-level token bucket: tokens = min(B, tokens + r x dt); allow if tokens >= cost\ncost = 1 + ceil(reply_tokens / 1000) + 2 x live_calls (design)",
+   "dumb": "Think of a bucket of tickets that refills slowly. Each call costs some tickets, more if the reply is big or needs live fetches. Each agent has its own small bucket and the company has a bigger one. A busy agent runs out of its own tickets first, so it cannot drain everyone's. We also record what each call cost.",
+   "inn": "Call {tenant_id, principal_id, tool or route, estimated_cost}; after the call, {actual_reply_tokens, live_calls}.",
+   "out": "Decision allow, or deny with 429 and retry_after_s; a metered-use record {tenant_id, principal_id, cost_units, reply_tokens, live_calls, ts}.",
+   "store": "Reads and writes bucket state in a key-value store with atomic update, keyed by (tenant, agent). Writes metered-use rows to the cost meter (op_cost) in batches every 1 s.",
+   "fail": "Bucket store unreachable: deny writes-heavy calls but allow reads within a local cap of 10 calls per minute per agent (design) for up to 60 s, then deny with 503 and Retry-After 30 s. A refused call is not charged. Metering batch lost: re-sent from a local buffer, up to 3 attempts over 10 s, then written to the dead letter table.",
+   "hard": "Cost weights (the 2 per live call and the 1,000-token step) are starting guesses; they should be fitted to real app rate-limit use.",
+   "prop": "Proposal: an agent loop can call search thousands of times, which costs money and exhausts app rate limits; the bucket bounds both.",
+   "deep": {
+    "purpose": "Stop one agent loop, or one tenant, from starving the rest, and make the cost of every call visible. Live fetches hit real app rate limits, so a cost that counts them protects the connectors too. Agentic loops cost about 4 to 15 times the tokens of a plain chat (t_t32), so a ceiling is needed.",
+    "expected": [
+     "An agent that exceeds its bucket gets a 429 with a correct retry_after_s while other agents continue normally",
+     "Total spend per call is recorded and sums to the same number the cost meter shows",
+     "A quiet agent can burst up to its bucket size B"
+    ],
+    "not_expected": [
+     "It does not rank importance; a deny is based on tokens, not on who asks",
+     "It does not decide permissions or content",
+     "Denied calls are not charged and not counted as errors by the connector monitor"
+    ],
+    "algorithm": {
+     "name": "Hierarchical token bucket",
+     "formula": "tokens(t) = min(B, tokens(t0) + r x (t - t0));  allow iff agent.tokens >= c and tenant.tokens >= c;  retry_after = ceil((c - tokens) / r)",
+     "steps": [
+      "Read both buckets and refill each by rate times elapsed time, capped at its burst size",
+      "If either has fewer than c tokens, deny with retry_after_s computed from the larger shortfall",
+      "Otherwise subtract c from both in one atomic update",
+      "After the call, settle: charge or refund the difference between estimated and actual cost",
+      "Emit the metered-use record for the cost meter"
+     ],
+     "params": {
+      "agent_bucket": "B_a = 120 tokens, r_a = 2 per second (design); about 120 plain calls per minute at cost 1",
+      "tenant_bucket": "B_t = 6,000 tokens, r_t = 50 per second (design); tune from observed peak",
+      "cost_formula": "1 + ceil(reply_tokens / 1000) + 2 x live_calls (design); fit later against app quotas such as t_t06"
+     }
+    },
+    "math": {
+     "definitions": [
+      "B: bucket size (maximum burst)",
+      "r: refill rate per second",
+      "c: cost of one call in tokens",
+      "dt: seconds since last update"
+     ],
+     "formula_full": "max draw by one agent over T seconds = B_a + r_a x T",
+     "derivation": "A bucket can release at most its stored tokens plus what refills over T. So one agent's draw is bounded by B_a + r_a T no matter how fast it calls. If the sum of agent bounds stays below the tenant bucket, the tenant bucket is not drained by any one agent.",
+     "worked_example": "B_a=120, r_a=2: a runaway agent draws at most 120 + 2 x 60 = 240 tokens in a minute. The tenant bucket supplies 6,000 + 50 x 60 = 9,000 per minute, so one runaway takes 2.7 percent. A search with 1,500 reply tokens and 2 live calls costs 1 + 2 + 4 = 7. Agent has 3 tokens, r_a = 2: wait = ceil((7 - 3) / 2) = 2 s.",
+     "complexity": "O(1) per call, one atomic read-modify-write on two keys.",
+     "failure_modes": [
+      "Oversubscription: with 38 agents at the cap, demand is 38 x 240 = 9,120 per minute, above the tenant 9,000; throttling then hits the busiest agents first, so lower r_a or raise r_t",
+      "Hot key contention on the tenant bucket: shard it into 8 sub-buckets with 1/8 of B_t and r_t each (design)",
+      "Estimated cost far from actual: settle after the call so debt cannot grow"
+     ],
+     "calibration": "After 2 weeks, set B_a at the 99th percentile of one agent's 60-second use, and r_t at 1.5 times the observed tenant p95 per second."
+    },
+    "alternatives": [
+     {
+      "name": "Fixed window counter (N calls per minute)",
+      "why_rejected": "Allows a double burst at the window edge and ignores call size; a bucket handles both."
+     },
+     {
+      "name": "Leaky bucket queue",
+      "why_rejected": "Adds waiting latency to an assistant turn; a quick 429 lets the agent choose to back off or narrow its query."
+     }
+    ],
+    "security": [
+     "Denial of service by a compromised agent: a tool-poisoned agent loops on search. Control: its own bucket caps the draw at B_a + r_a T and the denial is logged against the agent id.",
+     "Extraction by many small queries: a patient attacker pulls the corpus slowly. Control: per-principal daily cost ceiling (design 20,000 units) plus an alert on a long flat pattern (p_extraction-bench).",
+     "Bucket reset abuse: re-registering an agent to get a fresh bucket. Control: bucket keyed on owner as well as agent, with an owner-level cap."
+    ],
+    "performance": {
+     "slo": "Decision under 3 ms p95 (design)",
+     "complexity": "O(1) per call.",
+     "scaling": "At 10x the call rate a single tenant key becomes hot; shard it as above and keep a local pre-check so most calls need one store round trip."
+    },
+    "edge_cases": [
+     "Cost larger than B (a 300-unit batch against a 120-token bucket): denied permanently with 422 and a message to split the call",
+     "Two concurrent calls from one agent: the atomic update serialises them; the second may be denied with a retry of under 1 s",
+     "Clock jump backwards: dt is clamped at 0 so no negative refill",
+     "Idle agent for a day: tokens capped at B_a, no hoarding",
+     "Tenant on a paid plan with higher limits: B_t and r_t read from the tenant record",
+     "New app joins: its live calls are counted through the live_calls term; no new bucket is needed"
+    ],
+    "tests": [
+     {
+      "name": "burst then deny",
+      "given": "agent with B_a=120 sends 130 calls of cost 1 in 1 s",
+      "expect": "first 120 allowed, remaining 10 denied; retry_after_s = 5 for the last"
+     },
+     {
+      "name": "retry math",
+      "given": "tokens=3, cost=7, r=2",
+      "expect": "429 with retry_after_s=2"
+     },
+     {
+      "name": "fairness",
+      "given": "one agent at cap plus 10 normal agents for 60 s",
+      "expect": "normal agents see 0 denials"
+     },
+     {
+      "name": "refund",
+      "given": "estimate 7, actual 3",
+      "expect": "settle returns 4 tokens to both buckets"
+     }
+    ],
+    "cost_levers": [
+     "Cost term for live calls steers agents to use the index and avoid slow live fetches",
+     "Per-agent ceilings cap model spend downstream"
+    ],
+    "feedback_events": [
+     "A person raising an agent's limit is logged with the reason and expiry date"
+    ],
+    "analytics_events": [
+     {
+      "name": "quota.decision",
+      "fields": [
+       "tenant_id",
+       "agent_id",
+       "tool",
+       "cost",
+       "allowed",
+       "agent_tokens_left",
+       "tenant_tokens_left"
+      ],
+      "when": "on every call"
+     },
+     {
+      "name": "quota.throttled",
+      "fields": [
+       "tenant_id",
+       "agent_id",
+       "retry_after_s"
+      ],
+      "when": "on every deny"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t32",
+      "key_idea": "Agent loops use about 4 times chat tokens and multi-agent about 15 times, so a budget is needed.",
+      "how": "Sets the idea of cost-weighted calls and a hard per-agent ceiling."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_agentgateway",
+      "name": "agentgateway",
+      "take": "A proxy where per-user limits and policy can be enforced in front of tools."
+     }
+    ],
+    "industry": "Per-connector queues and rate limiters keep one failing API from blocking others in Dropbox Dash (t_t48); Jira meters hourly points and blocks overruns until the next UTC hour (t_t06).",
+    "refs": [
+     "t_t32",
+     "t_t48",
+     "t_t06",
+     "t_t08",
+     "p_extraction-bench",
+     "p_anatomy-mem",
+     "r_agentgateway"
+    ]
+   },
+   "req": "Requirement: 'meter spend per team'"
+  },
+  "ll_sub": {
+   "line": "Subscriptions on entity or topic change events; at-least-once push, event_id for dedupe\nretry after 1, 5, 30, 120, 600 s then dead letter (design)",
+   "dumb": "Instead of asking the brain every minute whether anything changed, an agent says what it cares about, such as one customer or one project. When that thing changes, the brain sends a short note: what changed, which version, and a link. The note holds no document text, and the agent only hears about things its owner may see.",
+   "inn": "Subscription {sub_id, agent_id, selector{entity_ids[] | topic}, delivery{url | mcp_notification}, min_interval_s}; change events from the event bus {event_id, doc_id, op, version, ts}.",
+   "out": "Push {event_id, sub_id, doc_id, op created|updated|deleted|acl_changed, version, uri, ts} to the agent runtime.",
+   "store": "Reads subscriptions and the change-event stream. Writes the subscription table, a per-subscription cursor (last event_id delivered) and delivery attempt rows.",
+   "fail": "Delivery fails: retries at 1, 5, 30, 120 and 600 s (about 12.6 minutes in total, design), then the event goes to a dead letter list and the subscription is flagged. Ten dead letters in 1 hour: subscription paused and the owner notified. Event bus gap: the subscriber is told resync_required and must re-query.",
+   "hard": "Whether a push may carry the document title is open; today it holds ids and a link only, to avoid showing titles the person may lose access to.",
+   "prop": "Proposal: agents need to be woken by change instead of polling, because polling burns quota and misses deletes.",
+   "deep": {
+    "purpose": "Let agents react to change without polling the index, which would burn quota. The brain already receives every change through the event bus, so a subscription is a filter over it. The push is a doorbell, not content.",
+    "expected": [
+     "A change to a subscribed entity reaches the agent in under 5 s at p95 after the index applies it",
+     "The same event_id may arrive twice but never produces two different payloads",
+     "An agent receives no push for a document its owner cannot read"
+    ],
+    "not_expected": [
+     "A push does not include document text or snippets",
+     "It does not wake an agent more often than min_interval_s, even under a burst of edits",
+     "It is not an action trigger; the agent decides what to do through the action layer"
+    ],
+    "algorithm": {
+     "name": "Filtered fan-out with at-least-once delivery and per-document coalescing",
+     "formula": "deliver(e, s) = matches(e, s.selector) AND can_see(s.agent, e.doc) AND (now - last_sent(s, e.doc)) >= min_interval_s",
+     "steps": [
+      "Consume the change event and look up subscriptions whose selector matches the doc id, its entities or its topic",
+      "For each match, check that the agent's effective principal can see the document via the access filter",
+      "Coalesce: if a push for this (sub, doc) was sent within min_interval_s, replace the queued one with the newest version",
+      "Send the push, wait for a 2xx within 10 s, and advance the subscription cursor",
+      "On failure, schedule the retry ladder, then dead letter"
+     ],
+     "params": {
+      "min_interval_s": "10 (design); stops edit storms, tune per subscription",
+      "retry_ladder_s": "1, 5, 30, 120, 600 (design)",
+      "ack_timeout_s": "10, matching common webhook practice (t_t05)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Agents poll search every minute",
+      "why_rejected": "Wastes quota and still misses deletes; a push is cheaper."
+     },
+     {
+      "name": "Exactly-once delivery",
+      "why_rejected": "Not achievable over a network without the receiver cooperating; at-least-once with event_id dedupe on the receiver is simpler and safe."
+     }
+    ],
+    "security": [
+     "Information leak through the push: an agent learns that a hidden document changed. Control: the can_see check runs before the push, and acl_changed events that remove access are sent as a plain deletion.",
+     "Subscription hijack: one agent subscribes to another tenant's entity. Control: subscriptions are bound to tenant and the selector is validated against tenant ids.",
+     "Webhook endpoint abuse (server-side request forgery): an agent registers an internal URL as its target. Control: delivery URLs must be https on an allow-listed host pattern and resolved outside the private network.",
+     "Replay: an attacker re-sends an old push. Control: each push is signed with a timestamp, receivers reject older than 5 minutes."
+    ],
+    "performance": {
+     "slo": "Event to push p95 under 5 s (design); throughput 2,000 pushes per second per shard (design)",
+     "complexity": "O(m) per event for m matching subscriptions, using an index on doc id and entity id.",
+     "scaling": "At 10x subscriptions a broad topic can match 100,000 agents; cap subscribers per topic at 5,000 (design) and fan out in batches."
+    },
+    "edge_cases": [
+     "Event for a document with no subscribers: dropped with a counter, no work",
+     "Rapid edits (20 saves in 10 s): coalesced into one push with the latest version",
+     "Duplicate event from the bus: same event_id is deduped by the cursor",
+     "Subscriber is down for 2 hours: dead letter list holds events; on recovery the agent calls resync from the cursor",
+     "Document deleted: push with op=deleted and no title",
+     "A new app joins: its change events enter the same bus, so existing subscriptions on its entities work without changes"
+    ],
+    "tests": [
+     {
+      "name": "coalesce",
+      "given": "20 updates of one doc within 10 s, min_interval_s=10",
+      "expect": "1 push carrying the latest version"
+     },
+     {
+      "name": "no leak",
+      "given": "agent whose owner cannot read doc D; D is updated",
+      "expect": "0 pushes for D"
+     },
+     {
+      "name": "retry ladder",
+      "given": "receiver returns 500 on the first 3 attempts",
+      "expect": "attempts at t=0, 1, 6, 36 s; success on the 4th; one event_id"
+     },
+     {
+      "name": "dead letter",
+      "given": "receiver down for 13 minutes",
+      "expect": "after 5 retries the event is in the dead letter list and the subscription flagged"
+     }
+    ],
+    "cost_levers": [
+     "Coalescing turns many edits into one push",
+     "Ids-only payloads keep pushes small and avoid per-push content fetches"
+    ],
+    "feedback_events": [
+     "Agents ack or ignore pushes; a high ignore rate for a selector suggests it is too broad"
+    ],
+    "analytics_events": [
+     {
+      "name": "sub.push",
+      "fields": [
+       "tenant_id",
+       "sub_id",
+       "agent_id",
+       "op",
+       "attempt",
+       "status",
+       "lag_ms"
+      ],
+      "when": "on every delivery attempt"
+     },
+     {
+      "name": "sub.dead_letter",
+      "fields": [
+       "tenant_id",
+       "sub_id",
+       "event_id",
+       "reason"
+      ],
+      "when": "when the retry ladder is exhausted"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_search-r1",
+      "key_idea": "Query tools are used repeatedly by agents; reducing repeated queries lowers cost.",
+      "how": "A push replaces repeated polling for change detection."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Durable retries with a state machine for the delivery ladder and resume after a crash."
+     },
+     {
+      "ref": "r_pipedream",
+      "name": "Pipedream",
+      "take": "Open registry of webhook and polling triggers; a model for event shapes."
+     }
+    ],
+    "industry": "GitHub redelivers webhooks with the same delivery id so receivers can dedupe, and expects a 2xx within 10 seconds (t_t05); Microsoft Graph warns of missed events through lifecycle notifications (t_t54).",
+    "refs": [
+     "t_t05",
+     "t_t54",
+     "t_t55",
+     "p_search-r1",
+     "r_temporal",
+     "r_pipedream"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants'"
+  },
+  "ll_ro": {
+   "line": "No write tool exists: fixed allow-list of 4 read tools; connector scopes read-only; attempts refused, logged\nwrites go to the action layer (pl_pol) with approval",
+   "dumb": "The brain can look things up but cannot change anything in your apps. There is no tool for sending, editing or deleting. Even if someone tricked the brain into trying, the connector pass it holds cannot write. If an agent wants to act, it must go through the separate action layer, which checks written policy and asks a person for risky steps.",
+   "inn": "Tool call names from ll_mcp and ll_api; connector manifests (so_sdk) with their requested scopes; vendor MCP tool lists from the bridge (so_mcp).",
+   "out": "Allow or refuse for each tool call; a refusal {code=no_write_tool, message, hint=use action layer} and a startup report listing the effective tool and scope inventory.",
+   "store": "Reads the allow-list file and the connector manifests. Writes one audit row per refused write attempt and a signed inventory snapshot at each deploy.",
+   "fail": "A manifest asks for a write scope: registration fails and the connector is not enabled, no retry. Allow-list file missing at start: the server refuses to start (fail closed). Audit write fails: the refusal still happens; the audit row retries 3 times over 6 s then goes to the dead letter table.",
+   "req": "Requirement: 'Policy sits in front of every action.'",
+   "hard": "Some vendor MCP servers bundle read and write tools in one token scope; whether the bridge can always strip the write tools or must refuse the whole connector is still open. Connectors that bundle write tools in one scope may be refused whole.",
+   "prop": "Proposal: the brain only reads, so a prompt injection or a bug cannot change a customer app; every write belongs to the action layer.",
+   "deep": {
+    "purpose": "Keep the brain read-only by construction. Two places enforce it: no tool exists, and connector credentials cannot write. This is also the reason a prompt injection inside a document cannot make the brain edit an app. Actions belong to the action layer under policy.",
+    "expected": [
+     "tools/list contains only read tools and contains the same four names in every environment",
+     "A connector that requests a write scope is rejected at registration",
+     "Every refused write attempt leaves an audit row naming the principal"
+    ],
+    "not_expected": [
+     "It does not block the action layer; actions are routed there, not dropped",
+     "It does not inspect document content; it checks tool names and scopes only",
+     "It never silently converts a write request into a read"
+    ],
+    "algorithm": {
+     "name": "Default-deny allow-list with scope inventory check",
+     "formula": "permit(call) = call.tool in READ_ALLOW_LIST;  register(connector) iff all scopes(connector) are in READ_SCOPES",
+     "steps": [
+      "Keep a reviewed list of read tool names; any other name is refused with no_write_tool",
+      "At connector registration, compare each requested scope with the read-only scope list; reject on any mismatch",
+      "For MCP bridge servers, import only tools whose declared effect class is read, and drop the rest",
+      "At deploy, run an inventory test that lists tools and scopes and fails the build if one is not read",
+      "Log each refusal and forward the intent to pl_pol as an action request if the caller asked for one"
+     ],
+     "params": {
+      "read_tools": "search, fetch, list_sources, who_knows (design)",
+      "inventory_check": "every deploy and every connector change (design)",
+      "dead_letter_after": "3 audit-write attempts (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Allow writes with approval inside the brain",
+      "why_rejected": "Mixes reading and acting in one service; the action layer already holds approval, reversibility and audit."
+     },
+     {
+      "name": "Rely on the model not to call write tools",
+      "why_rejected": "A model can be steered by a poisoned document; absence of the tool is a stronger control."
+     }
+    ],
+    "security": [
+     "Tool poisoning through the MCP bridge: a vendor server adds a delete_file tool later. Control: the bridge imports by allow-list; a new tool name stays hidden until reviewed.",
+     "Indirect prompt injection that asks the brain to send an email (the EchoLeak pattern, t_t52). Control: no send tool exists, so the instruction has nothing to call.",
+     "Scope creep in a connector token: a later app update adds a write scope. Control: scopes are re-compared on each token refresh and a change disables the connector.",
+     "Approval fatigue: if the brain asked for approvals itself, people would click through. Control: approvals live only in the action layer, where they are bound to the exact change."
+    ],
+    "performance": {
+     "slo": "Check adds under 0.1 ms per call; the inventory test runs in under 30 s in CI (design)",
+     "complexity": "O(1) hash lookup per call; O(t + s) for t tools and s scopes at registration.",
+     "scaling": "At 10x connectors the inventory test grows linearly with scopes; cache per-connector results by manifest hash."
+    },
+    "edge_cases": [
+     "Tool name with different case or unicode look-alikes (for example a Cyrillic letter): exact byte match against the list, otherwise refused",
+     "Empty tool name: 400, not a refusal row, since there is no intent to log",
+     "Vendor MCP server removes a tool: the bridge drops it on next listing; nothing breaks",
+     "Same refusal repeated 100 times by one agent in a minute: logged individually and also summarised for alerting",
+     "A new use case needs writing: it adds an action in the action layer with its own policy, not a tool here",
+     "A new app joins: its manifest must be read-only or it is not registered",
+     "Read-only covers the brain. Writes are done only by the separate action agent with the user's own token and confirmation."
+    ],
+    "tests": [
+     {
+      "name": "unknown tool",
+      "given": "call tool named send_email",
+      "expect": "refused with no_write_tool and one audit row"
+     },
+     {
+      "name": "write scope",
+      "given": "manifest requests scope files.write",
+      "expect": "registration rejected; connector not enabled"
+     },
+     {
+      "name": "inventory",
+      "given": "run the deploy inventory test",
+      "expect": "lists exactly 4 tools and only read scopes; build fails otherwise"
+     },
+     {
+      "name": "unicode lookalike",
+      "given": "tool name 'sеarch' with a Cyrillic e",
+      "expect": "refused; the allow-list does not match"
+     }
+    ],
+    "cost_levers": [
+     "One hash lookup per call; no model involved",
+     "Rejecting write attempts early avoids a downstream query"
+    ],
+    "feedback_events": [
+     "A person marking a refusal as wrongly blocked opens a review of whether an action-layer entry is missing"
+    ],
+    "analytics_events": [
+     {
+      "name": "ro.refused",
+      "fields": [
+       "tenant_id",
+       "principal_id",
+       "tool",
+       "reason"
+      ],
+      "when": "on every refused call"
+     },
+     {
+      "name": "ro.inventory",
+      "fields": [
+       "version",
+       "n_tools",
+       "n_scopes",
+       "all_read"
+      ],
+      "when": "on every deploy"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-audit",
+      "key_idea": "Audit each connector for least privilege before it joins.",
+      "how": "The registration scope check is that audit, automated."
+     },
+     {
+      "ref": "p_indirect-injection",
+      "key_idea": "Treat fetched content as data, never as instructions.",
+      "how": "With no write tool, injected instructions have no effect on connected apps."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_opa",
+      "name": "Open Policy Agent",
+      "take": "One policy language for tool and action decisions in the action layer."
+     },
+     {
+      "ref": "r_contextforge",
+      "name": "IBM MCP Context Forge",
+      "take": "A gateway that can filter tools by allow-list on import."
+     }
+    ],
+    "industry": "Slack's MCP server limits access to directory-published or internal apps with admin approval and audit visibility (t_t25); the MCP threat model asks for scoped tokens, tool allow-lists and audit (p_mcp-enterprise).",
+    "refs": [
+     "t_t25",
+     "t_t52",
+     "p_mcp-enterprise",
+     "p_mcp-audit",
+     "p_indirect-injection",
+     "r_opa",
+     "r_contextforge"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "ll_agent",
+   "b": "ll_quota",
+   "l": "agent id for bucket",
+   "k": "n",
+   "d": "agent_id, owner_id, tenant_id used to key the token bucket"
+  },
+  {
+   "a": "ll_agent",
+   "b": "ac_audit",
+   "l": "agent acted rows",
+   "k": "d",
+   "d": "agent_id, owner_id, acted_by=agent, tool, ts"
+  },
+  {
+   "a": "ll_agent",
+   "b": "ac_filter",
+   "l": "effective principal set",
+   "k": "s",
+   "d": "owner groups restricted to the agent grant, plus tenant_id"
+  },
+  {
+   "a": "ll_quota",
+   "b": "ac_audit",
+   "l": "throttle events",
+   "k": "d",
+   "d": "tenant_id, agent_id, tool, cost, retry_after_s"
+  },
+  {
+   "a": "ll_quota",
+   "b": "pl_obs",
+   "l": "bucket metrics",
+   "k": "d",
+   "d": "bucket depth, deny rate, p95 cost per tenant"
+  },
+  {
+   "a": "ll_sub",
+   "b": "ac_filter",
+   "l": "can this agent see it",
+   "k": "s",
+   "d": "agent effective principal set, doc_id, acl_version"
+  },
+  {
+   "a": "ll_sub",
+   "b": "ll_quota",
+   "l": "push count",
+   "k": "n",
+   "d": "agent_id, tenant_id, pushes sent in the window"
+  },
+  {
+   "a": "ll_ro",
+   "b": "ac_audit",
+   "l": "refused write attempts",
+   "k": "s",
+   "d": "principal_id, tool, reason=no_write_tool, ts"
+  },
+  {
+   "a": "ll_ro",
+   "b": "ll_mcp",
+   "l": "refuse unknown tool",
+   "k": "s",
+   "d": "tool name not in the read allow-list; error no_write_tool"
+  },
+  {
+   "a": "ll_ro",
+   "b": "so_mcp",
+   "l": "import read tools only",
+   "k": "s",
+   "d": "allow-list of read tool names; vendor write tools dropped at import"
+  }
+ ]
+}

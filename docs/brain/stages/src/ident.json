@@ -1,0 +1,683 @@
+{
+ "group": {
+  "line": "A scope-diff consent screen, per-tenant envelope encryption of tokens, read-only app-only grants, and RFC 8693 token exchange keep access narrow and per user.",
+  "dumb": "An admin approves a short, read-only list of what the brain may read. The brain keeps its keys locked in a vault, one lock per company. Background jobs read as the brain itself, but a question from a person is always answered with a short-lived key that belongs to that person, so the app's own permissions apply."
+ },
+ "comps": {
+  "so_admin": {
+   "line": "Admin consent screen with a scope diff:\nnew = requested minus already_approved; no token before approval",
+   "dumb": "Before the brain can touch an app, a workspace admin sees a plain list of exactly what it will be allowed to read. If the brain later asks for more, the admin sees only the new items and must approve again. Until the admin says yes, no key of any kind is issued.",
+   "inn": "Connect request {tenant_id, app_id, mode: user|app_only, requested_scopes[], requested_by}; catalog entry {app_id, read_only_scopes[]}; previous consent record if one exists.",
+   "out": "Consent record {consent_id, tenant_id, app_id, approved_scopes[], diff_added[], diff_removed[], approver_id, approved_at, review_due}; or a denial with reason.",
+   "store": "Reads the scope catalog. Writes the consent record to the tenant config store (one row per tenant_id, app_id) and an audit row to pl_idp.",
+   "fail": "Admin session times out after 15 minutes (default): the request is voided, 0 tokens issued, the admin restarts. Catalog unreachable: the screen refuses to render and nothing is issued. Caller without admin role: rejected in under 1 s with an audit row.",
+   "hard": "Whether scopes that read private messages need a second admin to co-approve is an open owner decision.",
+   "prop": "Proposal: the brain holds standing read access to every company app, so access must start from a named human approval that shows exactly what changed.",
+   "deep": {
+    "purpose": "Make the connection of an app a deliberate, reviewable act: a named admin approves a visible list of read-only scopes, and any later widening shows only the difference.",
+    "expected": [
+     "A first connect shows every requested scope and issues nothing until an admin approves",
+     "A later request for more access shows only the added scopes, and the old approval stays valid for the rest",
+     "Every approval and denial leaves an audit row with the approver id"
+    ],
+    "not_expected": [
+     "It does not issue or store tokens; so_oauth and so_svc do that after approval",
+     "It does not grant write scopes: the catalog lists read-only scopes only"
+    ],
+    "algorithm": {
+     "name": "Scope diff consent gate",
+     "formula": "diff_added = requested \\ approved_prev;  diff_removed = approved_prev \\ requested;  issue iff approver in admins and diff_added rendered",
+     "steps": [
+      "Load the catalog entry for the app and drop nothing silently: any requested scope not in the catalog rejects the whole request",
+      "Compute diff_added and diff_removed against the stored consent record (empty set on first connect)",
+      "Render the diff with app name, publisher and plain-language meaning of each scope",
+      "On approve by an admin, write the consent row with compare-and-set on its version, then release to so_oauth or so_svc",
+      "On deny or timeout, write the audit row and issue nothing"
+     ],
+     "params": {
+      "session_timeout": "15 minutes (design)",
+      "approval_link_lifetime": "10 minutes, single use (design)",
+      "review_due": "every 180 days (design), shown to the admin as a re-approve prompt"
+     }
+    },
+    "math": {
+     "definitions": [
+      "R: set of scopes the app requests",
+      "A: set of scopes already approved",
+      "C: set of read-only scopes in the catalog for this app"
+     ],
+     "formula_full": "diff_added = R \\ A;  diff_removed = A \\ R;  valid iff R is a subset of C",
+     "derivation": "Set difference is the smallest thing an admin has to read: scopes unchanged need no attention, so the screen stays short even for apps with 20 scopes. The subset test against C is what keeps write access out.",
+     "worked_example": "R = {files.read, users.read, chat.read}, A = {files.read}, C = {files.read, users.read, chat.read, files.write}. R is a subset of C, so valid. diff_added = {users.read, chat.read} (2 scopes shown, not 3). diff_removed = {} . If R also held files.write the request would be valid against C but is rejected by the read-only rule.",
+     "complexity": "O(|R| + |A|) with hash sets; under 1 ms for 50 scopes.",
+     "failure_modes": [
+      "Vendor renames a scope: the diff shows it as one removed and one added; keep an alias map in the catalog so it does not look like new access",
+      "Catalog drifts from what the vendor grants: run a monthly check comparing the token's actual scopes to approved_scopes"
+     ],
+     "calibration": "No tuning needed. Measure the share of approvals where the admin opened the diff; if under 80 percent, shorten the screen further."
+    },
+    "alternatives": [
+     {
+      "name": "Approve the whole scope list every time",
+      "why_rejected": "Admins stop reading; the diff keeps attention on what is new (approval fatigue)."
+     },
+     {
+      "name": "User-only consent, no admin step",
+      "why_rejected": "A single user could connect the brain to company data without review."
+     }
+    ],
+    "security": [
+     "Consent phishing: a look-alike app asks wide scopes. Control: only apps in the catalog can be requested, scopes per app are fixed by the catalog, and publisher name is shown on the screen",
+     "Approval fatigue: admins click through long lists. Control: the screen shows only the diff, and any scope outside the read-only catalog is refused rather than asked",
+     "Replay of an approval link: control is a single-use nonce with a 10 minute expiry bound to the admin session",
+     "Self-approval by the requester: the approver id must differ from requested_by for tenant-wide app-only grants"
+    ],
+    "performance": {
+     "slo": "p95 under 500 ms to render (design); off the query path",
+     "complexity": "O(|R| + |A|)",
+     "scaling": "At 10x tenants the screen is still one row read and one write; the only cost is human time, not compute."
+    },
+    "edge_cases": [
+     "Empty diff: no screen, the existing approval is reused and an audit row records the no-op",
+     "Two admins approve at once: compare-and-set on the consent version; the second sees the updated diff and must confirm again",
+     "Admin account removed after approving: consent is flagged for re-review at the next review date, not revoked silently",
+     "App name with look-alike unicode characters: normalised and flagged before display",
+     "A new app joins through the connector manifest (so_sdk) or the MCP bridge (so_mcp); both declare their scopes or tools, and both land on this same screen"
+    ],
+    "tests": [
+     {
+      "name": "first connect",
+      "given": "tenant t1, app drive, R of 3 scopes, A empty",
+      "expect": "screen lists 3 scopes, 0 tokens issued until approve"
+     },
+     {
+      "name": "widening",
+      "given": "A = {files.read}, R adds chat.read",
+      "expect": "diff_added = {chat.read}; old approval untouched"
+     },
+     {
+      "name": "write scope refused",
+      "given": "R contains files.write which is not in the read-only catalog",
+      "expect": "request rejected before any screen, audit row written"
+     },
+     {
+      "name": "expired link",
+      "given": "approval click at minute 11",
+      "expect": "rejected, 0 tokens issued"
+     }
+    ],
+    "cost_levers": [
+     "Human time only: one screen per app connect and one per scope change"
+    ],
+    "feedback_events": [
+     "Admin deny with a reason; admin edits a scope list before approving (kept as a hint for catalog tuning)"
+    ],
+    "analytics_events": [
+     {
+      "name": "consent.requested",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "n_added",
+       "n_removed",
+       "requested_by"
+      ],
+      "when": "when a connect request arrives"
+     },
+     {
+      "name": "consent.decided",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "approver_id",
+       "decision",
+       "ms_to_decide"
+      ],
+      "when": "when an admin approves or denies"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-audit",
+      "key_idea": "Audit each connector for least privilege before it joins.",
+      "how": "The catalog is fixed per app and reviewed before listing; the consent screen enforces it."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Handles OAuth per user and per tenant; study how it models one connection per user and app."
+     }
+    ],
+    "industry": "Slack's MCP server requires admin approval and limits use to directory-published or internal apps (t_t25); the same gate applies here to every app.",
+    "refs": [
+     "t_t25",
+     "p_mcp-audit",
+     "t_t24",
+     "r_nango"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "so_oauth": {
+   "line": "Token vault: authorization-code grant, refresh tokens wrapped by a per-tenant key\nrefresh_at = expires_at - 300 s (+/- 60 s jitter)",
+   "dumb": "After an admin approves, the app hands back a short-lived key and a longer-lived renewal key. We lock both in a vault, each under a lock that only belongs to that company. The vault renews the short-lived key shortly before it runs out so searches never hit an expired key.",
+   "inn": "Authorization-code callback {tenant_id, app_id, user_id, code, state}; token response {access_token, refresh_token, expires_in, scope}; refresh requests from workers.",
+   "out": "Short-lived access token {token, expires_at, scopes} on request by so_sdk; wrapped refresh token handle {user_id, app_id, kms_key_id} for so_obo. Plain tokens never leave the vault process except to those two callers.",
+   "store": "Writes ciphertext rows {tenant_id, user_id, app_id, wrapped_dek, ciphertext, nonce, expires_at, version} to the vault table. Reads the tenant key from the key management service (KMS) by key id only; never stores the key.",
+   "fail": "Refresh call fails with a network error: 3 attempts at 1 s, 4 s and 16 s, then the connection is marked degraded and the admin is notified within 5 minutes. Vendor answers invalid_grant: connection marked broken at once, no retry, sweeps for that user stop, 1 alert. Key service down: cached data keys serve for up to 60 s, then reads fail closed.",
+   "hard": "Whether to rotate refresh tokens on every use for vendors that support it, and the cost of the extra write, is not decided.",
+   "prop": "Proposal: standing connections need stored credentials, and a leaked token is the worst case, so each tenant gets its own wrapping key and tokens are decrypted only inside the vault.",
+   "deep": {
+    "purpose": "Hold every app credential encrypted under a key that belongs to one tenant, and renew short-lived tokens before they expire so reads never stall.",
+    "expected": [
+     "A token stored for tenant A cannot be decrypted with tenant B's key",
+     "An access token is renewed before expiry and callers see no 401 in normal operation",
+     "Deleting a tenant key makes every token of that tenant unreadable (crypto-shredding)"
+    ],
+    "not_expected": [
+     "It does not decide who may query what; permissions are so_obo and the access-list stores",
+     "It does not log token values anywhere, including debug logs"
+    ],
+    "algorithm": {
+     "name": "Envelope encryption with scheduled refresh",
+     "formula": "ciphertext = AES-256-GCM(DEK, token, aad = tenant_id|user_id|app_id);  wrapped_dek = KMS.Encrypt(KEK_tenant, DEK);  refresh_at = expires_at - skew + U(-j, +j)",
+     "steps": [
+      "On callback, validate state and exchange the code for tokens over TLS",
+      "Generate a fresh data key (DEK) per record, encrypt the token with it, bind tenant_id, user_id and app_id as associated data",
+      "Wrap the DEK with the tenant's key (KEK) in the KMS and store only ciphertext and wrapped DEK",
+      "Schedule refresh at expires_at minus 300 s with random jitter of 60 s either way",
+      "On read, unwrap the DEK (cache 60 s in memory), decrypt, return, and zero the buffer"
+     ],
+     "params": {
+      "cipher": "AES-256-GCM (default, widely reviewed)",
+      "refresh_skew": "300 s (design)",
+      "jitter": "60 s (design)",
+      "dek_cache": "60 s in process memory (design)",
+      "kek_rotation": "every 365 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "expires_at: absolute expiry of the access token (seconds)",
+      "skew: how early we refresh",
+      "j: jitter half-width",
+      "N: tokens expiring in the same window"
+     ],
+     "formula_full": "refresh_at = expires_at - skew + U(-j, +j);  peak_rate = N / (2j)",
+     "derivation": "Without jitter every token issued in one burst expires together and the vault, the KMS and the vendor all see a spike. Spreading refresh over 2j seconds divides the peak rate by 2j.",
+     "worked_example": "Token issued at 10:00:00 with expires_in 3600 s: expires_at = 11:00:00, skew 300 s, so refresh at about 10:55:00. If 10,000 tokens were connected in the same minute: without jitter 10,000 refreshes at once; with j = 60 s they spread over 120 s, peak about 83 per second.",
+     "complexity": "O(1) per read; one KMS unwrap per cache miss.",
+     "failure_modes": [
+      "Clock skew between vault and vendor: refresh is by our clock; an early 401 triggers one immediate refresh and a skew alarm",
+      "Refresh storm after an outage: workers restart with jitter and a global cap on concurrent refreshes"
+     ],
+     "calibration": "Set skew to 5 times the p99 vendor refresh latency; set j so peak refresh rate stays under 10 percent of the vendor's token endpoint limit."
+    },
+    "alternatives": [
+     {
+      "name": "One shared key for all tenants",
+      "why_rejected": "A single leak or misconfiguration exposes every tenant."
+     },
+     {
+      "name": "Store tokens in a general secrets manager without wrapping",
+      "why_rejected": "No per-tenant crypto-shredding and no associated-data binding."
+     }
+    ],
+    "security": [
+     "Token theft at rest: control is envelope encryption with a key per tenant, so a stolen table is unreadable without the key service",
+     "Cross-tenant read through a bug: tenant_id, user_id and app_id are bound as associated data, so ciphertext moved to another row fails to decrypt",
+     "Secret in log: the vault logger drops any field named token, secret or code, and a test greps logs for token-shaped strings",
+     "Authorization code interception: state and PKCE (proof key for code exchange) bind the callback to the session that started it",
+     "Stolen refresh token reused by an attacker: rotate on use where the vendor supports it and revoke on any invalid_grant seen outside the vault"
+    ],
+    "performance": {
+     "slo": "p95 read under 20 ms with a warm data key cache (design)",
+     "complexity": "O(1) per read; KMS calls are the bottleneck on cache miss",
+     "scaling": "At 10x tokens the KMS quota is the limit; the 60 s data key cache and batching refresh to the jitter window keep calls near the same rate."
+    },
+    "edge_cases": [
+     "Vendor revokes the refresh token: connection marked broken, 1 alert, sweep stops, no retries",
+     "Two workers refresh the same token at once: per-record lock, the second reads the new token",
+     "Tenant offboarding: key scheduled for deletion, all rows unreadable, then rows purged",
+     "Token larger than expected (some vendors return big tokens): column sized for 8 KB, longer values rejected and alerted",
+     "Unicode in tenant or app ids: ids are opaque ascii uuids; display names never enter the key path",
+     "A new app joins through the connector manifest (so_sdk) auth block, which names authorize and token endpoints; the vault stores it with no code change"
+    ],
+    "tests": [
+     {
+      "name": "tenant isolation",
+      "given": "token stored under tenant A; decrypt attempted with tenant B key",
+      "expect": "decrypt fails, audit row written"
+     },
+     {
+      "name": "early refresh",
+      "given": "token expires_in 3600 s, now = 3301 s after issue",
+      "expect": "refresh already fired between 3240 s and 3360 s"
+     },
+     {
+      "name": "invalid_grant",
+      "given": "vendor returns invalid_grant on refresh",
+      "expect": "connection broken, 0 retries, 1 alert, sweeps stop"
+     },
+     {
+      "name": "log scrub",
+      "given": "run a sync with debug logging on",
+      "expect": "no log line matches a token pattern"
+     }
+    ],
+    "cost_levers": [
+     "Cache unwrapped data keys 60 s to cut key service calls; batch refreshes in the jitter window"
+    ],
+    "feedback_events": [
+     "Admin reconnect after a broken connection; support flags a user who loses access repeatedly"
+    ],
+    "analytics_events": [
+     {
+      "name": "vault.refresh",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "outcome",
+       "ms",
+       "attempt"
+      ],
+      "when": "on each refresh attempt"
+     },
+     {
+      "name": "vault.read",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "caller",
+       "cache_hit"
+      ],
+      "when": "on each token read"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t24",
+      "key_idea": "Tokens are audience-bound and must not be passed on to other services.",
+      "how": "Vault hands tokens only to so_sdk and so_obo, and each token is tied to one app."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Handles OAuth per user and per tenant plus token refresh; studied as the build-or-buy comparison."
+     }
+    ],
+    "industry": "The vault designs of named vendors are not public in our sources, so this is our design, built on the MCP rule that tokens are audience-bound (t_t24).",
+    "refs": [
+     "t_t24",
+     "r_nango",
+     "t_t25"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "so_svc": {
+   "line": "App-only access: admin-consented, read-only scopes, never used to serve a user\neffective = requested INTERSECT catalog",
+   "dumb": "Some jobs have no person behind them, like the nightly check that finds anything we missed. For those, an admin lets the brain read a company app as itself. It only gets read-only access from a fixed menu, and it is never used to answer a person's question.",
+   "inn": "Admin consent record {tenant_id, app_id, scopes[], approver_id}; token request from a sweep or sync worker {tenant_id, app_id, purpose}.",
+   "out": "App-only token {token, expires_at, scopes[], token_class: app_only} for so_sdk. Rejection when purpose is a user query.",
+   "store": "Reads the consent record and the scope catalog. Stores its token like so_oauth does (wrapped under the tenant key). Writes an audit row per issue to pl_idp.",
+   "fail": "Vendor refuses the app-only grant: 1 alert to the admin, connection stays at user-only mode, no retry until the admin re-approves. Token fetch fails: 3 attempts at 1 s, 4 s and 16 s, then the sweep is skipped and the lag monitor reports it. Purpose check fails: request denied in under 10 ms and audited.",
+   "hard": "Narrowing a tenant-wide grant to chosen groups or sites is possible only in some vendors; which ones is not yet surveyed. Gap report: what this grant cannot see is listed, not guessed.",
+   "prop": "Proposal: sweeps, identity sync and backfill need to read without a user present, which is the widest access the brain ever holds, so it is read-only, catalog-bound and kept off the query path.",
+   "deep": {
+    "purpose": "Give background jobs the least access that works: tenant-wide read-only scopes from a catalog, usable only by sync and sweep workers.",
+    "expected": [
+     "App-only tokens are issued to sync, sweep and identity jobs only",
+     "A query-time request for an app-only token is denied",
+     "Every scope on the token is in the read-only catalog"
+    ],
+    "not_expected": [
+     "It does not authenticate end users or build per-user views",
+     "It does not hold write scopes, ever"
+    ],
+    "algorithm": {
+     "name": "Catalog-bound grant with purpose check",
+     "formula": "effective = requested INTERSECT catalog_readonly;  deny iff requested \\ catalog is not empty OR purpose in {query, answer}",
+     "steps": [
+      "Load the consent record and catalog entry for (tenant, app)",
+      "Compute the intersection; if anything was requested outside the catalog, reject the request",
+      "Check the caller's purpose tag against the allowed set {sync, sweep, acl_sync, backfill}",
+      "Fetch or reuse the app-only token from the vault and return it with token_class app_only",
+      "Write an audit row with purpose and caller"
+     ],
+     "params": {
+      "allowed_purposes": "sync, sweep, acl_sync, backfill (design)",
+      "token_lifetime": "as the vendor issues, usually 1 hour; refreshed by the vault",
+      "catalog": "read-only scopes per app, reviewed every 180 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "N: objects in the tenant",
+      "P: page size of the vendor list call",
+      "r: request rate we may use (requests per second)",
+      "T: time for one full pass"
+     ],
+     "formula_full": "requests = ceil(N / P);  T = requests / r",
+     "derivation": "A full sweep must fit inside the sweep interval, so the read rate granted by so_rate sets the lowest N the tenant can have per cadence.",
+     "worked_example": "N = 2,000,000 objects, P = 100, r = 10 requests/s: requests = 20,000; T = 2,000 s, about 33 minutes. If the access-list fetch doubles the calls, T = 66 minutes, still inside a nightly sweep.",
+     "complexity": "O(N / P) calls per pass.",
+     "failure_modes": [
+      "Rate limit shared with live traffic: so_rate reserves a share so the sweep cannot starve users",
+      "N grows past the cadence: the scheduler widens the interval or splits by shard"
+     ],
+     "calibration": "Pick r as at most 50 percent of the tenant's quota (Jira example in t_t06) so live sync keeps its half."
+    },
+    "alternatives": [
+     {
+      "name": "Use user tokens for sweeps",
+      "why_rejected": "Needs one token per user and breaks when any user leaves or revokes."
+     },
+     {
+      "name": "Allow app-only for queries too",
+      "why_rejected": "A confused deputy: the broad token would answer one user with another's data."
+     }
+    ],
+    "security": [
+     "Confused deputy: an app-only token used to answer a query would ignore the asker's permissions. Control: purpose check denies query and answer purposes, and qr_* components cannot request this class",
+     "Over-broad scopes: control is the read-only catalog intersection and a 180 day review",
+     "Credential leak: tokens live only in the tenant-wrapped vault; no write scope exists to abuse",
+     "Insider with sweep rights reading everything: audit row per issue and per sweep, anomaly alert on a sweep outside its schedule"
+    ],
+    "performance": {
+     "slo": "p95 issue under 50 ms from cache (design); not on the query path",
+     "complexity": "O(1) per issue",
+     "scaling": "At 10x tenants the cost is vendor rate limits, not issue calls; so_rate shares quota fairly."
+    },
+    "edge_cases": [
+     "Vendor withdraws the grant mid-sweep: sweep stops at the next page, cursor kept, 1 alert",
+     "Two sweeps for one tenant at once: lock per (tenant, app), the second waits",
+     "Scope renamed by the vendor: catalog alias updated, until then the intersection drops it and the sweep reports reduced coverage",
+     "Tenant with 0 objects: sweep returns at once and records a zero count",
+     "A new app joins by manifest (so_sdk) or the MCP bridge (so_mcp); its app-only scopes enter the catalog before an admin can approve them",
+     "Company zone only: the app-only grant builds company and team rows. Personal files the admin cannot see are never read with it; they come in through the owner's own grant (see Credential modes)."
+    ],
+    "tests": [
+     {
+      "name": "purpose denied",
+      "given": "qr_live asks for an app-only token",
+      "expect": "denied, audit row, 0 tokens issued"
+     },
+     {
+      "name": "catalog filter",
+      "given": "requested includes files.write",
+      "expect": "request rejected before any grant"
+     },
+     {
+      "name": "sweep time",
+      "given": "N = 2,000,000, P = 100, r = 10/s",
+      "expect": "planned T = 2,000 s"
+     },
+     {
+      "name": "revoked mid-sweep",
+      "given": "vendor returns 403 on page 40",
+      "expect": "sweep stops, cursor at page 40, 1 alert"
+     }
+    ],
+    "cost_levers": [
+     "Share of quota is the cost: a smaller r makes sweeps slower but cheaper in vendor limits"
+    ],
+    "feedback_events": [
+     "Admin marks a sweep result wrong; the lag monitor reports a skipped sweep"
+    ],
+    "analytics_events": [
+     {
+      "name": "appsvc.issued",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "purpose",
+       "caller"
+      ],
+      "when": "on each token issue"
+     },
+     {
+      "name": "appsvc.denied",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "purpose",
+       "reason"
+      ],
+      "when": "on each denial"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-audit",
+      "key_idea": "Least-privilege audit of connectors.",
+      "how": "The read-only catalog and review cycle apply the same check to app-only scopes."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Large connector catalogue with incremental sync state; study how it separates bulk sync from interactive use."
+     }
+    ],
+    "industry": "Glean syncs identity separately from content on its own schedule (t_t20); keeping background reads apart from user reads is our inference.",
+    "refs": [
+     "t_t20",
+     "t_t06",
+     "p_mcp-audit",
+     "r_airbyte"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "so_obo": {
+   "line": "Token exchange (RFC 8693) with audience binding (RFC 8707):\nttl = min(upstream_exp - 60 s, 300 s)",
+   "dumb": "When a person asks a question, the brain must read the live app as that person, not as itself. It trades the person's brain key for a short-lived key that works only at one app. That key is used once for this question and then thrown away.",
+   "inn": "Exchange request {tenant_id, user_id, app_id, resource_uri, scopes[], subject_token}; refresh token handle from so_oauth.",
+   "out": "Per-user app token {token, audience: resource_uri, expires_at, scopes[], user_id} for so_mcp, qr_live and ac_live; or an error {code: not_connected|revoked|upstream_down}.",
+   "store": "Reads wrapped refresh token handle from the vault. Keeps a short in-memory cache keyed (user_id, app_id, resource_uri, scopes) that is never written to disk. Writes an audit row per exchange to pl_idp.",
+   "fail": "Upstream 5xx: 2 retries at 200 ms and 800 ms, then error upstream_down. Circuit opens after 5 failures in 30 s and stays open 60 s, so callers get a fast failure and the answer omits that source with a note. invalid_grant: user marked not_connected, no retry, the user sees a reconnect prompt. Exchange timeout 3 s.",
+   "hard": "How to show a user that one source was skipped because their link to it expired, without exposing the reason to others, is open. Strict mode forces this exchange for every source; its extra sync time is unmeasured.",
+   "prop": "Proposal: live recheck and live search must run with the asker's own rights; the MCP rules require audience-bound tokens and forbid passing the client's token upstream.",
+   "deep": {
+    "purpose": "Turn a brain-session token into a short-lived token for one app and one user, so live reads inherit that person's permissions in the app itself.",
+    "expected": [
+     "The returned token's audience matches the target app and no other",
+     "A person without access in the app gets an empty or denied result from the app, not from us",
+     "Tokens are not kept after the request, apart from the short in-memory cache"
+    ],
+    "not_expected": [
+     "It does not decide which apps to query; the planner and router do",
+     "It does not pass the user's brain token to any app"
+    ],
+    "algorithm": {
+     "name": "OAuth 2.0 token exchange with audience binding",
+     "formula": "POST token endpoint: grant_type = token-exchange, subject_token = user brain token, resource = app resource URI, requested scopes = catalog read scopes;  cache ttl = min(upstream_exp - 60 s, 300 s)",
+     "steps": [
+      "Validate the subject token and that the user is connected to the app",
+      "Build the exchange request with resource set to the app's resource URI (RFC 8707 audience)",
+      "Call the upstream token endpoint (or the Microsoft on-behalf-of flow for Microsoft apps) with a 3 s timeout",
+      "Cache the result keyed by (user, app, resource, scopes) for the ttl",
+      "Return the token to the caller and audit the exchange"
+     ],
+     "params": {
+      "timeout": "3 s (design)",
+      "cache_ttl_cap": "300 s (design)",
+      "expiry_margin": "60 s (design)",
+      "breaker": "5 failures in 30 s opens for 60 s (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "q: queries per second asking for live data",
+      "f: share of queries that go to the live path",
+      "h: cache hit ratio",
+      "E: exchanges per second to the upstream"
+     ],
+     "formula_full": "E = q * f * a * (1 - h), a = apps touched per live query",
+     "derivation": "Only cache misses reach the upstream token endpoint, so the hit ratio and the cache time set the load on the vendor.",
+     "worked_example": "q = 50 queries/s, f = 0.2, a = 2 apps, h = 0.9: E = 50 * 0.2 * 2 * 0.1 = 2 exchanges per second. With no cache E = 20 per second, ten times the load.",
+     "complexity": "O(1) per exchange; cache lookup O(1).",
+     "failure_modes": [
+      "Cache key too coarse (missing scopes) hands a token with wrong scopes: the key includes scopes and resource",
+      "Burst after a breaker closes: callers ramp with jitter"
+     ],
+     "calibration": "Choose the ttl cap so that a revoked user loses live access within 5 minutes; check actual hit ratio weekly and lower the cap if revocation lag matters more than load."
+    },
+    "alternatives": [
+     {
+      "name": "Forward the user's brain token to the app",
+      "why_rejected": "MCP forbids token passthrough (t_t24); the app would be handed a token meant for us."
+     },
+     {
+      "name": "Use the app-only token for user queries",
+      "why_rejected": "Ignores the asker's permissions, a confused deputy."
+     }
+    ],
+    "security": [
+     "Confused deputy: using a wider token than the asker's. Control: only per-user exchanged tokens may reach qr_live and ac_live",
+     "Token passthrough: control is audience binding via resource (RFC 8707) so the app rejects tokens meant for another service (t_t24)",
+     "Replay of a cached token by another user: the cache key includes user_id and the cache is per process memory only",
+     "Stolen subject token: exchange requires a live brain session and writes an audit row; anomalous exchange rates alert",
+     "Secret in log: token fields are redacted at the logger"
+    ],
+    "performance": {
+     "slo": "p95 exchange under 300 ms upstream, under 1 ms on cache hit (design)",
+     "complexity": "O(1)",
+     "scaling": "At 10x live queries the vendor's token endpoint is the limit; the 300 s cache and per-app breaker hold load and isolate a slow vendor."
+    },
+    "edge_cases": [
+     "User left the company: refresh token invalid, user marked not_connected, queries omit that source",
+     "Two parallel requests for the same key: single flight, one exchange, both receive the token",
+     "Clock skew: expiry margin of 60 s covers up to 60 s drift",
+     "Vendor returns a token with fewer scopes than asked: caller treats missing scopes as denied for that call and the answer is marked partial",
+     "Unicode in resource URIs: normalised and compared byte for byte",
+     "New app joins via the manifest auth block (so_sdk) or the MCP bridge (so_mcp): the resource URI is the only new input",
+     "Personal rows are fetched only with the owner's own token. A merged result takes the stricter access list."
+    ],
+    "tests": [
+     {
+      "name": "audience bound",
+      "given": "exchange for resource drive.example",
+      "expect": "token audience equals that resource, rejected at another app"
+     },
+     {
+      "name": "cache hit",
+      "given": "same user asks twice within 200 s",
+      "expect": "1 upstream exchange, 1 cache hit"
+     },
+     {
+      "name": "breaker",
+      "given": "5 upstream 500s in 30 s",
+      "expect": "6th call fails in under 5 ms, answer marks source skipped"
+     },
+     {
+      "name": "revoked",
+      "given": "refresh token invalid",
+      "expect": "not_connected returned, 0 retries"
+     }
+    ],
+    "cost_levers": [
+     "Cache for up to 300 s; single flight on the same key"
+    ],
+    "feedback_events": [
+     "User reconnect after a not_connected prompt; support ticket tags for repeated revocations"
+    ],
+    "analytics_events": [
+     {
+      "name": "obo.exchange",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "user_id",
+       "cache_hit",
+       "ms",
+       "outcome"
+      ],
+      "when": "on each exchange request"
+     },
+     {
+      "name": "obo.breaker",
+      "fields": [
+       "app_id",
+       "state"
+      ],
+      "when": "when the breaker opens or closes"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Authorization is evaluated per query with the user's live permissions.",
+      "how": "The exchanged token carries the user's live rights into the app."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_agentgateway",
+      "name": "agentgateway",
+      "take": "A proxy point where per-user tokens and tool allow-lists can be enforced."
+     }
+    ],
+    "industry": "The MCP authorization spec requires audience-bound tokens and bans passthrough (t_t24); Slack's MCP server uses user-token scopes with admin approval (t_t25).",
+    "refs": [
+     "t_t24",
+     "t_t25",
+     "p_multitenant-rag",
+     "t_t23",
+     "r_agentgateway"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  }
+ },
+ "edges": [
+  {
+   "a": "so_admin",
+   "b": "pl_idp",
+   "l": "consent audit",
+   "k": "s",
+   "d": "Audit row {tenant_id, app_id, approver_id, decision, diff_added[]}"
+  },
+  {
+   "a": "so_oauth",
+   "b": "pl_idp",
+   "l": "token audit",
+   "k": "s",
+   "d": "Audit row {tenant_id, app_id, user_id, event: issued|refreshed|revoked}, never the token"
+  },
+  {
+   "a": "so_svc",
+   "b": "pl_idp",
+   "l": "app-only audit",
+   "k": "s",
+   "d": "Audit row {tenant_id, app_id, purpose, caller} per token issue"
+  },
+  {
+   "a": "so_obo",
+   "b": "pl_idp",
+   "l": "exchange audit",
+   "k": "s",
+   "d": "Audit row {tenant_id, user_id, app_id, resource, outcome}"
+  },
+  {
+   "a": "so_obo",
+   "b": "so_rate",
+   "l": "exchange budget",
+   "k": "n",
+   "d": "Request {tenant_id, app_id, endpoint: token} so token calls count against the app's quota"
+  },
+  {
+   "a": "so_svc",
+   "b": "so_rate",
+   "l": "sweep budget",
+   "k": "n",
+   "d": "Request {tenant_id, app_id, purpose: sweep} so sweeps take only their share of quota"
+  }
+ ]
+}

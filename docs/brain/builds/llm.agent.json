@@ -1,0 +1,339 @@
+{
+ "ll_agent": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ac_id",
+   "ac_filter",
+   "ll_mcp"
+  ],
+  "stack": [
+   {
+    "part": "identity provider",
+    "pick": "Keycloak (OIDC, token exchange) or Ory Hydra",
+    "why": "issues short-lived signed tokens; check current docs for the token-exchange feature flag"
+   },
+   {
+    "part": "JWT library",
+    "pick": "PyJWT with cryptography",
+    "why": "verify and sign with RS256 or ES256; do not hand-roll signing"
+   },
+   {
+    "part": "registry store",
+    "pick": "Postgres 16",
+    "why": "agent rows, status and owner link in one transactional table"
+   },
+   {
+    "part": "do not pick",
+    "pick": "long-lived API keys per agent",
+    "why": "a key that never expires outlives the owner's employment and defeats the intersection rule"
+   }
+  ],
+  "install": [
+   "pip install 'pyjwt[crypto]' psycopg[binary] fastapi uvicorn",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "docker run -d --name kc -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/agent/registry.py : agent table access and status checks",
+   "brain/agent/token.py : mint and verify agent tokens",
+   "brain/agent/principal.py : effective principal set",
+   "migrations/010_agent.sql : agent table",
+   "tests/test_agent_scope.py : intersection and expiry tests"
+  ],
+  "schema": "CREATE TABLE agent (\n  agent_id text PRIMARY KEY,\n  owner_id text NOT NULL,\n  tenant_id text NOT NULL,\n  grant_sources text[] NOT NULL DEFAULT '{}',\n  grant_collections text[] NOT NULL DEFAULT '{}',\n  status text NOT NULL CHECK (status IN ('active','suspended','retired')),\n  expires_at timestamptz NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX agent_owner_idx ON agent(owner_id);",
+  "interface": "POST /agent/token  body {agent_id, client_assertion}  ->  200 {access_token, expires_in<=900, effective_groups[]} | 401 | 403 {code: owner_deprovisioned|agent_inactive}\ndef effective_principal(agent_id: str) -> Principal  # groups = owner groups restricted to the agent grant",
+  "code": "import time, jwt\n\ndef effective_principal(db, idp, agent_id):\n    a = db.get_agent(agent_id)\n    if a is None or a.status != \"active\" or a.expires_at <= time.time():\n        raise Forbidden(\"agent_inactive\")\n    owner = idp.get_user(a.owner_id)          # current record, never cached across calls\n    if owner is None or owner.disabled:\n        raise Forbidden(\"owner_deprovisioned\")\n    # Intersection: owner groups, narrowed to what the grant names.\n    groups = {g for g in owner.groups if g.tenant == a.tenant_id}\n    allowed_src, allowed_col = set(a.grant_sources), set(a.grant_collections)\n    return Principal(agent_id=a.agent_id, owner_id=a.owner_id, tenant=a.tenant_id,\n                     groups=groups, sources=allowed_src, collections=allowed_col)\n\ndef mint_token(key, p, aud, ttl=900):\n    now = int(time.time())\n    claims = {\"sub\": p.agent_id, \"act_owner\": p.owner_id, \"tenant\": p.tenant,\n              \"aud\": aud, \"iat\": now, \"exp\": now + min(ttl, 900),\n              \"scope\": \" \".join(sorted(p.sources))}\n    return jwt.encode(claims, key, algorithm=\"RS256\")\n\ndef allows(p, doc):\n    # Tricky part: both gates must pass. The grant narrows, the owner ACL still decides.\n    return (doc.source in p.sources and (not p.collections or doc.collection in p.collections)\n            and bool(p.groups & set(doc.acl_groups)))",
+  "steps": [
+   {
+    "do": "Create the agent table",
+    "done_when": "\\d agent shows 8 columns and the status CHECK"
+   },
+   {
+    "do": "Write effective_principal with the intersection rule",
+    "done_when": "unit test: agent granted source A returns no groups for source B"
+   },
+   {
+    "do": "Mint tokens with exp at most 900 s and aud set to the brain URI",
+    "done_when": "decoded token has exp - iat <= 900 and the right aud"
+   },
+   {
+    "do": "Re-read the owner on every token request",
+    "done_when": "test: disable the owner, next token request returns 403 owner_deprovisioned"
+   },
+   {
+    "do": "Reject tokens for suspended or expired agents",
+    "done_when": "suspended agent gets 403 agent_inactive"
+   },
+   {
+    "do": "Write an audit row on issue and on status change",
+    "done_when": "audit table has one row per issue with agent_id and owner_id"
+   }
+  ],
+  "config": {
+   "TOKEN_TTL_S": "900 // short life so a revoked owner stops working within 15 minutes",
+   "ASSERTION_ALG": "RS256 // asymmetric so the brain only holds public keys",
+   "AGENT_MAX_LIFETIME_DAYS": "90 // forces periodic owner re-approval",
+   "OWNER_CACHE_TTL_S": "0 // always read the live owner record"
+  },
+  "verify": [
+   "pytest tests/test_agent_scope.py -q  # all passed, including owner_deprovisioned",
+   "curl -s -XPOST localhost:8000/agent/token -d '{\"agent_id\":\"a1\"}' | jq .expires_in  # 900 or less"
+  ],
+  "pitfalls": [
+   "Caching the owner's groups for hours: the owner is fired, the agent keeps reading. Symptom: a deprovisioned user's agent still returns results",
+   "Granting an agent a scope the owner lacks: the token must be the intersection, so test that grant minus owner access returns nothing",
+   "Using a shared service account for all agents: the audit log cannot tell agents apart"
+  ]
+ },
+ "ll_quota": {
+  "milestone": "M4",
+  "effort_days": 4,
+  "depends_on": [
+   "ll_agent",
+   "op_cost",
+   "ll_mcp"
+  ],
+  "stack": [
+   {
+    "part": "bucket store",
+    "pick": "Redis 7 with Lua scripts",
+    "why": "one script updates both buckets atomically; plain GET then SET races under load"
+   },
+   {
+    "part": "client",
+    "pick": "redis-py 5",
+    "why": "supports script registration (register_script)"
+   },
+   {
+    "part": "metering sink",
+    "pick": "Postgres 16 batch insert",
+    "why": "batches every 1 s to the cost meter table"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an in-process dict per replica",
+    "why": "each replica refills separately, so the real limit is replicas times the limit"
+   }
+  ],
+  "install": [
+   "pip install redis fastapi psycopg[binary]",
+   "docker run -d --name brain-redis -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/quota/bucket.lua : atomic two-bucket check and debit",
+   "brain/quota/limiter.py : allow(), settle()",
+   "brain/quota/meter.py : 1 s batch writer to op_cost",
+   "tests/test_quota.py : refill, deny and settle tests"
+  ],
+  "schema": "-- Redis keys, one hash per bucket\n-- quota:{tenant}:agent:{agent_id} -> HASH {tokens: float, ts: ms}\n-- quota:{tenant}:tenant            -> HASH {tokens: float, ts: ms}\nCREATE TABLE metered_use (\n  tenant_id text NOT NULL,\n  principal_id text NOT NULL,\n  route text NOT NULL,\n  cost_units numeric NOT NULL,\n  reply_tokens int NOT NULL DEFAULT 0,\n  live_calls int NOT NULL DEFAULT 0,\n  ts timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def allow(tenant_id: str, agent_id: str, route: str, cost: float) -> Decision  # Decision(ok, retry_after_s)\ndef settle(tenant_id: str, agent_id: str, estimated: float, actual: float) -> None  # refund or charge the difference",
+  "code": "LUA = \"\"\"\nlocal function refill(key, rate, burst, now)\n  local h = redis.call('HMGET', key, 'tokens', 'ts')\n  local t = tonumber(h[1]) or burst\n  local ts = tonumber(h[2]) or now\n  return math.min(burst, t + rate * (now - ts) / 1000)\nend\nlocal now = tonumber(ARGV[1]); local c = tonumber(ARGV[2])\nlocal a = refill(KEYS[1], tonumber(ARGV[3]), tonumber(ARGV[4]), now)\nlocal t = refill(KEYS[2], tonumber(ARGV[5]), tonumber(ARGV[6]), now)\nif a < c or t < c then\n  local short = math.max(c - a, c - t)\n  local rate = (a < c) and tonumber(ARGV[3]) or tonumber(ARGV[5])\n  return {0, math.ceil(short / rate)}\nend\nredis.call('HSET', KEYS[1], 'tokens', a - c, 'ts', now)\nredis.call('HSET', KEYS[2], 'tokens', t - c, 'ts', now)\nredis.call('EXPIRE', KEYS[1], 3600); redis.call('EXPIRE', KEYS[2], 3600)\nreturn {1, 0}\n\"\"\"\nclass Limiter:\n    def __init__(self, r, cfg):\n        self.s, self.cfg = r.register_script(LUA), cfg\n    def allow(self, tenant, agent, route, cost):\n        now = int(time.time() * 1000)   # use Redis TIME in production to avoid clock skew\n        ok, wait = self.s(keys=[f\"quota:{tenant}:agent:{agent}\", f\"quota:{tenant}:tenant\"],\n            args=[now, cost, self.cfg.agent_rate, self.cfg.agent_burst,\n                  self.cfg.tenant_rate, self.cfg.tenant_burst])\n        return Decision(bool(ok), int(wait))\n    def settle(self, tenant, agent, estimated, actual):\n        delta = estimated - actual      # positive refunds, negative charges\n        if delta:\n            self.s_adjust(tenant, agent, delta)",
+  "steps": [
+   {
+    "do": "Start Redis and load the Lua script",
+    "done_when": "SCRIPT LOAD returns a sha1"
+   },
+   {
+    "do": "Implement allow() with both buckets",
+    "done_when": "test: burst of B calls passes, call B+1 is denied with retry_after_s >= 1"
+   },
+   {
+    "do": "Prove atomicity with 50 parallel callers",
+    "done_when": "total allowed never exceeds burst plus refill in the window"
+   },
+   {
+    "do": "Add settle() to refund or charge after the call",
+    "done_when": "bucket tokens equal start minus actual cost in the test"
+   },
+   {
+    "do": "Write metered_use rows in 1 s batches",
+    "done_when": "SELECT count(*) matches the number of calls in the test run"
+   },
+   {
+    "do": "Return 429 with a Retry-After header from the MCP and REST doors",
+    "done_when": "curl shows HTTP 429 and Retry-After: 1 or more"
+   }
+  ],
+  "config": {
+   "AGENT_RATE_PER_S": "5 // refill per agent, tune from metered use",
+   "AGENT_BURST": "50 // a short spike is fine",
+   "TENANT_RATE_PER_S": "200 // one tenant cannot starve others",
+   "TENANT_BURST": "2000 // covers a morning rush",
+   "BUCKET_TTL_S": "3600 // idle buckets expire"
+  },
+  "verify": [
+   "pytest tests/test_quota.py -q  # all passed",
+   "redis-cli HGETALL quota:t1:agent:a1  # tokens and ts present after a call"
+  ],
+  "pitfalls": [
+   "Read then write in app code races: two replicas both see 1 token and both allow. Symptom: limit exceeded by a factor of the replica count. Use the Lua script",
+   "Charging the estimate and never settling: long answers are undercharged and short ones overcharged. Symptom: cost meter and bucket drift apart",
+   "Clock skew between app nodes breaks refill math; take time from Redis TIME"
+  ]
+ },
+ "ll_sub": {
+  "milestone": "M4",
+  "effort_days": 6,
+  "depends_on": [
+   "ch_bus",
+   "ac_filter",
+   "ll_agent"
+  ],
+  "stack": [
+   {
+    "part": "event stream",
+    "pick": "Postgres 16 table plus LISTEN/NOTIFY, or Kafka when volume needs it",
+    "why": "start with one database; a cursor per subscription gives at-least-once for free"
+   },
+   {
+    "part": "delivery",
+    "pick": "FastAPI with httpx for webhooks; MCP notifications for MCP clients",
+    "why": "check current docs for the MCP notification method"
+   },
+   {
+    "part": "signing",
+    "pick": "HMAC-SHA256 on the body",
+    "why": "lets the receiver verify the sender"
+   },
+   {
+    "part": "do not pick",
+    "pick": "push without a cursor",
+    "why": "a crash loses events and the agent never learns"
+   }
+  ],
+  "install": [
+   "pip install fastapi httpx psycopg[binary]",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/sub/match.py : selector matching",
+   "brain/sub/worker.py : consume, filter, coalesce, send",
+   "brain/sub/api.py : create and delete subscriptions",
+   "migrations/030_sub.sql : tables",
+   "tests/test_sub.py : filter and coalesce tests"
+  ],
+  "schema": "CREATE TABLE subscription (\n  sub_id text PRIMARY KEY,\n  agent_id text NOT NULL,\n  tenant_id text NOT NULL,\n  selector jsonb NOT NULL,\n  delivery jsonb NOT NULL,\n  min_interval_s int NOT NULL DEFAULT 30,\n  cursor_event_id bigint NOT NULL DEFAULT 0\n);\nCREATE TABLE delivery_attempt (\n  sub_id text NOT NULL,\n  event_id bigint NOT NULL,\n  doc_id text NOT NULL,\n  attempt int NOT NULL,\n  status text NOT NULL,\n  at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (sub_id, event_id, attempt)\n);",
+  "interface": "POST /subscriptions  {agent_id, selector:{entity_ids[]|topic}, delivery:{url|mcp}, min_interval_s}  ->  201 {sub_id}\nPush body: {event_id, sub_id, doc_id, op, version, uri, ts}",
+  "code": "def run_once(db, filt, send, now):\n    for s in db.subscriptions():\n        for e in db.events_after(s.tenant_id, s.cursor_event_id, limit=200):\n            if matches(e, s.selector) and filt.can_see(s.agent_id, e.doc_id):\n                last = db.last_sent(s.sub_id, e.doc_id)\n                if last and now - last.at < s.min_interval_s and e.op == \"updated\":\n                    db.mark_coalesced(s.sub_id, e)   # newest update wins when the window closes\n                else:\n                    flush_pending(db, send, s, e.doc_id)\n                    ok = send(s, push_body(s, e))\n                    db.log_attempt(s.sub_id, e.event_id, ok)\n                    if not ok:\n                        break                        # do NOT advance the cursor past a failed push\n            # Tricky part: advance the cursor only after the push or a deliberate skip,\n            # and re-check can_see at send time, since access may change between events.\n            db.advance_cursor(s.sub_id, e.event_id)\n\ndef matches(e, sel):\n    if \"entity_ids\" in sel:\n        return e.doc_id in sel[\"entity_ids\"] or bool(set(e.entity_ids) & set(sel[\"entity_ids\"]))\n    return e.topic == sel.get(\"topic\")",
+  "steps": [
+   {
+    "do": "Create the subscription and attempt tables",
+    "done_when": "both tables exist; insert one subscription row"
+   },
+   {
+    "do": "Write selector matching",
+    "done_when": "unit test: 4 cases (doc id, entity id, topic, no match) pass"
+   },
+   {
+    "do": "Add the can_see check through the access filter",
+    "done_when": "test: an event for a doc the agent cannot see produces zero pushes"
+   },
+   {
+    "do": "Add coalescing per (sub, doc)",
+    "done_when": "3 updates in one window produce 1 push"
+   },
+   {
+    "do": "Keep the cursor behind a failed push and retry with backoff",
+    "done_when": "kill the receiver, restart it, all missed events arrive once or more"
+   },
+   {
+    "do": "Never coalesce deleted or acl_changed events",
+    "done_when": "delete event is delivered immediately in the test"
+   }
+  ],
+  "config": {
+   "MIN_INTERVAL_S": "30 // default coalescing window",
+   "MAX_RETRIES": "8 // then park the subscription as failing",
+   "BATCH_LIMIT": "200 // events per cursor read",
+   "SIGNING_SECRET_REF": "vault://brain/sub-hmac // never in config files"
+  },
+  "verify": [
+   "pytest tests/test_sub.py -q  # all passed",
+   "psql -c \"select count(*) from delivery_attempt where status='ok'\"  # equals pushes in the fixture"
+  ],
+  "pitfalls": [
+   "Delivery is at-least-once, so receivers see duplicates. Include event_id so they can dedupe",
+   "Pushing a title or uri of a document the agent lost access to is itself a leak. Symptom: leak test finds the doc id in a push body",
+   "Coalescing a delete into an update hides the delete"
+  ]
+ },
+ "ll_ro": {
+  "milestone": "M0",
+  "effort_days": 1.5,
+  "depends_on": [
+   "ll_mcp"
+  ],
+  "stack": [
+   {
+    "part": "guard",
+    "pick": "a small Python module with a frozen allow-list",
+    "why": "default deny is simpler to audit than a block-list"
+   },
+   {
+    "part": "MCP server",
+    "pick": "official MCP Python SDK",
+    "why": "check current docs for the server API"
+   },
+   {
+    "part": "scope check",
+    "pick": "string set comparison against READ_SCOPES",
+    "why": "no clever parsing, exact match only"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a block-list of write verbs",
+    "why": "a tool named sync_issue slips past a list that bans create and delete"
+   }
+  ],
+  "install": [
+   "pip install mcp pyyaml pytest",
+   "mkdir -p config && touch config/read_allow.yaml"
+  ],
+  "layout": [
+   "brain/guard/readonly.py : allow-list check and refusal",
+   "config/read_allow.yaml : reviewed read tool names and scopes",
+   "brain/guard/inventory.py : startup report and signed snapshot",
+   "tests/test_readonly.py : refusal tests"
+  ],
+  "schema": "# config/read_allow.yaml\n# tools: names the brain may expose; scopes: the only OAuth scopes a connector may request\ntools:\n  - search\n  - fetch\n  - list_sources\nscopes:\n  - drive.readonly\n  - jira.read\n  - slack.channels.read\nrefusal:\n  code: no_write_tool\n  hint: use action layer",
+  "interface": "def guard_tool(name: str) -> None  # raises Refused(code='no_write_tool', hint='use action layer') unless name is in the allow-list\ndef register_connector(manifest: dict) -> None  # raises on any scope outside READ_SCOPES",
+  "code": "import json, hashlib, time\n\nREAD_TOOLS = frozenset(cfg[\"tools\"])\nREAD_SCOPES = frozenset(cfg[\"scopes\"])\n\nclass Refused(Exception):\n    def __init__(self, tool):\n        self.body = {\"code\": \"no_write_tool\", \"message\": f\"{tool} is not a read tool\",\n                     \"hint\": \"use action layer\"}\n\ndef guard_tool(name, audit):\n    if name not in READ_TOOLS:\n        audit.write({\"event\": \"write_refused\", \"tool\": name, \"ts\": time.time()})\n        raise Refused(name)\n\ndef register_connector(manifest):\n    extra = set(manifest[\"scopes\"]) - READ_SCOPES\n    if extra:\n        raise ValueError(f\"connector {manifest['name']} asks for non-read scopes {sorted(extra)}\")\n\ndef import_bridge_tools(tools):\n    # Tricky part: trust the declared effect class only as a hint; still require the name in the allow-list.\n    return [t for t in tools if t.get(\"effect\") == \"read\" and t[\"name\"] in READ_TOOLS]\n\ndef inventory_snapshot(tools, scopes, sign):\n    body = json.dumps({\"tools\": sorted(tools), \"scopes\": sorted(scopes)}, sort_keys=True)\n    return {\"body\": body, \"sha256\": hashlib.sha256(body.encode()).hexdigest(), \"sig\": sign(body)}",
+  "steps": [
+   {
+    "do": "Write the allow-list file",
+    "done_when": "file lists search, fetch and list_sources only"
+   },
+   {
+    "do": "Implement guard_tool as default deny",
+    "done_when": "pytest: a tool named delete_page raises Refused"
+   },
+   {
+    "do": "Add the scope check at connector registration",
+    "done_when": "pytest: a manifest with drive (write) scope is rejected"
+   },
+   {
+    "do": "Filter MCP bridge tools by effect class and name",
+    "done_when": "pytest: a bridge tool list of 10 with 2 writes imports 8 or fewer"
+   },
+   {
+    "do": "Emit a signed inventory at startup",
+    "done_when": "startup log prints the tool and scope inventory with a sha256"
+   }
+  ],
+  "config": {
+   "READ_ALLOW_FILE": "config/read_allow.yaml // reviewed in code review, never edited at runtime",
+   "FAIL_MODE": "closed // an unreadable allow-list refuses everything",
+   "INVENTORY_SIGN_KEY_REF": "vault://brain/inventory // signs the deploy snapshot"
+  },
+  "verify": [
+   "pytest tests/test_readonly.py -q  # all passed",
+   "python -m brain.guard.inventory  # prints tools [fetch, list_sources, search] and the scope list"
+  ],
+  "pitfalls": [
+   "Importing a vendor MCP server wholesale brings its write tools along. Symptom: the inventory lists a tool you never reviewed",
+   "A connector that asks for a broad scope for convenience: later a bug in its code can write. Reject at registration, not at call time",
+   "Refusing without an audit row hides attempts; log every refusal"
+  ]
+ }
+}

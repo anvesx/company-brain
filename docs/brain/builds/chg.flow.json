@@ -1,0 +1,580 @@
+{
+ "ch_bus": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "log engine, M0",
+    "pick": "Postgres 16 table with advisory locks",
+    "why": "one dependency at T0; a change event is a small envelope, so a table holds the first tenant"
+   },
+   {
+    "part": "log engine, M5",
+    "pick": "Redpanda or Apache Kafka, check current docs for the release",
+    "why": "swap in when sustained events per second outgrow one Postgres; keep the same publish and consume interface"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3.2",
+    "why": "plain SQL, transactions around offset commit"
+   },
+   {
+    "part": "hash",
+    "pick": "hashlib.blake2b from the Python standard library",
+    "why": "stable across processes. Do NOT use Python hash(): it is salted per process and splits a key across lanes after a restart"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "docker run -d --name busdb -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "psql postgresql://postgres:dev@localhost:5432/postgres -f migrations/010_change_log.sql"
+  ],
+  "layout": [
+   "brain/changes/bus.py : partition(), publish(), consume()",
+   "migrations/010_change_log.sql : change_log and consumer_offset tables",
+   "tests/test_bus.py : ordering, replay and crash-restart tests"
+  ],
+  "schema": "CREATE TABLE change_log (\n  id bigserial PRIMARY KEY,\n  lane text NOT NULL CHECK (lane IN ('live','backfill')),\n  part int NOT NULL,\n  tenant_id text NOT NULL,\n  doc_id text NOT NULL,\n  envelope jsonb NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX change_log_read ON change_log (lane, part, id);\nCREATE TABLE consumer_offset (\n  consumer_group text NOT NULL,\n  lane text NOT NULL,\n  part int NOT NULL,\n  last_id bigint NOT NULL DEFAULT 0,\n  PRIMARY KEY (consumer_group, lane, part)\n);",
+  "interface": "def publish(conn, env: dict, lane: str = 'live') -> int  # returns change_log.id\ndef consume(conn, group: str, lane: str, part: int, handler, batch: int = 100) -> int  # events handled; offset commits only after handler returns for all",
+  "code": "import hashlib\nP = 64  # partitions per lane\n\ndef partition(tenant_id: str, doc_id: str) -> int:\n    h = hashlib.blake2b(f\"{tenant_id}\\x1f{doc_id}\".encode(), digest_size=8)\n    return int.from_bytes(h.digest(), \"big\") % P\n\ndef hash_lane(lane, part):\n    return int.from_bytes(hashlib.blake2b(f\"{lane}:{part}\".encode(), digest_size=4).digest(), \"big\")\n\ndef publish(conn, env, lane=\"live\"):\n    part = partition(env[\"tenant\"], env[\"doc_id\"])\n    with conn.transaction():\n        # Serialise writers per partition. Without this, id 11 can commit before\n        # id 10 and a consumer that already read 11 skips 10 forever.\n        conn.execute(\"SELECT pg_advisory_xact_lock(%s)\", (hash_lane(lane, part),))\n        row = conn.execute(\n            \"INSERT INTO change_log(lane,part,tenant_id,doc_id,envelope)\"\n            \" VALUES (%s,%s,%s,%s,%s) RETURNING id\",\n            (lane, part, env[\"tenant\"], env[\"doc_id\"], Jsonb(env))).fetchone()\n    return row[0]\n\ndef consume(conn, group, lane, part, handler, batch=100):\n    with conn.transaction():\n        got = conn.execute(\"SELECT pg_try_advisory_xact_lock(%s)\",\n                           (hash_lane(f\"{group}:{lane}\", part),)).fetchone()[0]\n        if not got:\n            return 0  # another worker owns this partition for this group\n        conn.execute(\"INSERT INTO consumer_offset VALUES (%s,%s,%s,0) ON CONFLICT DO NOTHING\",\n                     (group, lane, part))\n        last = conn.execute(\"SELECT last_id FROM consumer_offset WHERE consumer_group=%s\"\n                            \" AND lane=%s AND part=%s\", (group, lane, part)).fetchone()[0]\n        rows = conn.execute(\"SELECT id, envelope FROM change_log WHERE lane=%s AND part=%s\"\n                            \" AND id>%s ORDER BY id LIMIT %s\", (lane, part, last, batch)).fetchall()\n        for _id, env in rows:\n            handler(env)  # an exception rolls back and the offset stays put\n        if rows:\n            conn.execute(\"UPDATE consumer_offset SET last_id=%s WHERE consumer_group=%s\"\n                         \" AND lane=%s AND part=%s\", (rows[-1][0], group, lane, part))\n        return len(rows)",
+  "steps": [
+   {
+    "do": "Create change_log and consumer_offset",
+    "done_when": "\\d change_log lists 7 columns"
+   },
+   {
+    "do": "Write partition() and test that the same (tenant, doc) maps to one lane across two Python processes",
+    "done_when": "pytest tests/test_bus.py::test_partition_stable passes"
+   },
+   {
+    "do": "Write publish() with the per-partition advisory lock",
+    "done_when": "200 concurrent publishes for one doc leave ids strictly in arrival order"
+   },
+   {
+    "do": "Write consume() with commit after handler",
+    "done_when": "kill the worker mid-batch, restart, and the same events arrive again (at-least-once)"
+   },
+   {
+    "do": "Run live and backfill as separate lanes with separate consumer groups",
+    "done_when": "a flood of 100,000 backfill events does not raise live consume latency above 1 s"
+   },
+   {
+    "do": "Add the 7 day expiry job",
+    "done_when": "DELETE of rows older than 7 days leaves newer rows and offsets intact"
+   }
+  ],
+  "config": {
+   "BUS_PARTITIONS": "64 // per lane; changing it later re-maps keys, so plan a drain first",
+   "BUS_RETENTION_DAYS": "7 // long enough for a weekend outage and a bug-fix replay",
+   "BUS_BATCH": "100 // events per consume call",
+   "PRODUCER_RETRIES": "3 over 2 s // then the producer returns an error and the receiver answers 503"
+  },
+  "verify": [
+   "pytest tests/test_bus.py -q  # all pass, including crash-restart replay",
+   "psql -c \"select part, count(*) from change_log group by part order by 2 desc limit 3\"  # no single partition holds more than about 3x the average for random doc ids"
+  ],
+  "pitfalls": [
+   "Python hash() is salted per process: the same document lands in different lanes after a restart and ordering silently breaks. Use blake2b.",
+   "Serial ids can commit out of order across concurrent writers: a consumer skips a row for ever unless writers are serialised per partition (the advisory lock above) or the consumer reads only below the oldest open transaction.",
+   "Changing the partition count re-maps every key: drain the log before you change P.",
+   "Never put the document body in the envelope: it is stored for 7 days and replayed."
+  ]
+ },
+ "ch_dedupe": {
+  "milestone": "M0",
+  "effort_days": 2.5,
+  "depends_on": [
+   "ch_bus",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16, same database as the pointer registry",
+    "why": "the compare and the idempotency record can share one transaction with the pointer read"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3.2",
+    "why": "plain SQL"
+   },
+   {
+    "part": "not this",
+    "pick": "Redis SETNX alone as the dedupe store",
+    "why": "it forgets on eviction or restart and then lets a stale event overwrite a newer one; the version compare in the pointer write is the real guard, the key is only a fast path"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/020_idempotency.sql"
+  ],
+  "layout": [
+   "brain/changes/dedupe.py : decide() returns apply, duplicate, stale or invalid",
+   "migrations/020_idempotency.sql : idempotency_key and drop_counter tables",
+   "tests/test_dedupe.py : duplicate, stale, tombstone floor and etag cases"
+  ],
+  "schema": "CREATE TABLE idempotency_key (\n  tenant_id text NOT NULL,\n  doc_id text NOT NULL,\n  version text NOT NULL,\n  seen_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, doc_id, version)\n);\nCREATE TABLE drop_counter (\n  day date NOT NULL,\n  reason text NOT NULL CHECK (reason IN ('duplicate','stale','below_tombstone','invalid')),\n  n bigint NOT NULL DEFAULT 0,\n  PRIMARY KEY (day, reason)\n);",
+  "interface": "def decide(conn, e: dict) -> str  # 'apply' | 'duplicate' | 'stale' | 'below_tombstone' | 'invalid'",
+  "code": "def newer(e, stored):\n    if stored is None:\n        return True\n    if e.get(\"version_seq\") is not None and stored[\"version_seq\"] is not None:\n        return e[\"version_seq\"] > stored[\"version_seq\"]\n    # etag-only apps: etags have no order, so use modified_at, then a changed hash\n    if e[\"modified_at\"] != stored[\"modified_at\"]:\n        return e[\"modified_at\"] > stored[\"modified_at\"]\n    return stored[\"content_hash\"] is not None and e[\"content_hash\"] != stored[\"content_hash\"]\n\ndef decide(conn, e):\n    for k in (\"tenant\", \"doc_id\", \"version\", \"content_hash\", \"modified_at\"):\n        if k not in e:\n            return bump(conn, \"invalid\")\n    t, d = e[\"tenant\"], e[\"doc_id\"]\n    # fast path: the exact (doc, version) was seen inside the idempotency window\n    seen = conn.execute(\n        \"INSERT INTO idempotency_key(tenant_id,doc_id,version) VALUES (%s,%s,%s)\"\n        \" ON CONFLICT DO NOTHING\", (t, d, e[\"version\"])).rowcount == 0\n    if seen:\n        return bump(conn, \"duplicate\")\n    floor = conn.execute(\"SELECT floor_version FROM tombstone WHERE tenant_id=%s AND doc_id=%s\",\n                         (t, d)).fetchone()\n    if floor and e.get(\"version_seq\") is not None and e[\"version_seq\"] <= floor[0]:\n        return bump(conn, \"below_tombstone\")\n    stored = conn.execute(\"SELECT version_seq, modified_at, content_hash FROM pointer\"\n                          \" WHERE tenant_id=%s AND uri=%s\", (t, e[\"uri\"])).fetchone()\n    stored = dict(zip((\"version_seq\", \"modified_at\", \"content_hash\"), stored)) if stored else None\n    # the pointer write repeats this compare, so a race here cannot lose an update\n    return \"apply\" if newer(e, stored) else bump(conn, \"stale\")\n\ndef bump(conn, reason):\n    conn.execute(\"INSERT INTO drop_counter(day,reason,n) VALUES (current_date,%s,1)\"\n                 \" ON CONFLICT (day,reason) DO UPDATE SET n = drop_counter.n + 1\", (reason,))\n    return reason",
+  "steps": [
+   {
+    "do": "Create idempotency_key and drop_counter",
+    "done_when": "\\dt lists both tables"
+   },
+   {
+    "do": "Write newer() for ordered numeric versions and for etag-only apps",
+    "done_when": "unit test: seq 5 beats seq 4, seq 4 does not beat 5, etag event with later modified_at wins"
+   },
+   {
+    "do": "Write decide() with the idempotency insert first",
+    "done_when": "replaying one event 100 times returns 'apply' once and 'duplicate' 99 times"
+   },
+   {
+    "do": "Add the tombstone floor check",
+    "done_when": "an event with version at or below the floor returns 'below_tombstone'"
+   },
+   {
+    "do": "Add the 7 day TTL job on idempotency_key",
+    "done_when": "DELETE ... WHERE seen_at < now() - interval '7 days' leaves recent rows"
+   },
+   {
+    "do": "Wire decide() between ch_bus consume and ch_wf",
+    "done_when": "drop_counter shows duplicate and stale rows after a replay run"
+   }
+  ],
+  "config": {
+   "IDEMPOTENCY_TTL_DAYS": "7 // equals bus retention, so a replay inside the window is dropped",
+   "RACE_REREADS": "1 // one re-read of the pointer before the final write",
+   "TOMBSTONE_FLOOR_DAYS": "30 // blocks resurrection by a delayed source redelivery"
+  },
+  "verify": [
+   "pytest tests/test_dedupe.py -q  # all pass",
+   "psql -c \"select reason, n from drop_counter\"  # after replaying a 1,000 event fixture twice: duplicate = 1000"
+  ],
+  "pitfalls": [
+   "Writing the idempotency key before the apply succeeds means a crash after the insert drops the event for 7 days. Insert the key in the same transaction as the handoff, or delete it on failure.",
+   "Etags are not ordered: comparing them as strings reorders events. Use modified_at, then treat a changed hash as newer only when modified_at is equal.",
+   "Skipping the second compare in the pointer write lets two workers race and the older event win."
+  ]
+ },
+ "ch_wf": {
+  "milestone": "M0",
+  "effort_days": 8,
+  "depends_on": [
+   "ch_dedupe",
+   "ch_cursor",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "workflow engine",
+    "pick": "Temporal (MIT, per research/repos.md) with the temporalio Python SDK, check current docs for the release",
+    "why": "durable history, retries and timers without hand-written state machines"
+   },
+   {
+    "part": "dev server",
+    "pick": "temporal CLI dev server for M0",
+    "why": "one binary, no cluster to run yet"
+   },
+   {
+    "part": "not this",
+    "pick": "Celery or a cron plus a retry loop",
+    "why": "a worker crash loses the cursor position; Temporal replays history and resumes"
+   },
+   {
+    "part": "M0 fallback",
+    "pick": "A Postgres job table with the same activity functions",
+    "why": "acceptable at T0 if Temporal is not yet available, because activities are plain idempotent functions"
+   }
+  ],
+  "install": [
+   "pip install temporalio",
+   "brew install temporal",
+   "temporal server start-dev --db-filename brain-temporal.db"
+  ],
+  "layout": [
+   "brain/changes/workflow.py : SyncStream workflow",
+   "brain/changes/activities.py : upsert_pointer, request_derive, refresh_acl, commit_cursor",
+   "brain/changes/worker.py : worker with one task queue per app",
+   "tests/test_workflow.py : retry, resume and DLQ tests using the Temporal test environment"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"SyncStreamInput\",\n  \"type\": \"object\",\n  \"required\": [\"tenant\", \"app\", \"stream\", \"epoch\"],\n  \"properties\": {\n    \"tenant\": {\"type\": \"string\"},\n    \"app\": {\"type\": \"string\"},\n    \"stream\": {\"type\": \"string\"},\n    \"epoch\": {\"type\": \"integer\", \"minimum\": 1},\n    \"cursor\": {\"type\": [\"string\", \"null\"]},\n    \"batch_size\": {\"type\": \"integer\", \"default\": 100}\n  }\n}",
+  "interface": "workflow id = f\"{tenant}:{app}:{stream}\"  # one owner per stream\n@workflow.defn class SyncStream: async def run(self, inp: SyncStreamInput) -> None\n# activities, each idempotent on (doc_id, version): upsert_pointer(ev), request_derive(ev), refresh_acl(ev), commit_cursor(batch)",
+  "code": "from datetime import timedelta\nfrom temporalio import workflow\nfrom temporalio.common import RetryPolicy\n\nRETRY = RetryPolicy(\n    initial_interval=timedelta(seconds=2),\n    backoff_coefficient=2.0,\n    maximum_interval=timedelta(seconds=300),\n    maximum_attempts=6,\n    non_retryable_error_types=[\"InvalidEvent\", \"ForbiddenByPolicy\"],\n)\n\n@workflow.defn\nclass SyncStream:\n    @workflow.run\n    async def run(self, inp):\n        handled = 0\n        while True:\n            batch = await workflow.execute_activity(\n                \"next_batch\", inp, start_to_close_timeout=timedelta(seconds=30), retry_policy=RETRY)\n            if not batch[\"events\"]:\n                await workflow.sleep(timedelta(seconds=5))\n            for ev in batch[\"events\"]:\n                try:\n                    for step in (\"upsert_pointer\", \"request_derive\", \"refresh_acl\"):\n                        await workflow.execute_activity(\n                            step, ev, start_to_close_timeout=timedelta(seconds=60), retry_policy=RETRY)\n                except Exception as err:  # attempts exhausted: park it, keep the stream moving\n                    await workflow.execute_activity(\n                        \"park_in_dlq\", {\"event\": ev, \"error\": str(err)},\n                        start_to_close_timeout=timedelta(seconds=30), retry_policy=RETRY)\n                handled += 1\n            if batch[\"events\"]:\n                # cursor moves only after every event in the batch is applied or parked\n                await workflow.execute_activity(\n                    \"commit_cursor\", {\"inp\": inp, \"batch\": batch},\n                    start_to_close_timeout=timedelta(seconds=30), retry_policy=RETRY)\n            if handled >= 10_000:  # keep history small\n                workflow.continue_as_new(inp)",
+  "steps": [
+   {
+    "do": "Start the Temporal dev server and a worker on task queue 'sync-<app>'",
+    "done_when": "temporal workflow list returns without error and the worker logs 'Worker started'"
+   },
+   {
+    "do": "Write the four activities as idempotent functions keyed by (doc_id, version)",
+    "done_when": "calling each activity twice with one event leaves one pointer row"
+   },
+   {
+    "do": "Write SyncStream with the retry policy above",
+    "done_when": "a test activity that fails 3 times then succeeds completes after 3 retries"
+   },
+   {
+    "do": "Make an activity fail 6 times",
+    "done_when": "the event appears in ch_dlq with 6 history entries and the stream keeps running"
+   },
+   {
+    "do": "Kill the worker mid-batch and restart it",
+    "done_when": "the workflow resumes and no cursor is lost or skipped"
+   },
+   {
+    "do": "Add the per-(tenant, app) concurrency limit from the rate budget",
+    "done_when": "with limit 2, a 20 event batch never shows more than 2 running activities"
+   },
+   {
+    "do": "Add continue-as-new after 10,000 events",
+    "done_when": "history length resets and the cursor carries over"
+   }
+  ],
+  "config": {
+   "RETRY_BASE_S": "2 // first retry delay",
+   "RETRY_CAP_S": "300 // longest delay between retries",
+   "MAX_ATTEMPTS": "6 // then the event goes to the dead-letter queue",
+   "CONCURRENCY_PER_APP": "from the rate budget // never exceed the vendor quota",
+   "CONTINUE_AS_NEW_EVENTS": "10000 // bounds workflow history"
+  },
+  "verify": [
+   "pytest tests/test_workflow.py -q  # retry, resume and DLQ tests pass",
+   "temporal workflow describe --workflow-id acme:drive:main  # status Running after a worker restart"
+  ],
+  "pitfalls": [
+   "Temporal's default retry policy has no attempt limit: a poison event retries forever and blocks the stream. Always set maximum_attempts.",
+   "Workflow code must be deterministic: no random, no wall clock, no network calls inside the workflow. Put all of it in activities. Jitter, if you want it, belongs in an activity (check current docs for built-in jitter).",
+   "Passing document bodies as activity arguments puts them in workflow history. Pass ids and versions only.",
+   "A shared workflow id across two owners causes a duplicate-start error; that is the intended single-owner fence, so handle it, do not work around it."
+  ]
+ },
+ "ch_fill": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [
+   "ch_bus",
+   "ch_cursor"
+  ],
+  "stack": [
+   {
+    "part": "frontier",
+    "pick": "Python heapq in the worker, frontier persisted to Postgres",
+    "why": "simple, resumable, no extra service"
+   },
+   {
+    "part": "pacing",
+    "pick": "A token bucket sized to half the app's hourly quota",
+    "why": "the quota figures are in research/techniques.md T06 to T08; check each app's current docs"
+   },
+   {
+    "part": "runner",
+    "pick": "A Temporal workflow per (tenant, app), same as ch_wf",
+    "why": "the crawl must survive restarts; reuse the engine already chosen"
+   },
+   {
+    "part": "not this",
+    "pick": "Listing everything then sorting",
+    "why": "search stays empty for hours; rank each page as it arrives and send batches early"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*' temporalio",
+   "psql $POINTER_DB_URL -f migrations/030_backfill_frontier.sql"
+  ],
+  "layout": [
+   "brain/changes/backfill.py : score(), crawl()",
+   "brain/changes/pacing.py : TokenBucket",
+   "migrations/030_backfill_frontier.sql : frontier table",
+   "tests/test_backfill.py : ordering and resume tests"
+  ],
+  "schema": "CREATE TABLE backfill_frontier (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  stream text NOT NULL,\n  object_id text NOT NULL,\n  score real NOT NULL,\n  state text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','sent')),\n  next_page_token text,\n  PRIMARY KEY (tenant_id, app, stream, object_id)\n);\nCREATE INDEX backfill_next ON backfill_frontier (tenant_id, app, stream, score DESC) WHERE state = 'queued';",
+  "interface": "def crawl(conn, bus, lister, tenant: str, app: str, stream: str, quota_per_hour: int) -> None  # resumes from the stored frontier and watermark",
+  "code": "import math, time\n\nW_R, W_S, W_P = 0.5, 0.3, 0.2\nLN101 = math.log(101)\n\ndef score(item, now):\n    age_days = (now - item[\"modified_at\"]) / 86400\n    return (W_R * math.exp(-age_days / 30)\n            + W_S * min(1.0, math.log1p(item.get(\"shared_count\", 0)) / LN101)\n            + W_P * min(1.0, math.log1p(item.get(\"view_count\", 0)) / LN101))\n\nclass TokenBucket:\n    def __init__(self, per_hour):\n        self.rate, self.tokens, self.t = per_hour / 3600.0, 1.0, time.monotonic()\n    def take(self):\n        while True:\n            now = time.monotonic()\n            self.tokens = min(5.0, self.tokens + (now - self.t) * self.rate)\n            self.t = now\n            if self.tokens >= 1:\n                self.tokens -= 1\n                return\n            time.sleep((1 - self.tokens) / self.rate)\n\ndef crawl(conn, bus, lister, tenant, app, stream, quota_per_hour):\n    bucket = TokenBucket(quota_per_hour * 0.5)  # stay at or under half the quota\n    token = load_page_token(conn, tenant, app, stream)\n    while True:\n        bucket.take()\n        page = lister(token)\n        now = time.time()\n        for it in page[\"items\"]:\n            save_frontier(conn, tenant, app, stream, it[\"object_id\"], score(it, now))\n        # send the best queued items now, so search works before the crawl ends\n        for row in pop_best(conn, tenant, app, stream, limit=100):\n            bus.publish(row.envelope, lane=\"backfill\")\n        token = page.get(\"next\")\n        commit_watermark(conn, tenant, app, stream, token)  # restart resumes here\n        if not token:\n            return",
+  "steps": [
+   {
+    "do": "Create backfill_frontier",
+    "done_when": "\\d backfill_frontier lists 7 columns"
+   },
+   {
+    "do": "Write score() and check the order on a fixture of 5 items",
+    "done_when": "recent, widely shared item ranks first; an old unshared item ranks last"
+   },
+   {
+    "do": "Write TokenBucket",
+    "done_when": "100 take() calls at 360 per hour take at least 1,000 s of wall time in a fake-clock test"
+   },
+   {
+    "do": "Write crawl() with early batch sends",
+    "done_when": "the first backfill batch reaches the bus before the second page is requested"
+   },
+   {
+    "do": "Kill the crawl and restart",
+    "done_when": "it continues from next_page_token and resends no sent rows"
+   },
+   {
+    "do": "Run against one real app listing with quota 1,000 per hour",
+    "done_when": "measured request rate stays at or below 500 per hour"
+   }
+  ],
+  "config": {
+   "W_RECENCY_SHARED_POPULAR": "0.5,0.3,0.2 // default weights; tune on what users ask about first",
+   "RECENCY_SCALE_DAYS": "30 // recency half scale",
+   "QUOTA_SHARE": "0.5 // backfill never takes more than half the quota; live sync needs the rest"
+  },
+  "verify": [
+   "pytest tests/test_backfill.py -q  # order, pacing and resume tests pass",
+   "psql -c \"select state, count(*) from backfill_frontier group by 1\"  # sent count rises while queued is still non-zero"
+  ],
+  "pitfalls": [
+   "Sorting only after the full listing finishes leaves search empty for hours on a large Slack or Notion workspace.",
+   "Spending the whole quota on backfill starves live sync and the webhook worker sees 429 errors.",
+   "Saving the page token before the batch is sent loses that page on a crash; commit the watermark after the send."
+  ]
+ },
+ "ch_tomb": {
+  "milestone": "M1",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_ptr",
+   "ch_dedupe"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16, same database as the pointer registry",
+    "why": "soft delete and tombstone write share one transaction"
+   },
+   {
+    "part": "purge queue",
+    "pick": "A purge_job table polled with FOR UPDATE SKIP LOCKED",
+    "why": "no extra queue service; ix_gc and gv_erase read it"
+   },
+   {
+    "part": "probe",
+    "pick": "A strong-read search probe through the lexical index API",
+    "why": "an eventually consistent read can show zero hits while the document is still stored; check current engine docs for a strong or refresh option"
+   },
+   {
+    "part": "not this",
+    "pick": "Hard delete of the pointer row at once",
+    "why": "the dedupe check then has no floor and a delayed source redelivery brings the document back"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/040_tombstone.sql"
+  ],
+  "layout": [
+   "brain/changes/tombstone.py : apply_tombstone(), probe_purged()",
+   "migrations/040_tombstone.sql : tombstone and purge_job tables",
+   "tests/test_tombstone.py : soft delete, floor and probe tests"
+  ],
+  "schema": "CREATE TABLE tombstone (\n  tenant_id text NOT NULL,\n  doc_id text NOT NULL,\n  uri text NOT NULL,\n  reason text NOT NULL CHECK (reason IN ('deleted','access_removed','trashed')),\n  floor_version bigint NOT NULL,\n  at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, doc_id)\n);\nCREATE TABLE purge_job (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  state text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','probing','done','failed')),\n  due_at timestamptz NOT NULL,\n  attempts int NOT NULL DEFAULT 0\n);",
+  "interface": "def apply_tombstone(conn, ev: dict) -> None  # ev = {tenant, doc_id, uri, reason, version_seq}; idempotent",
+  "code": "def apply_tombstone(conn, ev):\n    t, d, uri = ev[\"tenant\"], ev[\"doc_id\"], ev[\"uri\"]\n    with conn.transaction():\n        # 1. hide now: the search pre-filter excludes deleted_at IS NOT NULL\n        conn.execute(\"UPDATE pointer SET deleted_at = COALESCE(deleted_at, now())\"\n                     \" WHERE tenant_id=%s AND uri=%s\", (t, uri))\n        # 2. floor: GREATEST keeps the highest floor if a second delete arrives\n        conn.execute(\n            \"INSERT INTO tombstone(tenant_id,doc_id,uri,reason,floor_version)\"\n            \" VALUES (%s,%s,%s,%s,%s)\"\n            \" ON CONFLICT (tenant_id,doc_id) DO UPDATE SET\"\n            \" floor_version = GREATEST(tombstone.floor_version, EXCLUDED.floor_version)\",\n            (t, d, uri, ev[\"reason\"], ev[\"version_seq\"]))\n        # 3. queue the purge in the same transaction, so hide and purge never diverge\n        conn.execute(\"INSERT INTO purge_job(tenant_id,uri,due_at)\"\n                     \" SELECT %s,%s, now() + interval '24 hours'\"\n                     \" WHERE NOT EXISTS (SELECT 1 FROM purge_job WHERE tenant_id=%s\"\n                     \" AND uri=%s AND state <> 'done')\", (t, uri, t, uri))\n\ndef probe_purged(search, tenant, title_terms):\n    # strong read: ask the engine to refresh first, then expect zero hits\n    hits = search(tenant=tenant, query=title_terms, consistency=\"strong\", include_deleted=True)\n    return len(hits) == 0",
+  "steps": [
+   {
+    "do": "Create tombstone and purge_job",
+    "done_when": "\\dt lists both tables"
+   },
+   {
+    "do": "Write apply_tombstone() as one transaction",
+    "done_when": "after one call: pointer.deleted_at is set, one tombstone row and one purge_job row exist"
+   },
+   {
+    "do": "Call it twice with the same event",
+    "done_when": "still one tombstone row and one queued purge_job row"
+   },
+   {
+    "do": "Make search pre-filter exclude deleted_at IS NOT NULL",
+    "done_when": "a query for the deleted document returns zero hits within 5 s"
+   },
+   {
+    "do": "Write the purge worker that calls ix_gc and gv_erase, then probe_purged",
+    "done_when": "purge_job.state reaches 'done' only after the probe returns zero hits"
+   },
+   {
+    "do": "Add the 30 day tombstone expiry",
+    "done_when": "a 31 day old tombstone row is deleted by the sweep"
+   }
+  ],
+  "config": {
+   "SOFT_DELETE_P95_S": "5 // hide must be fast; this is the privacy-visible part",
+   "PURGE_DEADLINE_H": "24 // tune to the tenant's legal terms",
+   "TOMBSTONE_RETENTION_DAYS": "30 // blocks resurrection, then drops"
+  },
+  "verify": [
+   "pytest tests/test_tombstone.py -q  # all pass",
+   "psql -c \"select count(*) from purge_job where state='queued' and due_at < now()\"  # 0 in a healthy system"
+  ],
+  "pitfalls": [
+   "Soft-deleting the pointer but not queuing the purge leaves vectors and snippets searchable by id for ever. Do both in one transaction.",
+   "A permission removal looks like a delete to the user but the document still exists: the reason column keeps the two apart so a later re-grant is not blocked by an old floor. Check current source docs for the removed-reason field.",
+   "Probing with an eventually consistent read reports success too early. Use a strong read."
+  ]
+ },
+ "ch_cursor": {
+  "milestone": "M0",
+  "effort_days": 3,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "cursor update and outbox insert must share one transaction"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3.2",
+    "why": "explicit transactions"
+   },
+   {
+    "part": "encryption",
+    "pick": "pgcrypto pgp_sym_encrypt for the cursor column, key from the tenant data key",
+    "why": "cursors can embed tokens or page handles; check current docs for the key source you use"
+   },
+   {
+    "part": "not this",
+    "pick": "Writing the cursor to Redis or a file after publishing the events",
+    "why": "a crash between the two writes either loses events (cursor first) or replays an unbounded range (events first); the outbox closes that gap"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto'",
+   "psql $POINTER_DB_URL -f migrations/050_cursor.sql"
+  ],
+  "layout": [
+   "brain/changes/cursor.py : commit_batch(), relay_outbox(), lag()",
+   "migrations/050_cursor.sql : stream_cursor and outbox tables",
+   "tests/test_cursor.py : epoch fence and atomicity tests"
+  ],
+  "schema": "CREATE TABLE stream_cursor (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  stream text NOT NULL,\n  cursor bytea,\n  watermark timestamptz,\n  epoch bigint NOT NULL DEFAULT 1,\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, app, stream)\n);\nCREATE TABLE outbox (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  envelope jsonb NOT NULL,\n  sent_at timestamptz\n);\nCREATE INDEX outbox_unsent ON outbox (id) WHERE sent_at IS NULL;",
+  "interface": "def commit_batch(conn, tenant, app, stream, epoch, new_cursor, watermark, events) -> bool  # False if the epoch is stale (a newer owner exists)\ndef relay_outbox(conn, bus, limit=500) -> int  # publishes unsent rows to ch_bus, marks them sent",
+  "code": "def commit_batch(conn, tenant, app, stream, epoch, new_cursor, watermark, events):\n    with conn.transaction():\n        cur = conn.execute(\n            \"UPDATE stream_cursor SET cursor=pgp_sym_encrypt(%s, %s), watermark=%s, updated_at=now()\"\n            \" WHERE tenant_id=%s AND app=%s AND stream=%s AND epoch=%s\",\n            (new_cursor, KEY, watermark, tenant, app, stream, epoch))\n        if cur.rowcount == 0:\n            return False  # fenced: someone took over with a higher epoch\n        for ev in events:\n            conn.execute(\"INSERT INTO outbox(tenant_id, envelope) VALUES (%s,%s)\",\n                         (tenant, Jsonb(ev)))\n    return True\n\ndef take_over(conn, tenant, app, stream):\n    row = conn.execute(\n        \"UPDATE stream_cursor SET epoch = epoch + 1 WHERE tenant_id=%s AND app=%s AND stream=%s\"\n        \" RETURNING epoch\", (tenant, app, stream)).fetchone()\n    return row[0]\n\ndef relay_outbox(conn, bus, limit=500):\n    with conn.transaction():\n        rows = conn.execute(\"SELECT id, envelope FROM outbox WHERE sent_at IS NULL\"\n                            \" ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED\", (limit,)).fetchall()\n        for oid, env in rows:\n            bus.publish(env)  # at-least-once: a crash here re-sends, ch_dedupe drops the repeat\n        if rows:\n            conn.execute(\"UPDATE outbox SET sent_at=now() WHERE id = ANY(%s)\", ([r[0] for r in rows],))\n    return len(rows)\n\ndef lag_seconds(conn, tenant, app, stream):\n    return conn.execute(\"SELECT EXTRACT(EPOCH FROM now() - watermark) FROM stream_cursor\"\n                        \" WHERE tenant_id=%s AND app=%s AND stream=%s\", (tenant, app, stream)).fetchone()[0]",
+  "steps": [
+   {
+    "do": "Create stream_cursor and outbox",
+    "done_when": "\\d stream_cursor lists 7 columns"
+   },
+   {
+    "do": "Write commit_batch with the epoch check",
+    "done_when": "a commit with the old epoch returns False and writes no outbox rows"
+   },
+   {
+    "do": "Raise the epoch with take_over, then commit with the old owner's epoch",
+    "done_when": "the old owner's commit returns False; the new owner's returns True"
+   },
+   {
+    "do": "Raise an exception after the outbox insert but before commit",
+    "done_when": "cursor and outbox are both unchanged (single transaction)"
+   },
+   {
+    "do": "Write relay_outbox and run it against ch_bus",
+    "done_when": "outbox rows get sent_at set and appear in change_log"
+   },
+   {
+    "do": "Expose lag_seconds to op_lag",
+    "done_when": "a stream with a 10 minute old watermark reports about 600"
+   }
+  ],
+  "config": {
+   "OUTBOX_RETENTION_H": "24 // after sent_at, then delete",
+   "RELAY_BATCH": "500 rows or 100 ms // whichever first",
+   "CURSOR_KEY": "tenant data key // from the key service, never hard-coded"
+  },
+  "verify": [
+   "pytest tests/test_cursor.py -q  # fence and atomicity tests pass",
+   "psql -c \"select count(*) from outbox where sent_at is null\"  # drops to 0 within seconds of the relay running"
+  ],
+  "pitfalls": [
+   "Publishing events before the cursor commit, or the cursor before the events, gives either duplicates without bound or silent loss. Use the outbox.",
+   "Forgetting the epoch check lets a slow old worker overwrite a newer cursor and re-read a range already handled.",
+   "Sources expire cursors (for example a delta token after 7 days, research/techniques.md T02): store the issue time so a stale cursor triggers a full resync, not a 410 loop."
+  ]
+ },
+ "ch_dlq": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "ch_bus"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 table",
+    "why": "a parked event is a row with history, queried by class and age"
+   },
+   {
+    "part": "replay",
+    "pick": "A small CLI plus an HTTP route in the admin app",
+    "why": "one-click replay needs an endpoint the admin screen can call"
+   },
+   {
+    "part": "alerting",
+    "pick": "Prometheus counter exported through OpenTelemetry, check current docs for the exporter",
+    "why": "depth by error class drives the alert; no custom alert service"
+   },
+   {
+    "part": "not this",
+    "pick": "Retrying forever inside the workflow",
+    "why": "a poison event then blocks its stream and hides the real error"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*' fastapi uvicorn",
+   "psql $POINTER_DB_URL -f migrations/060_dlq.sql"
+  ],
+  "layout": [
+   "brain/changes/dlq.py : park(), replay(), depth_by_class()",
+   "brain/admin/dlq_routes.py : GET /dlq, POST /dlq/{id}/replay",
+   "migrations/060_dlq.sql : dead_letter table",
+   "tests/test_dlq.py : park, throttled replay and expiry tests"
+  ],
+  "schema": "CREATE TABLE dead_letter (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  envelope jsonb NOT NULL,\n  error_class text NOT NULL CHECK (error_class IN ('transient','auth','schema','poison','rate_limit','unknown')),\n  attempts int NOT NULL,\n  history jsonb NOT NULL,\n  parked_at timestamptz NOT NULL DEFAULT now(),\n  state text NOT NULL DEFAULT 'parked' CHECK (state IN ('parked','replayed','resolved'))\n);\nCREATE INDEX dead_letter_class ON dead_letter (tenant_id, error_class, state);",
+  "interface": "def park(conn, ev: dict, error_class: str, attempts: int, history: list) -> int  # returns dead_letter.id\ndef replay(conn, bus, ids: list[int], budget_per_min: int) -> int  # events resent, capped by the replay rate",
+  "code": "import time\n\ndef park(conn, ev, error_class, attempts, history):\n    assert \"body\" not in ev, \"envelopes carry ids only\"\n    row = conn.execute(\n        \"INSERT INTO dead_letter(tenant_id, envelope, error_class, attempts, history)\"\n        \" VALUES (%s,%s,%s,%s,%s) RETURNING id\",\n        (ev[\"tenant\"], Jsonb(ev), error_class, attempts, Jsonb(history))).fetchone()\n    return row[0]\n\ndef replay(conn, bus, ids, budget_per_min, probe=lambda c: True):\n    sent, gap = 0, 60.0 / max(budget_per_min, 1)\n    rows = conn.execute(\"SELECT id, envelope, error_class FROM dead_letter\"\n                        \" WHERE id = ANY(%s) AND state='parked' ORDER BY id\", (ids,)).fetchall()\n    for did, env, cls in rows:\n        if not probe(cls):  # replaying into a still-broken dependency just refills the queue\n            continue\n        bus.publish(env)\n        conn.execute(\"UPDATE dead_letter SET state='replayed' WHERE id=%s\", (did,))\n        sent += 1\n        time.sleep(gap)  # replay rate = share of the app's request budget\n    return sent\n\ndef depth_by_class(conn, tenant):\n    return dict(conn.execute(\"SELECT error_class, count(*) FROM dead_letter\"\n                             \" WHERE tenant_id=%s AND state='parked' GROUP BY 1\", (tenant,)).fetchall())",
+  "steps": [
+   {
+    "do": "Create dead_letter",
+    "done_when": "\\d dead_letter lists 8 columns"
+   },
+   {
+    "do": "Write park() and call it from ch_wf after 6 attempts",
+    "done_when": "a forced failure produces one row with 6 history entries"
+   },
+   {
+    "do": "Write depth_by_class and export it as a gauge",
+    "done_when": "the metric shows the parked count per class"
+   },
+   {
+    "do": "Add the alert rule",
+    "done_when": "1 poison event or depth above 0.5% of the last 24 h events fires the alert in a test"
+   },
+   {
+    "do": "Write replay() with the rate cap and cause check",
+    "done_when": "replaying 10 rows at 60 per minute takes about 10 s; a still-broken class is skipped"
+   },
+   {
+    "do": "Add the 30 day expiry",
+    "done_when": "a 31 day old row is deleted by the sweep"
+   }
+  ],
+  "config": {
+   "DLQ_RETENTION_DAYS": "30 // long enough to find and fix a cause",
+   "REPLAY_SHARE": "0.10 // of the app's request budget, so replay cannot starve live sync",
+   "ALERT_DEPTH_PCT": "0.5 // of the last 24 h event count; also any poison event"
+  },
+  "verify": [
+   "pytest tests/test_dlq.py -q  # park, replay cap and expiry pass",
+   "curl -s localhost:8000/dlq?class=poison | jq length  # 0 when healthy"
+  ],
+  "pitfalls": [
+   "Replaying at full speed after an outage hits the vendor rate limit again and refills the queue. Cap the replay rate and check the cause first.",
+   "Storing the full event body in history leaks content into an ops table. Park the envelope and error text only.",
+   "Treating every failure as 'unknown' makes the depth alert useless. Classify at the raise site."
+  ]
+ }
+}

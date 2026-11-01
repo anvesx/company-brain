@@ -1,0 +1,187 @@
+{
+ "ll_delta": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "ch_bus",
+   "ix_link"
+  ],
+  "stack": [
+   {
+    "part": "match",
+    "pick": "link index inverted by pointer",
+    "why": "Each event looks up its audience directly"
+   },
+   {
+    "part": "do not pick",
+    "pick": "scanning all profiles per event",
+    "why": "It grows with people times events"
+   }
+  ],
+  "install": [
+   "pip install pytest",
+   "pip install psycopg[binary]"
+  ],
+  "layout": [
+   "brain/proactive/delta.py",
+   "tests/test_delta.py"
+  ],
+  "schema": "{\"person\":\"str\",\"event_id\":\"str\",\"reason\":\"str\",\"depth\":\"int\"}",
+  "interface": "def candidates(events: list[Event]) -> list[Candidate]",
+  "code": "def candidates(events, links, profiles, acl, depth=2, cap=200):\n    out = []\n    for e in events:\n        for u in links.audience(e.pointer, depth)[:cap]:           # people who own or depend on it\n            if acl.can_read(u, e.pointer) and e.kind in profiles[u].watch_kinds:\n                out.append(Candidate(u, e.id, \"owner\" if links.owns(u, e.pointer) else \"linked\", links.depth(u, e.pointer)))\n    return out",
+  "steps": [
+   {
+    "do": "Write audience lookup on the link index",
+    "done_when": "owner event reaches owner"
+   },
+   {
+    "do": "Add the permission check",
+    "done_when": "unreadable pointer gives no candidate"
+   },
+   {
+    "do": "Add the 200 audience cap",
+    "done_when": "large audience is capped and flagged"
+   },
+   {
+    "do": "Add the cursor",
+    "done_when": "restart does not repeat events"
+   }
+  ],
+  "config": {
+   "LINK_DEPTH": "2 // links from owner or dependency",
+   "BATCH": "500 // events per cycle",
+   "AUDIENCE_CAP": "200 // people per event"
+  },
+  "verify": [
+   "pytest tests/test_delta.py -q  # all passed",
+   "python -m brain.proactive.delta --replay sample.jsonl  # prints candidates for the owner only"
+  ],
+  "pitfalls": [
+   "Emitting before the permission check",
+   "No de-duplication by event id"
+  ]
+ },
+ "ll_score": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "ll_delta"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "rule score first, small gradient-boosted ranker later (scikit-learn or LightGBM)",
+    "why": "Start free and measurable"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a large model scorer",
+    "why": "Per-candidate cost and latency for a 0 to 1 number"
+   }
+  ],
+  "install": [
+   "pip install scikit-learn",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/proactive/score.py",
+   "tests/test_score.py"
+  ],
+  "schema": "{\"person\":\"str\",\"event_id\":\"str\",\"score\":\"float\",\"kept\":\"bool\"}",
+  "interface": "def score(c: Candidate, hist: History) -> float  # 0 to 1",
+  "code": "W = dict(kind=0.4, close=0.3, recent=0.2, seen=0.5)\n\ndef score(c, h):\n    s = W[\"kind\"]*KIND[c.kind] + W[\"close\"]*(1/(1+c.depth)) + W[\"recent\"]*h.recency(c) - W[\"seen\"]*h.seen(c)\n    return max(0.0, min(1.0, s))\n\ndef select(cands, h, quota, bar=0.6):\n    ranked = sorted(((score(c, h), c) for c in cands), key=lambda x: -x[0])\n    return [c for s, c in ranked if s >= bar][:max(0, quota.cap - quota.used)]",
+  "steps": [
+   {
+    "do": "Write the rule score",
+    "done_when": "owner scores above linked"
+   },
+   {
+    "do": "Add the bar and cap",
+    "done_when": "fourth candidate waits"
+   },
+   {
+    "do": "Log both rule and model scores",
+    "done_when": "table has two columns"
+   },
+   {
+    "do": "Train the ranker from dismissals",
+    "done_when": "beats rule on held-out days before it ships"
+   }
+  ],
+  "config": {
+   "BAR": "0.6 // minimum score",
+   "DAILY_CAP": "3 // notes per person per day",
+   "WEIGHTS": "kind 0.4, close 0.3, recent 0.2, seen 0.5"
+  },
+  "verify": [
+   "pytest tests/test_score.py -q  # all passed",
+   "python -m brain.proactive.score --day sample  # at most 3 kept per person"
+  ],
+  "pitfalls": [
+   "Counting the day in server time instead of the person's",
+   "Letting the model set the cap"
+  ]
+ },
+ "ll_note": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "ll_score",
+   "ll_sub"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "small model through the gateway with JSON schema",
+    "why": "Short cited output"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a template-free design",
+    "why": "A failed cite check needs a plain fallback"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/proactive/note.py",
+   "tests/test_note.py"
+  ],
+  "schema": "{\"text\":\"str\",\"citations\":[\"passage_id\"],\"reason\":\"str\"}",
+  "interface": "def write_note(ctx, cand, passages) -> Note  # falls back to a template",
+  "code": "def write_note(gw, ctx, cand, ps):\n    out = gw.json(model=SMALL, schema=NoteOut, prompt=render(cand, ps))\n    ok = out.citations and all(c in {p.id for p in ps} for c in out.citations) and len(out.text.split()) <= 60\n    return Note(out.text, out.citations, out.reason) if ok else template(cand)",
+  "steps": [
+   {
+    "do": "Write the prompt and schema",
+    "done_when": "output validates"
+   },
+   {
+    "do": "Add the cite and length check",
+    "done_when": "uncited note is replaced by the template"
+   },
+   {
+    "do": "Fetch passages with the person's token",
+    "done_when": "unreadable passage cancels the note"
+   },
+   {
+    "do": "Add mute handling",
+    "done_when": "muted reason sends nothing"
+   }
+  ],
+  "config": {
+   "MAX_WORDS": "60 // design limit",
+   "RETRY_DELIVERY": "1 // one retry",
+   "DEFAULT_CHANNEL": "chat DM // set per person"
+  },
+  "verify": [
+   "pytest tests/test_note.py -q  # all passed",
+   "python -m brain.proactive.note --cand sample.json  # note has a citation and under 60 words"
+  ],
+  "pitfalls": [
+   "Using a shared token to fetch passages",
+   "Sending when the cite check fails"
+  ]
+ }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.stryker-tmp/
+reports/
+*.log
+.env*
+!.env.example
+.DS_Store
+# private, not for the public repo
+/research/
+/devx-brain.html
+docs/html/devx-os-*
+docs/html/*.pdf

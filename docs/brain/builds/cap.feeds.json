@@ -1,0 +1,464 @@
+{
+ "cf_norm": {
+  "milestone": "M4",
+  "effort_days": 3,
+  "depends_on": [
+   "zn_tag",
+   "ch_bus"
+  ],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12 standard library (hashlib, unicodedata)",
+    "why": "hashing and normalising need nothing else"
+   },
+   {
+    "part": "idempotency table",
+    "pick": "Redis 7 SET NX with a 24 h expiry",
+    "why": "atomic add-if-absent; do NOT keep it in process memory, two workers would both accept the same turn"
+   },
+   {
+    "part": "schema check",
+    "pick": "pydantic 2.x, check current docs for the version",
+    "why": "reject envelopes without a time or owner at the door"
+   }
+  ],
+  "install": [
+   "pip install pydantic redis pytest",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/capture/envelope.py : build_envelope and the hash",
+   "brain/capture/idem.py : Redis idempotency",
+   "brain/capture/owner.py : account to owner id mapping, quarantine",
+   "tests/test_envelope.py : uri, zone, unicode, unknown owner"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"Message\",\n  \"type\": \"object\",\n  \"required\": [\"uri\", \"owner\", \"tool\", \"session\", \"turn\", \"time\", \"content_hash\", \"zone\"],\n  \"properties\": {\n    \"uri\": {\"type\": \"string\", \"pattern\": \"^chat://[a-z0-9-]+/.+\"},\n    \"owner\": {\"type\": \"string\"},\n    \"tool\": {\"type\": \"string\"},\n    \"session\": {\"type\": \"string\"},\n    \"turn\": {\"type\": \"integer\", \"minimum\": 0},\n    \"time\": {\"type\": \"string\", \"format\": \"date-time\"},\n    \"content_hash\": {\"type\": \"string\", \"pattern\": \"^[0-9a-f]{64}$\"},\n    \"zone\": {\"const\": \"personal\"}\n  }\n}",
+  "interface": "def to_envelope(rec: SourceRecord, resolve_owner) -> Message | None  # None means quarantined; always returns zone 'personal'",
+  "code": "import hashlib, unicodedata\n\ndef canon(text):\n    t = unicodedata.normalize('NFC', text).replace('\\r\\n', '\\n').replace('\\r', '\\n')\n    return '\\n'.join(line.rstrip() for line in t.split('\\n')).strip()\n\ndef to_envelope(rec, resolve_owner, idem, quarantine):\n    owner = resolve_owner(rec.tool, rec.account)\n    if owner is None:\n        quarantine(rec)                 # never guess an owner\n        return None\n    if rec.time is None:\n        return None\n    chash = hashlib.sha256(canon(rec.text).encode('utf-8')).hexdigest()\n    uri = f'chat://{rec.tool}/{owner}/{rec.session}/{rec.turn}'\n    # idempotency: same uri and same hash seen in the last 24 h is dropped\n    if not idem.add_if_absent(f'{uri}|{chash}', ttl=86400):\n        return None\n    msg = {'uri': uri, 'owner': owner, 'tool': rec.tool, 'session': rec.session,\n           'turn': rec.turn, 'time': rec.time.isoformat(), 'content_hash': chash,\n           'zone': 'personal'}        # tricky part: the only zone this card can write\n    assert msg['zone'] == 'personal'\n    return msg",
+  "steps": [
+   {
+    "do": "Write canon() and the hash",
+    "done_when": "test: two Unicode forms of the same text give one hash"
+   },
+   {
+    "do": "Write the uri builder and the schema check",
+    "done_when": "test: a record without a time is rejected"
+   },
+   {
+    "do": "Add the Redis idempotency check",
+    "done_when": "test: same turn twice gives one envelope"
+   },
+   {
+    "do": "Add owner resolution and the quarantine queue",
+    "done_when": "test: unknown account lands in quarantine, nothing reaches ch_bus"
+   },
+   {
+    "do": "Emit to zn_tag and ch_bus and the seen set to cf_del",
+    "done_when": "10,000 test turns produce 10,000 events and 10,000 uris in the seen set"
+   },
+   {
+    "do": "Add a test asserting zone is personal on every envelope",
+    "done_when": "10,000 of 10,000 pass"
+   }
+  ],
+  "config": {
+   "IDEM_TTL_S": "86400 // 24 h, design",
+   "QUARANTINE_TTL_DAYS": "7 // then alert and drop",
+   "MAX_PART_BYTES": "1048576 // split longer turns into parts",
+   "HASH_ALGO": "sha256 // do not shorten"
+  },
+  "verify": [
+   "pytest tests/test_envelope.py -q  # 5 passed",
+   "python tests/zone_check.py --n 10000  # violations: 0"
+  ],
+  "pitfalls": [
+   "Hashing text without NFC normalisation: the same text from two sources gets two hashes and shows as an edit",
+   "Taking the owner from a text field in the record: a feed can then claim another person; map from the credential and workspace",
+   "Using a 64-bit hash for speed: at 10^9 turns the collision chance is about 2.7 percent"
+  ]
+ },
+ "cf_claude": {
+  "milestone": "M4",
+  "effort_days": 8,
+  "depends_on": [
+   "cf_norm",
+   "sc_runtime",
+   "ch_sched"
+  ],
+  "stack": [
+   {
+    "part": "client",
+    "pick": "httpx 0.27 or newer with a token bucket",
+    "why": "streams pages, supports timeouts; endpoint paths and page sizes: check current docs, not in our research"
+   },
+   {
+    "part": "cursor state",
+    "pick": "Postgres 16 table keyed by organisation",
+    "why": "cursor commit must be transactional with the hand-off flag"
+   },
+   {
+    "part": "key handling",
+    "pick": "the connector runtime behind sc_runtime reads the key from the token vault (so_oauth)",
+    "why": "do NOT put the compliance key in an environment file or a tool surface"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary] pytest",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/feeds/claude/client.py : paged calls and bucket",
+   "brain/feeds/claude/sync.py : cursor loop and tombstone handling",
+   "migrations/010_feed_cursor.sql : cursor table",
+   "tests/test_claude_sync.py : resume, tombstone, rate cap, 429"
+  ],
+  "schema": "CREATE TABLE feed_cursor (\n  feed text NOT NULL,\n  org_id text NOT NULL,\n  updated_at timestamptz,\n  after_id text,\n  committed_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (feed, org_id)\n);",
+  "interface": "async def run_claude_sync(org_id: str, budget_s: int = 300) -> RunReport  # pages, records, tombstones, http_429, ms; cursor advances only on cf_norm confirm",
+  "code": "import asyncio, time\n\nclass Bucket:\n    def __init__(self, per_sec):\n        self.rate, self.tokens, self.t = per_sec, per_sec, time.monotonic()\n    async def take(self):\n        while True:\n            now = time.monotonic()\n            self.tokens = min(self.rate, self.tokens + (now - self.t) * self.rate)\n            self.t = now\n            if self.tokens >= 1:\n                self.tokens -= 1\n                return\n            await asyncio.sleep(0.05)\n\nasync def run_claude_sync(org, client, db, norm, tomb, budget_s=300):\n    bucket, t0, rep = Bucket(5.0), time.monotonic(), {'pages': 0, 'tomb': 0, '429': 0}   # 5/s = half of 600/min\n    cur = db.get_cursor('claude', org)         # (updated_at, after_id) or None\n    while time.monotonic() - t0 < budget_s:\n        await bucket.take()\n        params = {'order_by': 'updated_at'}\n        if cur:\n            params['after_id'] = cur.after_id\n        r = await client.get(LIST_PATH, params=params)   # LIST_PATH: check current docs\n        if r.status_code == 429:\n            rep['429'] += 1\n            await asyncio.sleep(float(r.headers.get('retry-after', 60)))\n            continue\n        r.raise_for_status()\n        page = r.json()\n        if not page['items']:\n            break\n        for it in page['items']:\n            if it.get('deleted_at'):\n                tomb(it['id'], 'vendor_tombstone'); rep['tomb'] += 1\n        if norm(page['items']):                # commit only after confirm\n            cur = db.commit_cursor('claude', org, page['items'][-1])\n            rep['pages'] += 1\n        else:\n            break\n    return rep",
+  "steps": [
+   {
+    "do": "Create the cursor table and the bucket class",
+    "done_when": "unit test: 600 take() calls over 60 s are held to about 300"
+   },
+   {
+    "do": "Write the list loop against a recorded fixture of one page",
+    "done_when": "fixture of 3 pages yields 3 commits"
+   },
+   {
+    "do": "Handle deleted_at as a tombstone event",
+    "done_when": "test: deleted item emits a tombstone and no content"
+   },
+   {
+    "do": "Add 429, 401 and 5xx handling with the stated delays",
+    "done_when": "test: 429 with retry-after 30 waits 30 s and resumes at the same cursor"
+   },
+   {
+    "do": "Run against a real organisation with a read-only key",
+    "done_when": "first run commits the cursor; second run returns only new records"
+   },
+   {
+    "do": "Add the separate backfill lane at a lower share of the rate",
+    "done_when": "backfill never pushes the live lane over 300 calls per minute combined"
+   }
+  ],
+  "config": {
+   "RATE_PER_SEC": "5 // half of the documented 600 per minute per parent organisation",
+   "OVERLAP_S": "60 // re-read before the cursor and dedupe",
+   "RUN_BUDGET_S": "300 // design",
+   "SCOPES": "read:compliance_activities,read:compliance_user_data,read:compliance_org_data // never the delete scope",
+   "KEY_ROTATE_DAYS": "90 // design"
+  },
+  "verify": [
+   "pytest tests/test_claude_sync.py -q  # 5 passed",
+   "psql -c \"select feed, org_id, after_id from feed_cursor\"  # one row per organisation after a run"
+  ],
+  "pitfalls": [
+   "Requesting the delete scope 'in case we need it': a bug can then delete vendor data; ask for read scopes only",
+   "Committing the cursor before cf_norm confirms: a crash skips a page for good",
+   "Using the Admin API key: it reaches the Activity Feed only, not chat content; a compliance access key is needed",
+   "Assuming Team or Pro plans work: no route is documented for them, treat them as not covered"
+  ]
+ },
+ "cf_openai": {
+  "milestone": "M4",
+  "effort_days": 6,
+  "depends_on": [
+   "cf_norm",
+   "sc_runtime",
+   "ch_sched"
+  ],
+  "stack": [
+   {
+    "part": "client",
+    "pick": "httpx 0.27 or newer, streaming line reader",
+    "why": "reads JSONL line by line with O(1) memory; endpoint and auth details: check current docs (the vendor help pages were not readable in our research)"
+   },
+   {
+    "part": "watermark state",
+    "pick": "Postgres 16 table per workspace",
+    "why": "watermark moves only after cf_norm confirms"
+   },
+   {
+    "part": "scheduling",
+    "pick": "the adaptive scheduler (ch_sched)",
+    "why": "do NOT add a second cron for this feed"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary] pytest",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/feeds/openai/windows.py : window maths and the pull loop",
+   "brain/feeds/openai/parse.py : JSONL line to SourceRecord",
+   "migrations/011_feed_watermark.sql : watermark table",
+   "tests/test_openai_windows.py : margin, resume, bad lines, old watermark"
+  ],
+  "schema": "CREATE TABLE feed_watermark (\n  feed text NOT NULL,\n  workspace text NOT NULL,\n  watermark timestamptz NOT NULL,\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (feed, workspace)\n);",
+  "interface": "async def pull_workspace(workspace: str, now: datetime, budget_s: int = 300) -> RunReport  # windows, records, bad_lines, lag_s",
+  "code": "from datetime import timedelta\nimport json\n\nWINDOW = timedelta(minutes=15)\nMARGIN = timedelta(minutes=5)\nALERT_AGE = timedelta(days=7)\n\nasync def pull_workspace(ws, now, db, fetch_window, norm, alert):\n    rep = {'windows': 0, 'records': 0, 'bad': 0}\n    w0 = db.get_watermark('openai', ws)\n    if now - w0 > ALERT_AGE:\n        alert('openai watermark older than 7 days', ws)\n    while True:\n        w1 = min(w0 + WINDOW, now - MARGIN)      # tricky part: never pull past now minus margin\n        if w1 <= w0:\n            break\n        recs = []\n        async for line in fetch_window(ws, w0, w1):   # endpoint: check current docs\n            try:\n                recs.append(json.loads(line))\n            except ValueError:\n                rep['bad'] += 1\n        ok = await norm([r for r in recs if r.get('workspace', ws) == ws])\n        if not ok:\n            break                                  # keep watermark, repeat the window\n        db.set_watermark('openai', ws, w1)\n        rep['windows'] += 1\n        rep['records'] += len(recs)\n        w0 = w1\n    rep['lag_s'] = int((now - w0).total_seconds())\n    return rep",
+  "steps": [
+   {
+    "do": "Create the watermark table and the window maths",
+    "done_when": "unit test: now 12:03 and watermark 12:00 pulls nothing"
+   },
+   {
+    "do": "Write the line reader that counts bad lines",
+    "done_when": "test: 2 bad lines of 1,000 gives 998 records and bad 2"
+   },
+   {
+    "do": "Wire the hand-off to cf_norm and commit after confirm",
+    "done_when": "test: failed hand-off leaves the watermark unchanged"
+   },
+   {
+    "do": "Add the workspace check on every record",
+    "done_when": "test: a record for another workspace goes to the quarantine counter"
+   },
+   {
+    "do": "Add the 7-day alert and the nightly 24-hour re-pull with dedupe",
+    "done_when": "alert fires in a test with an 8-day-old watermark"
+   },
+   {
+    "do": "Run against a real workspace with read-only credentials",
+    "done_when": "lag_s under 2100 (35 minutes) at steady state"
+   }
+  ],
+  "config": {
+   "WINDOW_MIN": "15 // design",
+   "MARGIN_MIN": "5 // set to the p99 late delay plus 1 minute after 14 days",
+   "ALERT_AGE_DAYS": "7 // logs are reportedly kept 30 days (secondary source, unverified)",
+   "WORKSPACES": "ws-1,ws-2 // ids to pull, one credential reference each"
+  },
+  "verify": [
+   "pytest tests/test_openai_windows.py -q  # 5 passed",
+   "psql -c \"select workspace, now()-watermark as lag from feed_watermark\"  # lag under 00:35:00"
+  ],
+  "pitfalls": [
+   "Pulling up to 'now': late records land inside a window you already closed and are lost; keep the margin",
+   "Moving the watermark before the hand-off confirms: a failed run then skips a window silently",
+   "Treating snippet records as full turns: keep a snippet flag so later steps do not claim full text",
+   "Trusting field names written here: they are placeholders until checked against current vendor docs"
+  ]
+ },
+ "cf_vault": {
+  "milestone": "M4",
+  "effort_days": 10,
+  "depends_on": [
+   "cf_norm",
+   "sc_runtime",
+   "ch_sched"
+  ],
+  "stack": [
+   {
+    "part": "Google side",
+    "pick": "Google Vault export through its admin route with a dedicated service identity",
+    "why": "narrowest scopes; domain-wide delegation reaches every user, so do NOT reuse a broad identity; API details: check current docs"
+   },
+   {
+    "part": "Microsoft side",
+    "pick": "Microsoft Graph aiInteractionHistory with an application permission, through the msal Python library",
+    "why": "per-user queries, needs a Copilot licence; permission names: check current docs; Entra admin consent is tenant wide"
+   },
+   {
+    "part": "checkpoints",
+    "pick": "Postgres 16 table keyed by (source, user)",
+    "why": "per-user progress so one slow user does not block the rest"
+   }
+  ],
+  "install": [
+   "pip install msal httpx psycopg[binary] pytest",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/feeds/vault/google.py : export create, poll, read",
+   "brain/feeds/vault/graph.py : per-user pulls with idle-user skipping",
+   "brain/feeds/vault/runner.py : one scheduled runner for both",
+   "migrations/012_feed_user_checkpoint.sql : checkpoints"
+  ],
+  "schema": "CREATE TABLE feed_user_checkpoint (\n  source text NOT NULL,\n  user_id text NOT NULL,\n  checkpoint timestamptz NOT NULL,\n  last_active timestamptz,\n  status text NOT NULL DEFAULT 'ok',\n  PRIMARY KEY (source, user_id)\n);",
+  "interface": "async def run_graph(now: datetime, budget_s: int = 600) -> RunReport  # users, records, errors, unreachable",
+  "code": "import asyncio\nfrom datetime import timedelta\n\nMARGIN = timedelta(minutes=5)\nIDLE_AFTER = timedelta(days=1)\n\nasync def run_graph(now, db, list_licensed, fetch_user, norm, budget_s=600):\n    rep = {'users': 0, 'records': 0, 'errors': 0, 'unreachable': 0}\n    deadline = now + timedelta(seconds=budget_s)\n    for uid in await list_licensed():            # licence list, not user input\n        if asyncio.get_event_loop().time() > deadline.timestamp():\n            break\n        cp = db.get_checkpoint('graph', uid)\n        # idle users are queried once a day, active users every run\n        if cp.last_active and now - cp.last_active > IDLE_AFTER and now - cp.checkpoint < IDLE_AFTER:\n            continue\n        end = now - MARGIN\n        try:\n            recs = await fetch_user(uid, cp.checkpoint, end)   # check current docs\n        except PermissionError:\n            db.set_status('graph', uid, 'unreachable'); rep['unreachable'] += 1\n            continue\n        except Exception:\n            rep['errors'] += 1\n            continue                             # that user repeats next run\n        if await norm(recs):                     # tricky part: advance only after confirm\n            db.set_checkpoint('graph', uid, end, active=bool(recs))\n            rep['users'] += 1\n            rep['records'] += len(recs)\n    return rep",
+  "steps": [
+   {
+    "do": "Create the checkpoint table",
+    "done_when": "psql shows the table with 5 columns"
+   },
+   {
+    "do": "Write the Graph per-user loop with idle skipping",
+    "done_when": "test: 10 users, 6 idle, gives 4 calls"
+   },
+   {
+    "do": "Mark unreachable users on 403 and never retry within 24 h",
+    "done_when": "test: 403 user is skipped on the next run"
+   },
+   {
+    "do": "Write the Google export create, poll and read",
+    "done_when": "test: export ready after 4 minutes is read on the third poll"
+   },
+   {
+    "do": "Run both under the one scheduled runner",
+    "done_when": "a run report for each source reaches op_health"
+   },
+   {
+    "do": "Document users not covered (no licence, no eligible edition) in the owner view",
+    "done_when": "the view lists the count and reasons"
+   }
+  ],
+  "config": {
+   "GRAPH_RUNS_PER_DAY": "4 // design; tune so 429 stays under 1 percent",
+   "MARGIN_MIN": "5 // late-arrival margin",
+   "EXPORT_POLL": "30s,2m,10m // poll steps",
+   "IDLE_AFTER_H": "24 // idle users are queried once a day"
+  },
+  "verify": [
+   "pytest tests/test_vault_feed.py -q  # 5 passed",
+   "psql -c \"select source, status, count(*) from feed_user_checkpoint group by 1,2\"  # ok and unreachable counts match the licence list"
+  ],
+  "pitfalls": [
+   "Reusing a domain-wide delegation identity: it reaches every user in the domain; create a narrow one",
+   "Treating Cursor or GitHub Copilot analytics as chat history: they return metrics or management events, not text",
+   "Reading missing Vault records as user deletes: retention can remove them; cf_del needs two complete runs",
+   "Purview audit and Vault edition details were not fully read in our research: check current docs before promising coverage"
+  ]
+ },
+ "cf_del": {
+  "milestone": "M4",
+  "effort_days": 4,
+  "depends_on": [
+   "cf_norm",
+   "ch_tomb"
+  ],
+  "stack": [
+   {
+    "part": "diff",
+    "pick": "Python sets over uri strings, with a SQL anti-join for ranges over 1,000,000 rows",
+    "why": "set difference is linear; do NOT loop and query per uri"
+   },
+   {
+    "part": "strike table",
+    "pick": "Postgres 16",
+    "why": "strikes must survive restarts and be visible to a reviewer"
+   },
+   {
+    "part": "review",
+    "pick": "an alert to op_health plus a one-row approval table",
+    "why": "above the size guard a human approves the tombstones"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] pytest",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/capture/reconcile.py : the diff, strikes and guard",
+   "migrations/013_strike.sql : strike table and frozen run table",
+   "tests/test_reconcile.py : two strikes, guard, incomplete run, local purge"
+  ],
+  "schema": "CREATE TABLE del_strike (\n  source text NOT NULL,\n  uri text NOT NULL,\n  strikes int NOT NULL DEFAULT 1,\n  first_missing_run text NOT NULL,\n  PRIMARY KEY (source, uri)\n);\nCREATE TABLE del_frozen (\n  run_id text PRIMARY KEY,\n  source text NOT NULL,\n  ratio numeric NOT NULL,\n  approved_at timestamptz\n);",
+  "interface": "def reconcile(source: str, rng: tuple[datetime, datetime], reported: set[str], complete: bool, run_id: str) -> dict  # {tombstoned, struck, frozen}",
+  "code": "STRIKES = 2\nFREEZE = 0.05\n\ndef reconcile(db, tomb, source, rng, reported, complete, run_id):\n    if not complete:\n        return {'tombstoned': 0, 'struck': 0, 'frozen': False}   # no diff on a partial run\n    held = db.pointers_in_range(source, rng)          # set of uris whose time is inside [from, to]\n    if not held:\n        return {'tombstoned': 0, 'struck': 0, 'frozen': False}\n    missing = held - reported\n    ratio = len(missing) / len(held)\n    if ratio > FREEZE:\n        # tricky part: a big loss is far more likely a broken listing than a mass delete\n        db.freeze(run_id, source, ratio)\n        return {'tombstoned': 0, 'struck': 0, 'frozen': True}\n    db.clear_strikes(source, held & reported)\n    tombstoned = struck = 0\n    for uri in missing:\n        n = db.add_strike(source, uri, run_id)\n        if n >= STRIKES:\n            tomb(uri, 'window_missing')\n            db.drop_strike(source, uri)\n            tombstoned += 1\n        else:\n            struck += 1\n    return {'tombstoned': tombstoned, 'struck': struck, 'frozen': False}",
+  "steps": [
+   {
+    "do": "Create the strike and frozen tables",
+    "done_when": "psql lists both tables"
+   },
+   {
+    "do": "Write reconcile for the happy path",
+    "done_when": "test: 10 missing of 10,000 gives strike 1 then 10 tombstones on run 2"
+   },
+   {
+    "do": "Add the incomplete-run stop",
+    "done_when": "test: complete false makes no change"
+   },
+   {
+    "do": "Add the size guard and the freeze row",
+    "done_when": "test: 600 missing of 10,000 freezes and tombstones nothing"
+   },
+   {
+    "do": "Add the explicit vendor tombstone path and the not-reconcilable list",
+    "done_when": "a Cursor test source is skipped with reason not_reconcilable"
+   },
+   {
+    "do": "Wire the reviewer approval and the op_health alert",
+    "done_when": "approving a frozen run releases its tombstones once"
+   }
+  ],
+  "config": {
+   "STRIKES": "2 // design; delete delay is strikes times the run interval",
+   "FREEZE_RATIO": "0.05 // tune to 3 times the p99 weekly delete share, never above 0.10",
+   "NOT_RECONCILABLE": "cursor,github-copilot // sources with no list API"
+  },
+  "verify": [
+   "pytest tests/test_reconcile.py -q  # 5 passed",
+   "psql -c \"select count(*) from del_frozen where approved_at is null\"  # 0 in steady state"
+  ],
+  "pitfalls": [
+   "Diffing the whole index against one run: every turn outside the run's range looks deleted; compare only pointers inside [from, to]",
+   "Treating an empty reported set from a complete run as 'everything deleted': the size guard must freeze it",
+   "Tombstoning a local transcript because the tool purged it after the retention period (about 30 days by default): absence on a laptop is not a delete",
+   "Forgetting that a delete shows only when the next run reports it: tell the owner the delay is strikes times the run interval"
+  ]
+ },
+ "cf_struct": {
+  "milestone": "M4",
+  "effort_days": 3,
+  "depends_on": [
+   "cf_norm"
+  ],
+  "stack": [
+   {
+    "part": "parse",
+    "pick": "plain Python over normalised messages",
+    "why": "No extra service"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a summariser before chunking",
+    "why": "Summaries rewrite what people said; keep threads whole"
+   }
+  ],
+  "install": [
+   "pip install pytest",
+   "pip install pydantic"
+  ],
+  "layout": [
+   "brain/capture/chat_struct.py",
+   "tests/test_chat_struct.py"
+  ],
+  "schema": "{\"thread_id\":\"str\",\"channel\":\"str\",\"actors\":[\"str\"],\"artifacts\":[\"str\"],\"t0\":\"ts\",\"t1\":\"ts\"}",
+  "interface": "def chunk_thread(msgs: list[Message]) -> list[ThreadChunk]",
+  "code": "def chunk_thread(msgs, gap=1800, cap=40):\n    groups, cur = [], []\n    for m in sorted(msgs, key=lambda m: m.ts):\n        new = cur and ((m.thread_id and m.thread_id != cur[-1].thread_id) or (not m.thread_id and m.ts - cur[-1].ts > gap))\n        if new:\n            groups.append(cur); cur = []\n        cur.append(m)\n    if cur: groups.append(cur)\n    return [to_chunk(g[i:i+cap]) for g in groups for i in range(0, len(g), cap)]",
+  "steps": [
+   {
+    "do": "Group by thread id then by gap",
+    "done_when": "thread stays whole"
+   },
+   {
+    "do": "Extract actors and artifacts",
+    "done_when": "views have entries"
+   },
+   {
+    "do": "Split long threads at a reply boundary",
+    "done_when": "root repeated as context"
+   },
+   {
+    "do": "Carry the channel ACL on every row",
+    "done_when": "private channel rows are filtered"
+   }
+  ],
+  "config": {
+   "GAP_SECONDS": "1800 // gap rule when no thread id",
+   "MAX_CHUNK": "40 // split at a reply boundary",
+   "VIEWS": "channel, actor, artifact"
+  },
+  "verify": [
+   "pytest tests/test_chat_struct.py -q  # all passed",
+   "python -m brain.capture.chat_struct --sample thread.json  # prints one chunk with 6 messages"
+  ],
+  "pitfalls": [
+   "Splitting a question from its answer",
+   "Dropping the channel ACL from view rows"
+  ]
+ }
+}

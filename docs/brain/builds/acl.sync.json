@@ -1,0 +1,412 @@
+{
+ "ac_scim": {
+  "milestone": "M2",
+  "effort_days": 6,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "protocol",
+    "pick": "SCIM 2.0 (RFC 7644) pull from the identity provider, plus its event stream where it has one",
+    "why": "Standard users and groups feed; every major identity provider speaks it"
+   },
+   {
+    "part": "poll client",
+    "pick": "httpx (Python) with an explicit timeout",
+    "why": "Plain HTTP client, no SCIM SDK lock-in; check current docs for the provider's pagination limits"
+   },
+   {
+    "part": "test identity provider",
+    "pick": "Keycloak (container) for local tests",
+    "why": "Open source OIDC provider you can script users, groups and leavers against"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a vendor-hosted sync product as the only path",
+    "why": "It hides leaver events and you cannot prove the 5 minute poll backstop"
+   }
+  ],
+  "install": [
+   "pip install httpx pydantic psycopg[binary]",
+   "docker run -d -p 8081:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/acl/scim/client.py : paged SCIM reads with a modified-since cursor",
+   "brain/acl/scim/apply.py : validate, shrink guard, idempotent apply, emit order",
+   "migrations/020_directory.sql : directory snapshot and cursor tables",
+   "tests/test_scim_apply.py : shrink guard, replay, leaver-first order"
+  ],
+  "schema": "CREATE TABLE directory_user (\n  tenant_id text NOT NULL,\n  scim_id text NOT NULL,\n  email text,\n  email_verified boolean NOT NULL DEFAULT false,\n  active boolean NOT NULL,\n  modified_at timestamptz NOT NULL,\n  PRIMARY KEY (tenant_id, scim_id)\n);\nCREATE TABLE directory_cursor (\n  tenant_id text PRIMARY KEY,\n  cursor text NOT NULL,\n  committed_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def sync_directory(tenant_id: str, batch: list[ScimRecord], full_list: bool = False) -> SyncResult  # emits leaver events first, then groups, then identities",
+  "code": "def sync_directory(db, bus, tenant, batch, old_count, full_list=False):\n    if not batch and old_count > 0:\n        raise SyncRejected(\"empty list for a non-empty directory\")\n    if full_list and len(batch) < 0.5 * old_count:\n        raise SyncRejected(\"shrink guard: list under 50% of snapshot\")\n    if any(r.tenant != tenant for r in batch):\n        raise SyncRejected(\"foreign tenant id in batch\")\n    leavers, groups, users = [], [], []\n    with db.transaction():\n        for r in batch:\n            cur = db.execute(\n                '''INSERT INTO directory_user(tenant_id,scim_id,email,email_verified,active,modified_at)\n                   VALUES (%s,%s,%s,%s,%s,%s)\n                   ON CONFLICT (tenant_id,scim_id) DO UPDATE SET email=EXCLUDED.email,\n                     email_verified=EXCLUDED.email_verified, active=EXCLUDED.active,\n                     modified_at=EXCLUDED.modified_at\n                   WHERE directory_user.modified_at < EXCLUDED.modified_at''',\n                (tenant, r.scim_id, r.email, r.email_verified, r.active, r.modified_at))\n            if cur.rowcount == 0:\n                continue                      # replay of an older or equal record: no change\n            (users if r.kind == \"user\" and r.active else groups if r.kind == \"group\" else leavers).append(r)\n        db.execute(\"UPDATE directory_cursor SET cursor=%s, committed_at=now() WHERE tenant_id=%s\",\n                   (batch[-1].cursor, tenant))   # cursor moves only inside the same commit\n    # tricky part: order matters. A leaver must reach the revocation cache before anything else.\n    for r in leavers: bus.publish(\"acl.leaver\", r)\n    for r in groups:  bus.publish(\"acl.group\", r)\n    for r in users:   bus.publish(\"acl.identity\", r)\n    return SyncResult(len(leavers), len(groups), len(users))",
+  "steps": [
+   {
+    "do": "Create the two tables",
+    "done_when": "\\d directory_user shows 6 columns"
+   },
+   {
+    "do": "Write the paged SCIM client with a modified-since cursor",
+    "done_when": "test pulls 250 fake users over 3 pages"
+   },
+   {
+    "do": "Write apply with the shrink guard and tenant check",
+    "done_when": "test with a list at 40% of the snapshot raises SyncRejected"
+   },
+   {
+    "do": "Replay the same batch twice",
+    "done_when": "second run returns 0 changes and publishes nothing"
+   },
+   {
+    "do": "Add a leaver and a group change in one batch",
+    "done_when": "bus log shows acl.leaver before acl.group"
+   },
+   {
+    "do": "Schedule a 300 s poll and a 24 h full reconcile",
+    "done_when": "drift counter metric exists and reads 0 on a clean tenant"
+   }
+  ],
+  "config": {
+   "SCIM_POLL_SECONDS": "300 // backstop when events are lost",
+   "SHRINK_GUARD": "0.5 // reject a full list under half the snapshot",
+   "FULL_RECONCILE_HOURS": "24 // daily diff against the snapshot",
+   "SCIM_PAGE_SIZE": "100 // check current docs for the provider cap"
+  },
+  "verify": [
+   "pytest tests/test_scim_apply.py -q  # 4 passed",
+   "psql -c \"select count(*) from directory_user where active\"  # equals the Keycloak active user count"
+  ],
+  "pitfalls": [
+   "Advancing the cursor before the commit loses records on a crash: symptom is a user who never appears",
+   "An empty page from a provider outage looks like 'everyone left': symptom is mass revocation, so keep the shrink guard",
+   "Emitting identities before leavers leaves a window where a leaver still matches a group"
+  ]
+ },
+ "ac_id": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "ac_scim"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "Map rows with history; unique indexes enforce one principal per key"
+   },
+   {
+    "part": "normalisation",
+    "pick": "Python unicodedata (NFC) and email-validator",
+    "why": "Standard library plus one small package; no fuzzy matching"
+   },
+   {
+    "part": "do not pick",
+    "pick": "fuzzy name or display-name matching",
+    "why": "A near match is a wrong person; fail closed and queue a conflict instead"
+   }
+  ],
+  "install": [
+   "pip install email-validator psycopg[binary]",
+   "psql -c 'select 1'"
+  ],
+  "layout": [
+   "brain/acl/identity/resolve.py : ordered rule match with conflict detection",
+   "migrations/021_principal_map.sql : map and conflict tables",
+   "tests/test_resolve.py : disagree, unverified email, plus-tag policy"
+  ],
+  "schema": "CREATE TABLE principal_map (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  app_user_id text NOT NULL,\n  principal_id text NOT NULL,\n  match_rule text NOT NULL CHECK (match_rule IN ('idp_subject','scim_id','verified_email')),\n  mapped_at timestamptz NOT NULL DEFAULT now(),\n  superseded_at timestamptz,\n  PRIMARY KEY (tenant_id, app, app_user_id, mapped_at)\n);\nCREATE TABLE identity_conflict (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  app_user_id text NOT NULL,\n  candidates jsonb NOT NULL,\n  opened_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def resolve_principal(tenant_id: str, app: str, keys: UserKeys) -> str | None  # None means fail closed, no access",
+  "code": "import unicodedata\n\ndef norm_email(e, strip_plus):\n    e = unicodedata.normalize(\"NFC\", e.strip()).lower()\n    if strip_plus:\n        local, _, dom = e.partition(\"@\")\n        e = local.split(\"+\")[0] + \"@\" + dom\n    return e\n\ndef resolve_principal(db, tenant, app, keys, policy):\n    rules = [(\"idp_subject\", keys.idp_subject), (\"scim_id\", keys.scim_id)]\n    if keys.email and keys.email_verified:          # unverified email is a claim, not a key\n        rules.append((\"verified_email\", norm_email(keys.email, policy.strip_plus)))\n    hits = {}\n    for rule, value in rules:\n        if not value:\n            continue\n        rows = db.execute(\n            \"SELECT DISTINCT principal_id FROM principal_index \"\n            \"WHERE tenant_id=%s AND rule=%s AND key=%s\", (tenant, rule, value)).fetchall()\n        if len(rows) > 1:                           # a key that hits two people is poison\n            hits[rule] = None\n        elif rows:\n            hits[rule] = rows[0][0]\n    found = {v for v in hits.values() if v}\n    if None in hits.values() or len(found) > 1:     # tricky part: any disagreement maps nothing\n        db.execute(\"INSERT INTO identity_conflict(tenant_id,app,app_user_id,candidates) VALUES (%s,%s,%s,%s)\",\n                   (tenant, app, keys.app_user_id, json.dumps(hits)))\n        return None\n    if not found:\n        return None\n    p = found.pop()\n    first = next(r for r, _ in rules if hits.get(r))\n    db.execute(\"UPDATE principal_map SET superseded_at=now() WHERE tenant_id=%s AND app=%s AND app_user_id=%s AND superseded_at IS NULL\",\n               (tenant, app, keys.app_user_id))\n    db.execute(\"INSERT INTO principal_map(tenant_id,app,app_user_id,principal_id,match_rule) VALUES (%s,%s,%s,%s,%s)\",\n               (tenant, app, keys.app_user_id, p, first))\n    return p",
+  "steps": [
+   {
+    "do": "Create the tables",
+    "done_when": "\\d principal_map lists 6 columns"
+   },
+   {
+    "do": "Write norm_email and the rule loop",
+    "done_when": "unit test maps a Gmail-style plus tag only when policy allows"
+   },
+   {
+    "do": "Add conflict handling",
+    "done_when": "two rules hitting different people returns None and inserts 1 conflict row"
+   },
+   {
+    "do": "Reject unverified email",
+    "done_when": "test with email_verified=false returns None"
+   },
+   {
+    "do": "Recompute on a changed email event",
+    "done_when": "row for the user is superseded and a new row inserted"
+   },
+   {
+    "do": "Add an unmapped-rate metric",
+    "done_when": "alert fires in a test at 1.5% unmapped"
+   }
+  ],
+  "config": {
+   "STRIP_PLUS_TAGS": "false // per tenant policy, off by default",
+   "EMAIL_VERIFIED_REQUIRED": "true // unverified emails are untrusted",
+   "UNMAPPED_ALERT_PCT": "1 // per app, tune after a month",
+   "RULE_ORDER": "idp_subject,scim_id,verified_email // strongest key first"
+  },
+  "verify": [
+   "pytest tests/test_resolve.py -q  # 5 passed",
+   "psql -c 'select count(*) from identity_conflict'  # 0 on the clean fixture"
+  ],
+  "pitfalls": [
+   "Taking the first match and ignoring later disagreements maps a user to the wrong person: symptom is one person seeing another's documents",
+   "Lowercasing without NFC normalisation makes the same email miss: symptom is rising unmapped rate",
+   "Shared mailboxes carry one email for many people: check current docs for the app and map by subject only"
+  ]
+ },
+ "ac_src": {
+  "milestone": "M2",
+  "effort_days": 9,
+  "depends_on": [
+   "ac_scim",
+   "ac_id"
+  ],
+  "stack": [
+   {
+    "part": "adapter pattern",
+    "pick": "One Python class per app behind a small ACLAdapter protocol",
+    "why": "New app means one class and one capability row, nothing else changes"
+   },
+   {
+    "part": "rate pacing",
+    "pick": "Redis token bucket (redis-py)",
+    "why": "Shared bucket per app and tenant so ACL reads take at most 50% of quota"
+   },
+   {
+    "part": "batching",
+    "pick": "Each app's batch endpoint where it exists (check current docs)",
+    "why": "One call for many objects saves the hourly point budget"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a per-object live call at query time as the only ACL source",
+    "why": "It is the recheck job, not the sync job; it cannot scale to a full corpus"
+   }
+  ],
+  "install": [
+   "pip install httpx redis",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/acl/source/adapter.py : ACLAdapter protocol and registry",
+   "brain/acl/source/drive.py : Drive permissions adapter",
+   "brain/acl/source/fetch.py : paced read, hash, diff, emit",
+   "tests/test_fetch.py : unchanged hash stops, removed principal goes to revocation"
+  ],
+  "schema": "CREATE TABLE object_acl_state (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  doc_id text NOT NULL,\n  acl_hash text NOT NULL,\n  entries jsonb NOT NULL,\n  fetched_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, app, doc_id)\n);",
+  "interface": "def refresh_acl(tenant_id: str, app: str, doc_id: str) -> AclRefresh  # AclRefresh(changed: bool, removed: list[str], entries: list[Entry])",
+  "code": "import hashlib, json\n\ndef refresh_acl(db, bucket, adapter, bus, tenant, app, doc_id):\n    if not bucket.take(app, tenant, points=adapter.points_per_read, share=0.5):\n        raise Backoff(app)                            # ACL share of the quota is spent: wait\n    entries = adapter.read_acl(tenant, doc_id)        # list of (principal, role)\n    entries = sorted(entries, key=lambda e: (e.principal, e.role))\n    h = hashlib.sha256(json.dumps([[e.principal, e.role] for e in entries]).encode()).hexdigest()\n    row = db.execute(\"SELECT acl_hash, entries FROM object_acl_state WHERE tenant_id=%s AND app=%s AND doc_id=%s\",\n                     (tenant, app, doc_id)).fetchone()\n    if row and row[0] == h:\n        return AclRefresh(False, [], entries)         # same list: stop, no downstream work\n    old = {e[\"principal\"] for e in (row[1] if row else [])}\n    removed = sorted(old - {e.principal for e in entries})\n    db.execute('''INSERT INTO object_acl_state(tenant_id,app,doc_id,acl_hash,entries)\n                  VALUES (%s,%s,%s,%s,%s)\n                  ON CONFLICT (tenant_id,app,doc_id) DO UPDATE\n                  SET acl_hash=EXCLUDED.acl_hash, entries=EXCLUDED.entries, fetched_at=now()''',\n               (tenant, app, doc_id, h, json.dumps([e.__dict__ for e in entries])))\n    if removed:                                       # tricky part: revocations travel the fast lane first\n        bus.publish(\"acl.revoke\", {\"tenant\": tenant, \"app\": app, \"doc\": doc_id, \"principals\": removed})\n    bus.publish(\"acl.entries\", {\"tenant\": tenant, \"app\": app, \"doc\": doc_id, \"entries\": [e.__dict__ for e in entries]})\n    return AclRefresh(True, removed, entries)",
+  "steps": [
+   {
+    "do": "Define the ACLAdapter protocol and the registry",
+    "done_when": "mypy passes on the protocol and one fake adapter"
+   },
+   {
+    "do": "Write the Drive adapter against a recorded fixture",
+    "done_when": "fixture list of 6 permissions parses to 6 entries"
+   },
+   {
+    "do": "Add the token bucket pacing",
+    "done_when": "with a 0.5 share and 10 points, the 6th read in a test raises Backoff"
+   },
+   {
+    "do": "Add hash and diff",
+    "done_when": "second refresh of an unchanged object publishes nothing"
+   },
+   {
+    "do": "Remove one principal in the fixture",
+    "done_when": "acl.revoke is published once with that principal"
+   },
+   {
+    "do": "Add retry with 1 s, 2 s, 4 s backoff then park",
+    "done_when": "after 5 failures the object lands in the parked table"
+   }
+  ],
+  "config": {
+   "ACL_SHARE_OF_QUOTA": "0.5 // leaves half for content sync",
+   "RETRY_LIMIT": "5 // then park for a human",
+   "PARENT_CACHE_TTL_S": "300 // folder and parent ACLs, dropped on change events",
+   "ACL_API_FIELD": "read from the capability descriptor // never hard code per app"
+  },
+  "verify": [
+   "pytest tests/test_fetch.py -q  # 5 passed",
+   "psql -c 'select count(*) from object_acl_state'  # equals fixture object count"
+  ],
+  "pitfalls": [
+   "Reading unsorted lists makes the hash flap: symptom is every refresh looks changed",
+   "Inherited permissions (folder to file) missed by reading only the object: symptom is silent over-restriction or leaks, so cache and invalidate parents",
+   "Spending the whole quota on ACLs starves content sync: symptom is stale documents"
+  ]
+ },
+ "ac_grp": {
+  "milestone": "M2",
+  "effort_days": 6,
+  "depends_on": [
+   "ac_scim"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with a recursive CTE for checks",
+    "why": "Simple, joinable with ACL rows; enough until groups pass millions of edges"
+   },
+   {
+    "part": "language",
+    "pick": "Python 3.12 with iterative DFS",
+    "why": "Recursion depth limits bite at 20 levels of nesting in hostile data, so use an explicit stack"
+   },
+   {
+    "part": "relation engine (later)",
+    "pick": "OpenFGA or SpiceDB",
+    "why": "Research repos note both fit the relation model; adopt only if lazy expansion outgrows Postgres"
+   },
+   {
+    "part": "do not pick",
+    "pick": "expanding every group at query time",
+    "why": "Large groups make every query slow; expand on write, lazy above the threshold"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]",
+   "psql -c 'select 1'"
+  ],
+  "layout": [
+   "brain/acl/groups/expand.py : cycle-safe closure and lazy threshold",
+   "brain/acl/groups/reverse.py : user to groups index builder",
+   "migrations/022_group_snapshot.sql : snapshots and reverse index",
+   "tests/test_expand.py : cycle, depth, lazy threshold"
+  ],
+  "schema": "CREATE TABLE group_snapshot (\n  tenant_id text NOT NULL,\n  group_id text NOT NULL,\n  membership_version bigint NOT NULL,\n  members text[],\n  lazy boolean NOT NULL DEFAULT false,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, group_id, membership_version)\n);\nCREATE TABLE user_groups (\n  tenant_id text NOT NULL,\n  user_id text NOT NULL,\n  group_id text NOT NULL,\n  membership_version bigint NOT NULL,\n  PRIMARY KEY (tenant_id, user_id, group_id)\n);",
+  "interface": "def expand_group(tenant_id: str, group_id: str) -> Snapshot  # Snapshot(version, members | None, lazy)",
+  "code": "def expand_group(db, tenant, gid, lazy_t=10_000, max_depth=20):\n    visited, users = set(), set()\n    stack = [(gid, 0)]\n    while stack:                                    # explicit stack: no recursion limit surprises\n        g, depth = stack.pop()\n        if g in visited:\n            continue                                # tricky part: the visited set is what breaks cycles\n        if depth > max_depth:\n            raise DataError(f\"group nesting over {max_depth} at {g}\")\n        visited.add(g)\n        for kind, member in db.execute(\n                \"SELECT member_kind, member_id FROM group_edge WHERE tenant_id=%s AND group_id=%s\", (tenant, g)):\n            if kind == \"user\":\n                users.add(member)\n                if len(users) > lazy_t:             # too big: store a reference, not the members\n                    return _write(db, tenant, gid, None, lazy=True)\n            elif member not in visited:\n                stack.append((member, depth + 1))\n    return _write(db, tenant, gid, sorted(users), lazy=False)\n\ndef _write(db, tenant, gid, members, lazy):\n    v = db.execute(\"SELECT coalesce(max(membership_version),0)+1 FROM group_snapshot \"\n                   \"WHERE tenant_id=%s AND group_id=%s\", (tenant, gid)).fetchone()[0]\n    db.execute(\"INSERT INTO group_snapshot(tenant_id,group_id,membership_version,members,lazy) VALUES (%s,%s,%s,%s,%s)\",\n               (tenant, gid, v, members, lazy))\n    for u in members or []:\n        db.execute('''INSERT INTO user_groups(tenant_id,user_id,group_id,membership_version) VALUES (%s,%s,%s,%s)\n                      ON CONFLICT (tenant_id,user_id,group_id) DO UPDATE SET membership_version=EXCLUDED.membership_version''',\n                   (tenant, u, gid, v))\n    return Snapshot(v, members, lazy)",
+  "steps": [
+   {
+    "do": "Create snapshot and reverse tables",
+    "done_when": "\\dt shows group_snapshot and user_groups"
+   },
+   {
+    "do": "Write expand_group with the visited set",
+    "done_when": "test with A contains B contains A returns members once, no hang"
+   },
+   {
+    "do": "Add the depth guard",
+    "done_when": "a 25-deep chain raises DataError"
+   },
+   {
+    "do": "Add the lazy threshold",
+    "done_when": "a fixture group with 10,001 users stores lazy=true and members NULL"
+   },
+   {
+    "do": "Write snapshots as immutable rows",
+    "done_when": "two expansions produce versions 1 and 2, version 1 unchanged"
+   },
+   {
+    "do": "Prune to 7 snapshots or 24 h",
+    "done_when": "retention job leaves at least 7 rows per group in a test"
+   }
+  ],
+  "config": {
+   "LAZY_THRESHOLD": "10000 // above this store a reference",
+   "MAX_DEPTH": "20 // deeper is a data error",
+   "SNAPSHOT_KEEP": "7 // or 24 h, whichever is larger",
+   "EXPAND_ON": "group change events // plus the daily reconcile"
+  },
+  "verify": [
+   "pytest tests/test_expand.py -q  # 5 passed",
+   "psql -c 'select count(*) from user_groups where user_id = $$u1$$'  # equals u1's flattened group count"
+  ],
+  "pitfalls": [
+   "Recursion without a visited set loops forever on cyclic groups: symptom is a worker stuck at 100% CPU",
+   "Deleting old snapshots while queries still hold the version: keep the larger of 7 or 24 h",
+   "Lazy groups still need a membership test path in ac_filter; do not drop them from the principal set"
+  ]
+ },
+ "ac_store": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ac_grp",
+   "ac_src",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16, separate schema from content",
+    "why": "Own your data; ACL changes on their own clock and joins pointer rows in one query"
+   },
+   {
+    "part": "payload patch",
+    "pick": "The index engine's payload or metadata update API (pgvector rows via UPDATE; Qdrant set_payload if used)",
+    "why": "Patch ACL without re-embedding; check current docs for batch limits"
+   },
+   {
+    "part": "encryption",
+    "pick": "Per-tenant data key via your KMS (HashiCorp Vault transit or cloud KMS)",
+    "why": "Row encryption key per tenant for crypto-shredding"
+   },
+   {
+    "part": "do not pick",
+    "pick": "ACLs inside the content or chunk text",
+    "why": "They cannot change without a re-embed and they leak into snippets"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] hvac",
+   "docker run -d -p 8200:8200 hashicorp/vault:latest server -dev"
+  ],
+  "layout": [
+   "brain/acl/store/acl_store.py : compare-and-set write and chunk patch",
+   "migrations/023_object_acl.sql : the ACL table",
+   "brain/acl/store/patch.py : batched payload patch",
+   "tests/test_acl_store.py : stale version dropped, patch batches"
+  ],
+  "schema": "CREATE TABLE object_acl (\n  tenant_id text NOT NULL,\n  doc_id text NOT NULL,\n  acl_version bigint NOT NULL,\n  principals text[] NOT NULL,\n  group_refs text[] NOT NULL DEFAULT '{}',\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, doc_id)\n);\nCREATE INDEX object_acl_principals ON object_acl USING gin (principals);",
+  "interface": "def put_acl(tenant_id: str, doc_id: str, acl_version: int, principals: list[str], group_refs: list[str]) -> bool  # False if a newer version already won",
+  "code": "INLINE_MAX = 64\n\ndef put_acl(db, index, bus, tenant, doc_id, ver, principals, group_refs):\n    cur = db.execute(\n        '''INSERT INTO object_acl(tenant_id,doc_id,acl_version,principals,group_refs)\n           VALUES (%s,%s,%s,%s,%s)\n           ON CONFLICT (tenant_id,doc_id) DO UPDATE\n             SET acl_version=EXCLUDED.acl_version, principals=EXCLUDED.principals,\n                 group_refs=EXCLUDED.group_refs, updated_at=now()\n           WHERE object_acl.acl_version < EXCLUDED.acl_version''',\n        (tenant, doc_id, ver, principals, group_refs))\n    if cur.rowcount == 0:\n        return False                                  # stale: a newer list already applied\n    inline = principals[:INLINE_MAX]\n    payload = {\"acl_ref\": f\"{tenant}:{doc_id}\", \"acl_version\": ver, \"acl_inline\": inline}\n    chunk_ids = [r[0] for r in db.execute(\"SELECT chunk_id FROM chunk WHERE tenant_id=%s AND doc_id=%s\", (tenant, doc_id))]\n    for i in range(0, len(chunk_ids), 500):           # tricky part: patch metadata only, never re-embed\n        index.set_payload(chunk_ids[i:i+500], payload)\n    bus.publish(\"acl.applied\", {\"tenant\": tenant, \"doc\": doc_id, \"version\": ver})\n    return True\n\ndef delete_acl(db, tenant, doc_id):                   # called on an erase order\n    db.execute(\"DELETE FROM object_acl WHERE tenant_id=%s AND doc_id=%s\", (tenant, doc_id))",
+  "steps": [
+   {
+    "do": "Create object_acl with the GIN index",
+    "done_when": "\\d object_acl lists 6 columns and 1 gin index"
+   },
+   {
+    "do": "Write put_acl compare-and-set",
+    "done_when": "sending version 5 then 4 returns True then False"
+   },
+   {
+    "do": "Add the batched chunk patch",
+    "done_when": "a doc with 1,200 chunks makes 3 patch calls"
+   },
+   {
+    "do": "Emit acl.applied",
+    "done_when": "bus log shows one event per applied version"
+   },
+   {
+    "do": "Wire the erase order",
+    "done_when": "after delete_acl the row count for the doc is 0"
+   },
+   {
+    "do": "Encrypt principals per tenant",
+    "done_when": "raw column bytes do not contain the principal id string"
+   }
+  ],
+  "config": {
+   "INLINE_PRINCIPALS": "64 // above this only acl_ref lives in the payload",
+   "PATCH_BATCH": "500 // chunks per call, tune per engine",
+   "ROW_KEY": "tenant data key from KMS // enables crypto-shredding",
+   "STMT_TIMEOUT_MS": "2000 // fail fast"
+  },
+  "verify": [
+   "pytest tests/test_acl_store.py -q  # 5 passed",
+   "psql -c 'select acl_version from object_acl where doc_id = $$d1$$'  # shows the highest version sent"
+  ],
+  "pitfalls": [
+   "Last write wins without a version check lets a delayed old event restore access: symptom is a revoked user seeing a document again",
+   "Patching principals only in the table and not in the index payload makes ac_filter see old lists",
+   "Inline principal lists beyond 64 bloat every chunk row: use acl_ref and look up"
+  ]
+ }
+}

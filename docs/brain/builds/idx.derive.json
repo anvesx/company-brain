@@ -1,0 +1,599 @@
+{
+ "ix_fetch": {
+  "milestone": "M0",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_ptr",
+   "so_sdk"
+  ],
+  "stack": [
+   {
+    "part": "runtime",
+    "pick": "Python 3.12 asyncio with httpx",
+    "why": "streams a body into a bounded buffer and enforces timeouts per call"
+   },
+   {
+    "part": "hash",
+    "pick": "xxhash (python-xxhash), xxh64",
+    "why": "64-bit xxHash is what the card pins and what Notion reports using per span (t_t44); check current docs for the package version"
+   },
+   {
+    "part": "workers",
+    "pick": "asyncio.Semaphore(64) in one process per node",
+    "why": "caps peak body memory at workers x max bytes; do not use a durable queue payload to carry bodies"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT use Celery or Redis to pass the body, and do not enable disk spooling in httpx or requests",
+    "why": "either one writes the body to a broker or temp file and breaks the memory-only rule"
+   }
+  ],
+  "install": [
+   "python3 -m venv .venv && . .venv/bin/activate",
+   "pip install httpx xxhash",
+   "ulimit -c 0  # no core dumps in the worker shell",
+   "sudo swapoff -a  # on the worker host, or run the container with --memory-swap equal to --memory"
+  ],
+  "layout": [
+   "brain/derive/fetch.py : fetch_by_pointer and the bounded buffer",
+   "brain/derive/types.py : DeriveRequest, FetchResult dataclasses",
+   "tests/test_fetch.py : size cap, hash short-circuit and no-disk tests",
+   "deploy/worker.Dockerfile : sets core dump limit 0 and read-only root filesystem"
+  ],
+  "schema": "{\n \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n \"title\": \"DeriveRequest\",\n \"type\": \"object\",\n \"required\": [\"tenant_id\", \"uri\", \"version\", \"app\", \"priority\"],\n \"properties\": {\n  \"tenant_id\": {\"type\": \"string\"},\n  \"uri\": {\"type\": \"string\"},\n  \"version\": {\"type\": \"string\"},\n  \"app\": {\"type\": \"string\"},\n  \"priority\": {\"enum\": [\"live\", \"backfill\"]},\n  \"observed_etag\": {\"type\": \"string\"}\n },\n \"additionalProperties\": false\n}",
+  "interface": "async def fetch_by_pointer(req: DeriveRequest, registry_hash: str | None) -> FetchResult  # FetchResult(changed: bool, body: memoryview | None, mime: str, size: int, content_hash: str)",
+  "code": "MAX_BODY = 25 * 1024 * 1024\nSEM = asyncio.Semaphore(64)\n\nasync def fetch_by_pointer(req, registry_hash):\n    if await tos_blocks(req.tenant_id, req.app):      # gv_tos rule, fail closed\n        raise FetchRefused(req.app)\n    async with SEM:\n        buf = bytearray()\n        async with client.stream('GET', connector_url(req), timeout=30,\n                                 headers=app_only_headers(req.tenant_id)) as r:\n            r.raise_for_status()\n            mime = r.headers.get('content-type', '')\n            async for part in r.aiter_bytes(64 * 1024):\n                buf += part\n                if len(buf) > MAX_BODY:               # tricky part: abort mid stream\n                    buf.clear()\n                    raise TooLarge(req.uri)\n        h = xxhash.xxh64(normalise_volatile(buf)).hexdigest()\n        if h == registry_hash:\n            buf.clear()\n            return FetchResult(False, None, mime, 0, h)\n        return FetchResult(True, memoryview(buf), mime, len(buf), h)\n\ndef release(res):\n    if res.body is not None:\n        mv = res.body.obj\n        res.body.release()\n        for i in range(len(mv)):                  # zero before free\n            mv[i] = 0\n        mv.clear()",
+  "steps": [
+   {
+    "do": "Define DeriveRequest and FetchResult and validate requests against the schema",
+    "done_when": "pytest tests/test_fetch.py::test_schema -q shows 1 passed and an extra field is rejected"
+   },
+   {
+    "do": "Write the streaming fetch with the 25 MB cap and 30 second timeout",
+    "done_when": "a 26 MB fake body raises TooLarge and the buffer length is 0 afterwards"
+   },
+   {
+    "do": "Add the xxHash short-circuit against the registry hash",
+    "done_when": "same bytes twice returns changed=False the second time and no body"
+   },
+   {
+    "do": "Add release() that zeros and frees the buffer after derivation",
+    "done_when": "test reads the bytearray after release and finds length 0"
+   },
+   {
+    "do": "Prove nothing touches disk: run the fetch under strace or a read-only filesystem",
+    "done_when": "strace -f -e trace=openat,write shows no file created under the temp dirs and the container starts with --read-only"
+   },
+   {
+    "do": "Log only uri, size, hash and status",
+    "done_when": "grep of the test log for a known body string returns 0 lines"
+   }
+  ],
+  "config": {
+   "MAX_BODY_BYTES": "26214400 // 25 MB design cap, tune to p99 body size times 2",
+   "WORKERS_PER_NODE": "64 // keep workers x cap under 25 percent of node memory",
+   "FETCH_TIMEOUT_S": "30 // design value from the card",
+   "RETRY_AFTER_MAX_WAITS": "3 // then return the job to the workflow with a delay"
+  },
+  "verify": [
+   "pytest tests/test_fetch.py -q  # 6 passed",
+   "docker run --rm --read-only --memory 2g brain-worker python -m brain.derive.selftest  # prints FETCH_OK and exits 0",
+   "grep -rn 'body' logs/fetch.log | wc -l  # 0"
+  ],
+  "pitfalls": [
+   "Retry libraries that persist payloads to a temp file silently create a durable copy: check the library source and test under a read-only filesystem",
+   "Volatile fields (render time, nonce) make the hash differ every time and defeat the short-circuit: normalise before hashing, symptom is changed=True on every poll",
+   "A pointer that names another host turns the fetcher into an SSRF tool: build the URL from the connector base plus the pointer path only"
+  ]
+ },
+ "ix_ext": {
+  "milestone": "M0",
+  "effort_days": 6,
+  "depends_on": [
+   "ix_fetch",
+   "so_norm"
+  ],
+  "stack": [
+   {
+    "part": "parser",
+    "pick": "Unstructured (Apache-2.0, r_unstructured) for PDF, Office and HTML",
+    "why": "returns typed elements (title, narrative text, table) which map to the heading, paragraph and table types; check current docs for the partition call"
+   },
+   {
+    "part": "layout alternative",
+    "pick": "Docling (MIT, r_docling) for hard PDFs and tables",
+    "why": "strong on layout and tables per the research; run it only inside the sandbox"
+   },
+   {
+    "part": "sniffing",
+    "pick": "python-magic (libmagic)",
+    "why": "dispatch on magic bytes, never on the file extension"
+   },
+   {
+    "part": "sandbox",
+    "pick": "one subprocess per parse with RLIMIT_AS, no network namespace and a 60 second kill",
+    "why": "parsers are the main attack surface for hostile files"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT parse in the API process and do NOT trust Content-Type from the source",
+    "why": "a malformed PDF can crash or hang the whole worker"
+   }
+  ],
+  "install": [
+   "pip install 'unstructured[pdf,docx,pptx]' python-magic",
+   "brew install libmagic poppler tesseract",
+   "pip install docling  # optional second parser",
+   "docker build -t brain-parser -f deploy/parser.Dockerfile ."
+  ],
+  "layout": [
+   "brain/derive/ext.py : sniff, limits, dispatch and normalise",
+   "brain/derive/extractors/ : one module per format (html, pdf, office, code, chat)",
+   "brain/derive/sandbox.py : subprocess runner with limits",
+   "tests/fixtures/ : one real file per format plus a zip bomb"
+  ],
+  "schema": "{\n \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n \"title\": \"Element\",\n \"type\": \"object\",\n \"required\": [\"type\", \"text\", \"offset\"],\n \"properties\": {\n  \"type\": {\"enum\": [\"heading\", \"paragraph\", \"table\", \"code\", \"turn\"]},\n  \"level\": {\"type\": \"integer\", \"minimum\": 1, \"maximum\": 6},\n  \"text\": {\"type\": \"string\"},\n  \"page\": {\"type\": \"integer\"},\n  \"speaker\": {\"type\": \"string\"},\n  \"ts\": {\"type\": \"string\", \"format\": \"date-time\"},\n  \"offset\": {\"type\": \"integer\", \"minimum\": 0}\n }\n}",
+  "interface": "def extract(body: memoryview, mime_hint: str, app: str) -> ExtractResult  # ExtractResult(elements: list[Element], mentions: list[str], authors: list[str], links: list[str])",
+  "code": "ZIP_RATIO_CAP = 100\nZERO_WIDTH = dict.fromkeys(map(ord, '\\u200b\\u200c\\u200d\\u2060\\ufeff'), None)\n\ndef extract(body, mime_hint, app):\n    kind = sniff(bytes(body[:4096]))                 # magic bytes, not extension\n    if kind in ('docx', 'pptx', 'xlsx', 'zip'):\n        check_expansion(body, ZIP_RATIO_CAP)         # tricky part: before opening\n    raw = run_sandboxed(EXTRACTORS[kind], body, timeout=60, mem_mb=1024)\n    out = []\n    for el in raw:\n        t = unicodedata.normalize('NFC', el['text']).translate(ZERO_WIDTH)\n        t = ''.join(c for c in t if c in '\\n\\t' or unicodedata.category(c) != 'Cc')\n        t = VOLATILE.sub('', t)                       # render stamps, session ids\n        if t.strip():\n            out.append({**el, 'text': t})\n    if kind == 'pdf' and avg_chars_per_page(out) < 50:\n        out = run_sandboxed(ocr_extractor, body, timeout=60, mem_mb=1024)\n    return ExtractResult(out, *links_and_people(out))\n\ndef check_expansion(body, cap):\n    with zipfile.ZipFile(io.BytesIO(body)) as z:\n        total = sum(i.file_size for i in z.infolist())\n    if total / max(len(body), 1) > cap:\n        raise Rejected('zip ratio')",
+  "steps": [
+   {
+    "do": "Write sniff() with python-magic and a table from magic type to extractor",
+    "done_when": "a PDF renamed to .txt is still sent to the pdf extractor in tests"
+   },
+   {
+    "do": "Implement the sandbox runner with no network, 60 second kill and a memory limit",
+    "done_when": "a parser that sleeps 90 seconds is killed at 60 and returns a Timeout error"
+   },
+   {
+    "do": "Add the expansion ratio check and total size limit",
+    "done_when": "tests/fixtures/bomb.zip is rejected before any file is opened"
+   },
+   {
+    "do": "Write extractors for html, pdf, docx and chat JSON that return typed elements",
+    "done_when": "each fixture yields at least one heading and one paragraph element with offsets increasing"
+   },
+   {
+    "do": "Add NFC, zero-width and control character cleanup plus volatile field removal",
+    "done_when": "two renders of the same page with different timestamps give identical element text"
+   },
+   {
+    "do": "Add the scanned-PDF OCR fallback under 50 characters per page",
+    "done_when": "a scanned fixture returns more than 200 characters of text"
+   }
+  ],
+  "config": {
+   "ZIP_RATIO_CAP": "100 // reject archives that expand more than 100 to 1",
+   "PARSER_TIMEOUT_S": "60 // wall clock per parse",
+   "PARSER_MEM_MB": "1024 // address space limit per parse",
+   "OCR_MIN_CHARS_PER_PAGE": "50 // under this the page is treated as scanned"
+  },
+  "verify": [
+   "pytest tests/test_ext.py -q  # all passed, including the bomb and timeout cases",
+   "python -m brain.derive.ext tests/fixtures/sample.pdf | jq '.elements | length'  # greater than 0",
+   "python -m brain.derive.ext tests/fixtures/bomb.zip  # exits 2 with Rejected: zip ratio"
+  ],
+  "pitfalls": [
+   "Trusting the extension lets a hostile file reach the wrong parser: symptom is a parser crash on a .txt that is really a PDF",
+   "Table cells flattened into one line destroy meaning: keep one table element per table and let the chunker keep rows whole",
+   "OCR on every PDF is slow and costly: run it only under the characters per page threshold"
+  ]
+ },
+ "ix_chunk": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_ext",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "tokenizer",
+    "pick": "tiktoken (cl100k_base) as a proxy counter",
+    "why": "a fast local token count; the real limit is the embedding model, so check current docs and keep a margin of 10 percent"
+   },
+   {
+    "part": "code boundaries",
+    "pick": "tree-sitter with the py-tree-sitter bindings",
+    "why": "finds function and class bounds for the code type; check current docs for the language grammar packages"
+   },
+   {
+    "part": "hash",
+    "pick": "xxhash xxh64",
+    "why": "chunk_id is the hash of chunk text per the card pin, same family as the span hashing in t_t44"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT use a fixed character splitter such as CharacterTextSplitter with a count only",
+    "why": "cuts tables and code lines in half and ignores headings"
+   }
+  ],
+  "install": [
+   "pip install tiktoken xxhash tree-sitter",
+   "pip install pytest hypothesis",
+   "python -c \"import tiktoken; tiktoken.get_encoding('cl100k_base')\"  # downloads the vocabulary once"
+  ],
+  "layout": [
+   "brain/derive/chunk.py : the splitter",
+   "brain/derive/tokens.py : token counting",
+   "tests/test_chunk.py : property tests for size and overlap",
+   "tests/fixtures/elements/ : sample element lists"
+  ],
+  "schema": "{\n \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n \"title\": \"Chunk\",\n \"type\": \"object\",\n \"required\": [\"chunk_id\", \"text\", \"position\", \"heading_path\", \"token_count\", \"element_range\"],\n \"properties\": {\n  \"chunk_id\": {\"type\": \"string\", \"pattern\": \"^[0-9a-f]{16}$\"},\n  \"text\": {\"type\": \"string\"},\n  \"position\": {\"type\": \"integer\", \"minimum\": 0},\n  \"heading_path\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n  \"token_count\": {\"type\": \"integer\", \"minimum\": 1},\n  \"element_range\": {\"type\": \"array\", \"items\": {\"type\": \"integer\"}, \"minItems\": 2, \"maxItems\": 2}\n }\n}",
+  "interface": "def chunk_elements(elements: list[Element], target: int = 400, overlap: int = 40, min_tokens: int = 128) -> list[Chunk]",
+  "code": "def chunk_elements(elements, target=400, overlap=40, min_tokens=128):\n    sections, cur, path = [], [], []\n    for i, el in enumerate(elements):\n        hard = el['type'] == 'heading' or starts_new_turn(el, cur, gap_min=10)\n        if hard and cur:\n            sections.append((list(path), cur)); cur = []\n        if el['type'] == 'heading':\n            path = path[:el['level'] - 1] + [el['text']]\n        cur.append((i, el))\n    if cur:\n        sections.append((list(path), cur))\n    pieces = []\n    for path, els in sections:\n        pieces += split_section(path, els, target, overlap)   # paragraph, sentence, token\n    merged = []\n    for p in pieces:                                          # tricky part: tiny pieces\n        if merged and p['tokens'] < min_tokens and merged[-1]['path'] == p['path']:\n            merged[-1] = join(merged[-1], p)\n        else:\n            merged.append(p)\n    return [Chunk(chunk_id=xxhash.xxh64(m['text']).hexdigest(), text=m['text'],\n                  position=n, heading_path=m['path'], token_count=m['tokens'],\n                  element_range=m['range']) for n, m in enumerate(merged)]\n\n# split_section never cuts inside a table row or a code line and adds no\n# overlap across a hard boundary (heading or turn gap).",
+  "steps": [
+   {
+    "do": "Write the token counter and the hard boundary walk (headings, turn gaps, function bounds)",
+    "done_when": "a fixture with 3 headings produces at least 3 chunks with distinct heading_path values"
+   },
+   {
+    "do": "Write split_section with paragraph, sentence and token fallbacks",
+    "done_when": "a 5,000 token paragraph splits into chunks all at or under 512 tokens"
+   },
+   {
+    "do": "Protect table rows and code lines from splits",
+    "done_when": "a property test shows no chunk starts or ends mid row on 200 generated tables"
+   },
+   {
+    "do": "Add overlap of 40 tokens inside a section only",
+    "done_when": "adjacent chunks in one section share 30 to 50 tokens and chunks across a heading share 0"
+   },
+   {
+    "do": "Merge pieces under 128 tokens into the next sibling and compute chunk_id",
+    "done_when": "no chunk is under 128 tokens except a document's last one, and ids are 16 hex characters"
+   },
+   {
+    "do": "Report chunk ids and counts to the pointer registry",
+    "done_when": "the pointer row shows the chunk count and a second run produces identical ids"
+   }
+  ],
+  "config": {
+   "TARGET_TOKENS": "400 // inside the 256 to 512 range, tune on recall@20",
+   "OVERLAP_TOKENS": "40 // 10 percent of target",
+   "MIN_TOKENS": "128 // smaller pieces merge into the next one",
+   "CHAT_TURN_GAP_MIN": "10 // minutes of silence start a new chat chunk"
+  },
+  "verify": [
+   "pytest tests/test_chunk.py -q  # all passed, including the property tests",
+   "python -m brain.derive.chunk tests/fixtures/elements/doc.json | jq '[.[].token_count] | max'  # 512 or less",
+   "python -m brain.derive.chunk tests/fixtures/elements/doc.json | md5sum  # same hash on two runs"
+  ],
+  "pitfalls": [
+   "Counting tokens with the wrong tokenizer lets a chunk exceed the embedding limit: symptom is silent truncation in the embedding call, so keep a 10 percent margin",
+   "Overlap across a heading mixes unrelated topics: symptom is wrong hits for short queries",
+   "Hashing text with different whitespace each run changes chunk ids and defeats the cache: normalise whitespace before hashing"
+  ]
+ },
+ "ix_ctx": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_chunk",
+   "pl_gw",
+   "ix_pii"
+  ],
+  "stack": [
+   {
+    "part": "model call",
+    "pick": "LiteLLM proxy as the LLM gateway, with a small fast model behind it",
+    "why": "one endpoint, cost per call and routing; check current docs for the model id and the prompt caching flag"
+   },
+   {
+    "part": "cache table",
+    "pick": "Postgres 16 table in the tenant partition",
+    "why": "key is (tenant_id, chunk_hash, heading_path_hash), plain SQL and easy purge"
+   },
+   {
+    "part": "method",
+    "pick": "Anthropic contextual retrieval recipe (t_t26): cached whole document prefix plus one chunk, 50 to 100 token reply",
+    "why": "the research reports failure 5.7 to 3.7 percent with context, and 2.9 with BM25 added; check current docs for prompt caching syntax"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT send the whole document uncached for every chunk",
+    "why": "cost grows as chunks times document tokens; the research puts the cached cost near $1.02 per million document tokens"
+   }
+  ],
+  "install": [
+   "pip install litellm psycopg[binary]",
+   "docker run -d -p 4000:4000 -v $PWD/litellm.yaml:/app/config.yaml ghcr.io/berriai/litellm:main-stable --config /app/config.yaml",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/derive/ctx.py : cache lookup, model call, validation",
+   "brain/derive/prompts/situate.txt : the prompt text",
+   "migrations/010_ctx_cache.sql : the cache table",
+   "tests/test_ctx.py : cache hit, validation and failure tests"
+  ],
+  "schema": "CREATE TABLE ctx_cache (\n  tenant_id text NOT NULL,\n  chunk_hash text NOT NULL,\n  heading_path_hash text NOT NULL,\n  context_line text NOT NULL CHECK (char_length(context_line) <= 400),\n  model_id text NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, chunk_hash, heading_path_hash)\n);",
+  "interface": "async def write_context(tenant_id: str, doc_text: str, chunk: Chunk) -> ContextResult  # ContextResult(chunk_id, context_line: str | None, cached: bool, flagged: bool)",
+  "code": "URL_RX = re.compile(r'https?://|www\\.', re.I)\n\nasync def write_context(tenant_id, doc_text, chunk):\n    key = (tenant_id, chunk.chunk_hash, hash64(chunk.heading_path))\n    row = await db.fetchrow('SELECT context_line FROM ctx_cache WHERE tenant_id=$1 AND chunk_hash=$2 AND heading_path_hash=$3', *key)\n    if row:\n        return ContextResult(chunk.chunk_id, row['context_line'], True, False)\n    try:\n        r = await gateway.chat(\n            model=CTX_MODEL, timeout=15,\n            messages=[\n              {'role': 'system', 'content': [{'type': 'text', 'text': SITUATE_PROMPT},\n                  # same prefix for every chunk of this document, marked cacheable\n                  {'type': 'text', 'text': '<document>' + doc_text + '</document>',\n                   'cache_control': {'type': 'ephemeral'}}]},\n              {'role': 'user', 'content': '<chunk>' + chunk.text + '</chunk>'}])\n        line = r.text.strip()\n        if len(tokens(line)) > 60 or URL_RX.search(line) or '\\n' in line:\n            raise BadContext(line[:40])          # tricky part: untrusted model output\n    except Exception:\n        return ContextResult(chunk.chunk_id, None, False, True)\n    await db.execute('INSERT INTO ctx_cache VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT DO NOTHING', *key, line, CTX_MODEL)\n    return ContextResult(chunk.chunk_id, line, False, False)",
+  "steps": [
+   {
+    "do": "Create the ctx_cache table and the cache read and write functions",
+    "done_when": "psql \\d ctx_cache lists 6 columns and a second call for the same chunk returns cached=True"
+   },
+   {
+    "do": "Write the situating prompt and call it through the gateway with the document as a cached prefix",
+    "done_when": "the gateway log shows cache read tokens greater than 0 on the second chunk of one document"
+   },
+   {
+    "do": "Validate the reply for length, URLs and newlines",
+    "done_when": "a stubbed reply with a URL sets flagged=True and nothing is cached"
+   },
+   {
+    "do": "Make the failure path continue without a line",
+    "done_when": "killing the gateway leaves chunks flowing with context_line None and flagged=True"
+   },
+   {
+    "do": "Run a 50 document sample and total the tokens and cost",
+    "done_when": "cost per million document tokens is printed and is within 3 times the research estimate"
+   }
+  ],
+  "config": {
+   "CTX_MODEL": "set at deploy // a cheap fast model through the gateway, check current docs",
+   "MAX_CONTEXT_TOKENS": "60 // design value inside the published 50 to 100",
+   "MODEL_TIMEOUT_S": "15 // then continue without a line",
+   "CTX_ENABLED_TENANTS": "list // turn on per tenant after the M3 quality gate"
+  },
+  "verify": [
+   "pytest tests/test_ctx.py -q  # all passed",
+   "psql -c \"select count(*) from ctx_cache\"  # equals the number of unique chunks in the sample",
+   "python -m brain.derive.ctx_bench sample/  # prints cached_ratio above 0.5 on a re-run"
+  ],
+  "pitfalls": [
+   "Prefixing the document differently for each chunk defeats prompt caching: symptom is cost near the uncached estimate",
+   "A document text that contains instructions can steer the model: treat it as data, validate output and never run what it says",
+   "Keying the cache on chunk position invalidates it on every edit above: key on chunk hash plus heading path hash"
+  ]
+ },
+ "ix_pii": {
+  "milestone": "M2",
+  "effort_days": 8,
+  "depends_on": [
+   "ix_chunk",
+   "pl_pol"
+  ],
+  "stack": [
+   {
+    "part": "pattern rules",
+    "pick": "detect-secrets plugins plus a custom regex file",
+    "why": "key prefixes, private key headers and token formats; check current docs for plugin names"
+   },
+   {
+    "part": "personal data",
+    "pick": "Microsoft Presidio analyzer with a Luhn check recognizer",
+    "why": "names, emails, phones and card numbers in text; check current docs for recognizers and versions"
+   },
+   {
+    "part": "ambiguous spans",
+    "pick": "small model through the LLM gateway, 100 characters of context per span",
+    "why": "only for entropy-only or keyword-near spans, so cost stays low"
+   },
+   {
+    "part": "policy",
+    "pick": "OPA or Cedar rule giving the minimum sensitivity per app and path",
+    "why": "the label is the highest of the span labels and the policy floor"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT use a model-only detector and do NOT fail open on error",
+    "why": "a model miss leaks a secret into the index; on any error the chunk is held, not forwarded"
+   }
+  ],
+  "install": [
+   "pip install presidio-analyzer presidio-anonymizer detect-secrets",
+   "python -m spacy download en_core_web_lg",
+   "brew install opa  # or the Cedar CLI",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/derive/pii.py : detect, mask, label",
+   "brain/derive/rules/patterns.yaml : key and id patterns",
+   "brain/derive/entropy.py : Shannon entropy flagging",
+   "policy/sensitivity.rego : minimum label per app",
+   "tests/planted_secrets.json : the recall test set"
+  ],
+  "schema": "{\n \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n \"title\": \"CleanChunk\",\n \"type\": \"object\",\n \"required\": [\"chunk_id\", \"masked_text\", \"sensitivity\", \"masked_spans\"],\n \"properties\": {\n  \"chunk_id\": {\"type\": \"string\"},\n  \"masked_text\": {\"type\": \"string\"},\n  \"sensitivity\": {\"enum\": [\"public\", \"internal\", \"confidential\", \"restricted\"]},\n  \"masked_spans\": {\"type\": \"array\", \"items\": {\"type\": \"object\",\n    \"required\": [\"type\", \"start\", \"end\"],\n    \"properties\": {\"type\": {\"type\": \"string\"}, \"start\": {\"type\": \"integer\"}, \"end\": {\"type\": \"integer\"}}}}\n }\n}",
+  "interface": "def classify_and_mask(chunk: Chunk, policy_floor: str) -> CleanChunk | None  # None means restricted: do not forward, mark the pointer live_only",
+  "code": "RANK = {'public': 0, 'internal': 1, 'confidential': 2, 'restricted': 3}\n\ndef shannon(s):\n    n = len(s)\n    return -sum(c / n * math.log2(c / n) for c in Counter(s).values())\n\ndef classify_and_mask(chunk, policy_floor):\n    spans = []\n    for rule in PATTERNS:                                   # keys, private key headers, ids\n        spans += [(m.start(), m.end(), rule.type, 'confidential') for m in rule.rx.finditer(chunk.text)]\n    spans += [(m.start(), m.end(), 'card', 'restricted') for m in CARD_RX.finditer(chunk.text)\n              if luhn_ok(m.group())]\n    for m in TOKEN_RX.finditer(chunk.text):                 # 20+ chars\n        if len(m.group()) >= 20 and shannon(m.group()) > 4.5 and not overlaps(spans, m):\n            ctx = chunk.text[max(0, m.start() - 100): m.end() + 100]\n            if ambiguous_is_secret(ctx):                    # model call, fail closed\n                spans.append((m.start(), m.end(), 'high_entropy', 'confidential'))\n    label = max([policy_floor] + [s[3] for s in spans], key=RANK.get)\n    if label == 'restricted':\n        return None\n    text = chunk.text\n    for a, b, t, _ in sorted(spans, reverse=True):          # tricky part: right to left keeps offsets valid\n        text = text[:a] + f'[SECRET:{t}]' + text[b:]\n    audit([(chunk.chunk_id, t, r) for _, _, t, r in spans])   # type and rule only, never the value\n    return CleanChunk(chunk.chunk_id, text, label, [{'type': t, 'start': a, 'end': b} for a, b, t, _ in spans])",
+  "steps": [
+   {
+    "do": "Write the pattern rules file and the Luhn check",
+    "done_when": "pytest tests/test_patterns.py -q passes with a valid card flagged and a random 16 digit number not flagged"
+   },
+   {
+    "do": "Add Shannon entropy flagging for tokens of 20 or more characters",
+    "done_when": "a random 32 character key scores above 4.5 and an English word of 20 letters scores below"
+   },
+   {
+    "do": "Wire the model call for ambiguous spans and make errors fail closed",
+    "done_when": "with the gateway down the chunk is held and no unmasked text is forwarded"
+   },
+   {
+    "do": "Apply masking right to left and set the label as the highest of spans and policy floor",
+    "done_when": "a chunk with two secrets is masked in both places and the offsets in masked_spans are correct"
+   },
+   {
+    "do": "Write only span types and rule ids to the audit log",
+    "done_when": "grep of the audit log for a planted secret value returns 0 lines"
+   },
+   {
+    "do": "Measure recall and false mask rate on the planted set",
+    "done_when": "recall is 99 percent or more and false masks are 2 percent of chunks or less on the tenant sample"
+   }
+  ],
+  "config": {
+   "ENTROPY_THRESHOLD": "4.5 // bits per character, tune on the tenant's code and config",
+   "MIN_TOKEN_LEN": "20 // characters before entropy is checked",
+   "AMBIGUOUS_CONTEXT_CHARS": "100 // context sent to the model per span",
+   "FAIL_MODE": "closed // hold the chunk on any detector error"
+  },
+  "verify": [
+   "pytest tests/test_pii.py -q  # all passed",
+   "python -m brain.derive.pii_eval tests/planted_secrets.json  # recall >= 0.99 false_mask <= 0.02",
+   "grep -c 'AKIA' logs/audit.log  # 0"
+  ],
+  "pitfalls": [
+   "Entropy alone flags hashes, UUIDs and base64 images: symptom is a false mask rate above 2 percent, so send ambiguous spans to the model",
+   "Masking left to right shifts offsets and leaves part of a secret: mask from the end of the text backward",
+   "Logging the masked value in the audit record is itself a leak: log type and rule id only"
+  ]
+ },
+ "ix_embed": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [
+   "pl_gw"
+  ],
+  "stack": [
+   {
+    "part": "model access",
+    "pick": "LiteLLM proxy embeddings endpoint (OpenAI-compatible)",
+    "why": "one place to swap models and meter cost; check current docs for the model id and its max input"
+   },
+   {
+    "part": "cache",
+    "pick": "Postgres 16 table keyed (model_id, chunk_hash)",
+    "why": "skips unchanged chunks; Notion reports 70 percent less data from hashing spans (t_t44)"
+   },
+   {
+    "part": "numeric",
+    "pick": "numpy",
+    "why": "NaN check and L2 normalisation"
+   },
+   {
+    "part": "self-host option",
+    "pick": "Notion-style open model on Ray Serve (t_t46) only after volume justifies it",
+    "why": "removes the third-party hop; adds an operations burden, so start with the gateway"
+   },
+   {
+    "part": "avoid",
+    "pick": "Do NOT call a provider SDK directly from this card",
+    "why": "it bypasses cost metering and makes model swaps a code change"
+   }
+  ],
+  "install": [
+   "pip install openai numpy psycopg[binary]",
+   "docker run -d -p 4000:4000 ghcr.io/berriai/litellm:main-stable",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/derive/embed.py : batching, cache, validation",
+   "migrations/011_embed_cache.sql : cache table",
+   "tests/test_embed.py : batch halving and NaN tests",
+   "config/embedding.yaml : model id, dimension, normalise flag"
+  ],
+  "schema": "CREATE TABLE embed_cache (\n  model_id text NOT NULL,\n  chunk_hash text NOT NULL,\n  dim int NOT NULL,\n  vec bytea NOT NULL,\n  created_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (model_id, chunk_hash)\n);",
+  "interface": "async def embed_chunks(tenant_id: str, chunks: list[CleanChunk], model_id: str, index_gen: int) -> list[VectorRecord]  # VectorRecord(chunk_id, vec: list[float], model_id, index_gen, acl_ref, uri, tenant_id)",
+  "code": "B = 128\nDIM = 1024\n\nasync def embed_chunks(tenant_id, chunks, model_id, index_gen):\n    hits = await cache_get(model_id, [c.chunk_hash for c in chunks])\n    todo = sorted([c for c in chunks if c.chunk_hash not in hits],\n                  key=lambda c: c.token_count)           # sort by length: less padding\n    vecs = dict(hits)\n    i, size = 0, B\n    while i < len(todo):\n        batch = todo[i:i + size]\n        try:\n            r = await gateway.embeddings(model=model_id, input=[c.masked_text for c in batch])\n        except GatewayError:\n            if size == 1:\n                raise\n            size = max(1, size // 2)                      # tricky part: halve and retry\n            continue\n        for c, d in zip(batch, r.data):\n            v = np.asarray(d.embedding, dtype=np.float32)\n            if v.shape[0] != DIM or np.isnan(v).any():\n                raise BadVector(c.chunk_id)\n            vecs[c.chunk_hash] = v / np.linalg.norm(v)\n        i += len(batch)\n        size = min(B, size * 2)\n    await cache_put(model_id, {h: v for h, v in vecs.items() if h not in hits})\n    return [VectorRecord(c.chunk_id, vecs[c.chunk_hash].tolist(), model_id, index_gen,\n                         c.acl_ref, c.uri, tenant_id) for c in chunks]",
+  "steps": [
+   {
+    "do": "Create embed_cache and the cache read and write helpers",
+    "done_when": "psql \\d embed_cache lists 5 columns and a repeat call makes 0 gateway requests"
+   },
+   {
+    "do": "Write the batching loop sorted by token length",
+    "done_when": "a test with 1,000 chunks makes 8 gateway calls at batch size 128"
+   },
+   {
+    "do": "Add halving on gateway errors with a floor of 1",
+    "done_when": "a stub that rejects batches over 16 still embeds all chunks"
+   },
+   {
+    "do": "Validate dimension and NaN, then L2-normalise",
+    "done_when": "a wrong-dimension reply raises BadVector and every output vector has norm 1.0 within 1e-5"
+   },
+   {
+    "do": "Stamp model_id and index_gen on every VectorRecord",
+    "done_when": "a query for rows with a null model_id in the test index returns 0"
+   },
+   {
+    "do": "Hand records to the vector index and vector ids to the pointer registry",
+    "done_when": "the pointer row for a test document lists its vector ids"
+   }
+  ],
+  "config": {
+   "EMBED_MODEL_ID": "set at deploy // stored on every vector, check current docs for model and dimension",
+   "BATCH_SIZE": "128 // design default, tune to gateway limits",
+   "EMBED_DIM": "1024 // default for sizing, set from the evaluated model",
+   "MAX_TOKENS_PER_CHUNK": "512 // matches the chunk target"
+  },
+  "verify": [
+   "pytest tests/test_embed.py -q  # all passed",
+   "python -m brain.derive.embed_bench sample/  # prints calls = ceil(N/128) on a cold run and 0 on a warm run",
+   "psql -c \"select count(*) from embed_cache where dim <> 1024\"  # 0"
+  ],
+  "pitfalls": [
+   "Mixing two models in one index gives meaningless scores: symptom is recall collapsing after a model change, so always carry model_id and index_gen",
+   "Embedding the unmasked text puts secrets in the vector: always embed masked_text",
+   "A silent truncation past the model input limit drops the end of a chunk: keep chunks under 512 tokens and check the model limit in current docs"
+  ]
+ },
+ "ix_cat": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_ext",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with roaring bitmaps (pg_roaringbitmap) or Redis sets",
+    "why": "Fast AND and OR over id sets; check current docs for the extension build"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a second vector index for the catalog",
+    "why": "The catalog is labels and ids, not meaning; keep it in the pointer store"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] pyroaring",
+   "createdb brain_dev && psql brain_dev -c 'create extension if not exists pg_roaringbitmap'"
+  ],
+  "layout": [
+   "brain/index/catalog.py : term to bitmap writer and reader",
+   "tests/test_catalog.py : bitmaps, tombstones, ACL AND"
+  ],
+  "schema": "{\"term\":\"str\",\"kind\":\"type|entity|period|app|owner\",\"tenant_id\":\"str\",\"ids\":\"roaring bitmap of pointer ids\"}",
+  "interface": "def ids_for(tenant: str, terms: list[Term]) -> Bitmap  # AND across kinds, OR within a kind; never returns ids of other tenants",
+  "code": "from pyroaring import BitMap\n\ndef ids_for(db, tenant, terms):\n    by_kind = {}\n    for t in terms:\n        by_kind.setdefault(t.kind, []).append(t)\n    out = None\n    for kind, ts in by_kind.items():\n        bm = BitMap()\n        for t in ts:\n            bm |= load_bitmap(db, tenant, kind, t.value)      # OR within a kind\n        out = bm if out is None else out & bm                 # AND across kinds\n    return out if out is not None else load_bitmap(db, tenant, \"all\", \"*\")",
+  "steps": [
+   {
+    "do": "Define the term and kind list",
+    "done_when": "unit test lists every kind"
+   },
+   {
+    "do": "Write bitmaps on pointer upsert and tombstone",
+    "done_when": "deleted pointer leaves every bitmap in one change cycle"
+   },
+   {
+    "do": "Add ids_for with AND and OR rules",
+    "done_when": "two-kind query returns the intersection"
+   },
+   {
+    "do": "Add tenant check",
+    "done_when": "other tenant's term returns empty"
+   },
+   {
+    "do": "Add a nightly rebuild",
+    "done_when": "rebuild equals the live bitmaps on a sample"
+   }
+  ],
+  "config": {
+   "MAX_IDS": "5000 // cap before ranked search is cheaper",
+   "REBUILD_CRON": "0 3 * * *",
+   "TENANT_ISOLATION": "row level, one tenant per query"
+  },
+  "verify": [
+   "pytest tests/test_catalog.py -q  # all passed",
+   "psql brain_dev -c 'select count(*) from catalog_terms'  # rows present after a sample ingest"
+  ],
+  "pitfalls": [
+   "Forgetting to clear bitmaps on tombstone leaves deleted ids in scopes",
+   "Using OR across kinds widens the scope instead of narrowing it"
+  ]
+ }
+}

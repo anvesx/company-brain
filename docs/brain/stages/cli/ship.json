@@ -1,0 +1,802 @@
+{
+ "group": {
+  "line": "search and fetch return {id,title,text,url}, replies stay under every client limit, one manifest renders each client's config, a plugin and snippets teach agents when to call, and slow queries run as polled tasks.",
+  "dumb": "This is how the brain reaches each AI client. It offers the two tools ChatGPT expects and keeps replies small enough for all clients. It generates the setup file for each client from one form, ships a short skill and notes that tell agents when to ask it, and runs on a public address. Slow questions get a ticket the client can check and cancel."
+ },
+ "comps": {
+  "cl_search": {
+   "line": "Two read-only tools: search(query) -> [{id,title,url}], fetch(id) -> {id,title,text,url,metadata}\nsame JSON in structuredContent and text",
+   "dumb": "ChatGPT's research mode only works with a server that offers two tools named search and fetch. Search gives back a short list of hits with an id and a link. Fetch takes one id and returns the full text and the link. We offer exactly this pair, so the same server works in ChatGPT and everywhere else.",
+   "inn": "search {query: string} and fetch {id: string}, plus the caller's verified identity from cl_aud. Extra optional arguments (sources[], limit, cursor) are accepted but ignored by clients that do not know them.",
+   "out": "search: {results: [{id, title, url, text?}]} where text is a short snippet. fetch: {id, title, text, url, metadata?}. Each result is returned twice: as structuredContent and as the same JSON in a text content block. The url is always a non-empty string so the client can cite it.",
+   "store": "Reads the pointer index through qr_id (search) and qr_hyd (fetch). Stores nothing. The id is an opaque pointer handle that qr_hyd can resolve for the same user.",
+   "fail": "Unknown or no-longer-visible id on fetch: tool error not_found, no retry. Search timeout at 8 s (design): return the hits found so far with a note, or an empty list if none. If a result has no url the item is dropped, since without a url there is no citation.",
+   "req": "Requirement: 'read-only `search` (query -> results with id, title, url) and `fetch` (id'",
+   "hard": "The ChatGPT API page (fetched) shows an example over SSE and did not cover streamable HTTP; admin and company-knowledge detail is snippet level only (help pages returned 403). Open: whether search carries a snippet in text, since the page lists only id, title, url for search.",
+   "prop": "Proposal: one extra thin layer that renames our richer search and fetch behaviour into the pair ChatGPT expects, so a single server serves ChatGPT, Claude and the rest.",
+   "deep": {
+    "purpose": "Give ChatGPT deep research and company knowledge the exact two-tool shape they need, while all other clients use the same tools unchanged.",
+    "expected": [
+     "search returns at most 20 items, each with id, title and a non-empty url",
+     "fetch(id) for an id returned by search in the same session returns the full text and the same url",
+     "Both tools declare an output schema and return structuredContent plus the same JSON as text"
+    ],
+    "not_expected": [
+     "Neither tool writes anything; the brain has no write tool (see ll_ro)",
+     "fetch does not return an id the user cannot read; qr_hyd rechecks access with the user's token"
+    ],
+    "algorithm": {
+     "name": "Search and fetch adapter over the retrieval path",
+     "formula": "search(q) = map(to_item, qr_id.search(q, limit = 20)); fetch(id) = to_doc(qr_hyd.fetch(id, user))",
+     "steps": [
+      "On search, resolve the caller, run the retrieval path with limit 20, and map each hit to {id, title, url, text = snippet capped at 300 chars (design)}",
+      "Drop any hit with an empty url and count it in a metric",
+      "On fetch, resolve the id with qr_hyd, which re-reads the live text and rechecks access, then return {id, title, text, url, metadata}",
+      "Return the object as structuredContent and as one JSON text block, with the output schema declared for both tools"
+     ],
+     "params": {
+      "search_limit": "20 (design); keeps the reply small for every client, see cl_budget",
+      "snippet_chars": "300 (design)",
+      "fetch_text_cap": "set by cl_budget so one fetch stays under the output limit"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Expose only the richer brain tools",
+      "why_rejected": "ChatGPT deep research and company knowledge need the pair; without it the brain does not work there."
+     },
+     {
+      "name": "Five or ten specialised retrieval tools",
+      "why_rejected": "t_t19 reports tool definitions eat context; Dash moved from 5 to 10 tools to one super tool."
+     }
+    ],
+    "security": [
+     "Indirect prompt injection: fetched text may hold instructions; control is that qr_inj wraps the text as untrusted data before it reaches the client and the tools stay read-only so an injected command cannot write",
+     "Id guessing (insecure direct object reference): an attacker calls fetch with ids seen elsewhere; control is that ids are opaque and qr_hyd rechecks access with the caller's token on every fetch, so a guessed id returns not_found"
+    ],
+    "performance": {
+     "slo": "search p95 under 3 s and fetch p95 under 2 s end to end (design)",
+     "complexity": "O(limit) mapping on top of the retrieval cost",
+     "scaling": "At 10x calls the retrieval path is the cost; deep research calls search many times, so the per-agent quota (ll_quota) is the guard."
+    },
+    "edge_cases": [
+     "Zero hits: return an empty results list, not an error",
+     "Same document found through two sources: dedupe by id before mapping",
+     "fetch of a very large file: text is cut at the cap with metadata.truncated = true",
+     "Unicode titles: returned as UTF-8 unchanged",
+     "A new app joins through so_sdk or so_mcp and shows up in search results with no change to these tools"
+    ],
+    "tests": [
+     {
+      "name": "shape",
+      "given": "search 'pricing policy'",
+      "expect": "results[0] has id, title, url, and structuredContent equals the JSON text"
+     },
+     {
+      "name": "citation url",
+      "given": "a hit with url ''",
+      "expect": "dropped from results"
+     },
+     {
+      "name": "guessed id",
+      "given": "fetch an id from another user's search",
+      "expect": "tool error not_found"
+     }
+    ],
+    "cost_levers": [
+     "Snippet cap and limit 20 keep each search under a few thousand tokens"
+    ],
+    "feedback_events": [
+     "Citation clicks in ChatGPT are not visible to us; use fetch-after-search ratio as the proxy for useful hits"
+    ],
+    "analytics_events": [
+     {
+      "name": "tool.search",
+      "fields": [
+       "tenant_id",
+       "client_family",
+       "n_results",
+       "dropped_no_url",
+       "ms"
+      ],
+      "when": "on every search"
+     },
+     {
+      "name": "tool.fetch",
+      "fields": [
+       "tenant_id",
+       "client_family",
+       "truncated",
+       "ms"
+      ],
+      "when": "on every fetch"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t19",
+      "key_idea": "Expose one retrieval tool to the model and fan out server-side because many tool definitions cost context.",
+      "how": "Two tools only, with a small fixed shape."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_fastmcp",
+      "name": "FastMCP",
+      "take": "Tool decorators with output schemas; used to declare both tools."
+     }
+    ],
+    "industry": "OpenAI documents the search and fetch pair for deep research and company knowledge, with citations only when url is a non-empty string (clients.json, fetched).",
+    "refs": [
+     "t_t19",
+     "t_t51",
+     "t_t18"
+    ]
+   }
+  },
+  "cl_budget": {
+   "line": "Few tools, exact names; reply under min(25,000 tokens, 50,000 chars); maxResultSizeChars hint\ninstructions under 4,096 chars",
+   "dumb": "Each AI client has limits on how much a tool may send back and how many tools it will load. If a reply is too big the client cuts it or saves it to a file. We keep the tool list short, cap each reply well under the smallest limit, and keep our own instructions short. The result fits in every client.",
+   "inn": "The tool registry (name, description, input schema), each tool's draft result, and the estimated size of that result in characters.",
+   "out": "A size-trimmed result with a next-page cursor when cut, tool metadata with anthropic/maxResultSizeChars on the large tools and anthropic/alwaysLoad on the one entry tool, and a server instructions string.",
+   "store": "Reads the tool registry and the limits table (client family to max tokens, max chars, max tools) from config. Writes nothing; sizes go to metrics.",
+   "fail": "A result over the cap is cut at the last whole item, returned with a cursor and truncated = true; never cut inside an item. If the size estimator throws, the tool returns the first 5 items (design). A startup check refuses to boot when instructions exceed 4,096 chars or tool count exceeds 20.",
+   "req": "Requirement: 'MAX_MCP_OUTPUT_TOKENS default 25,000 tokens (warning above 10,000)'",
+   "hard": "Limits come from Claude Code, Windsurf and Gemini CLI docs (fetched); Codex has output_token_limit per tool and Cursor states no tool-count limit. The characters-per-token ratio is our default of 4 and must be measured on real replies.",
+   "prop": "Proposal: the smallest limit across clients sets the cap, so one budget serves all and no client has to cut our result.",
+   "deep": {
+    "purpose": "Keep every tool reply inside the smallest client limit and the tool list small, so no client cuts, spills or hides what the brain returns.",
+    "expected": [
+     "Tool count is at most 6 and every name is under 63 characters",
+     "A reply never exceeds 12,000 estimated tokens by default, which is under both 25,000 tokens and 50,000 characters",
+     "Server instructions are under 4,096 characters"
+    ],
+    "not_expected": [
+     "It does not rank or choose which hits to return; retrieval does",
+     "It does not hide data from the user; a cut reply carries a cursor to get the rest"
+    ],
+    "algorithm": {
+     "name": "Budgeted result trimming with a cursor",
+     "formula": "tokens(x) = ceil(chars(x) / 4); cap = min(25,000 tokens, 50,000 chars / 4) * safety, safety = 0.8",
+     "steps": [
+      "Estimate each item's size as ceil(chars / 4) tokens (default, measure on real data)",
+      "Add items in rank order while the running total stays under the cap",
+      "Stop before the item that would cross the cap; return a cursor pointing at it and truncated = true",
+      "Mark large tools (fetch) with the result-size hint and the one entry tool (search) with alwaysLoad; check tool count and instruction length at startup"
+     ],
+     "params": {
+      "tokens_per_char": "1/4 (default; tune by comparing with a real tokenizer on 500 replies)",
+      "safety": "0.8 (design)",
+      "hard_limits": "25,000 tokens (Claude Code default) and 50,000 chars before spill (clients.json)",
+      "tool_cap": "6 tools (design) against Windsurf's 100"
+     }
+    },
+    "math": {
+     "definitions": [
+      "chars(x): length of the serialised reply in characters",
+      "T_max: 25,000 tokens",
+      "C_max: 50,000 characters before Claude Code saves a reply to a file",
+      "safety: margin, 0.8"
+     ],
+     "formula_full": "cap_tokens = safety * min(T_max, C_max / 4)",
+     "derivation": "The character limit binds first: at 4 characters per token, 50,000 characters is 12,500 tokens, below 25,000. The margin covers estimate error and the JSON wrapper.",
+     "worked_example": "min(25,000, 50,000 / 4 = 12,500) = 12,500; times 0.8 = 10,000 tokens, about 40,000 characters. A search of 20 hits at 300 snippet chars is about 20 * (300 + 150 overhead) = 9,000 chars = 2,250 tokens: fits. One fetch of a 60,000 char document is cut to about 40,000 chars with a cursor.",
+     "complexity": "O(n) in items returned; under 1 ms for 20 items.",
+     "failure_modes": [
+      "Languages with many characters per token (for example Chinese) make chars/4 too optimistic; use a real tokenizer when the tenant language is not English",
+      "Client warning above 10,000 tokens: keep default replies under it where possible"
+     ],
+     "calibration": "Replace the 4 chars-per-token default with the measured median over 500 real replies; set safety to 0.9 only if no client ever cut a reply in 30 days."
+    },
+    "alternatives": [
+     {
+      "name": "Return everything and rely on client spill to file",
+      "why_rejected": "A saved file is read as one more tool call, costing time and context; Claude Code only does this above 50,000 chars."
+     },
+     {
+      "name": "Many narrow tools",
+      "why_rejected": "Tool definitions cost context and Windsurf caps at 100 (clients.json); t_t19 moved from 5 to 10 tools to one."
+     }
+    ],
+    "security": [
+     "Tool poisoning through descriptions: a tool description that tells the model to do something unrelated; control is that descriptions are written by us, reviewed in code, and hashed so a change shows in a diff",
+     "Denial through huge replies: a crafted query makes a large reply that burns another user's context or our bandwidth; control is the hard cap and the per-agent quota in ll_quota"
+    ],
+    "performance": {
+     "slo": "trim step under 2 ms p99 (design)",
+     "complexity": "O(n) items",
+     "scaling": "At 10x load trimming stays cheap; the cost is the retrieval before it, so cap the result count before hydration (see qr_hyd)."
+    },
+    "edge_cases": [
+     "One item larger than the cap: truncate its text with a marker and truncated = true",
+     "Empty result: return an empty list, no cursor",
+     "Cursor from an old page after the index changed: return a fresh first page with a note",
+     "Gemini CLI truncates tool names over 63 characters and the policy parser splits server names on underscores: use short hyphenated names",
+     "Adding a tool through the MCP bridge (so_mcp) or manifest (so_sdk) must not push the count over 6; the startup check fails the build"
+    ],
+    "tests": [
+     {
+      "name": "cap holds",
+      "given": "search returning 60 hits of 2,000 chars each",
+      "expect": "reply under 40,000 chars with a cursor and truncated true"
+     },
+     {
+      "name": "instructions length",
+      "given": "instructions string of 4,200 chars",
+      "expect": "startup check fails"
+     },
+     {
+      "name": "tool count",
+      "given": "registry with 7 tools",
+      "expect": "startup check fails"
+     }
+    ],
+    "cost_levers": [
+     "Smaller replies cut tokens for every model call that reads them"
+    ],
+    "feedback_events": [
+     "Clients reporting a cut or spilled reply are logged by user feedback and trigger a cap review"
+    ],
+    "analytics_events": [
+     {
+      "name": "budget.trimmed",
+      "fields": [
+       "tool",
+       "client_family",
+       "est_tokens",
+       "items_returned",
+       "truncated"
+      ],
+      "when": "on every reply"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t18",
+      "key_idea": "Tool definitions and results consume context; load definitions on demand and pass only the needed part.",
+      "how": "Few tools, trimmed results, and a hint on the one entry tool."
+     }
+    ],
+    "repos": [],
+    "industry": "Claude Code defers tool definitions through tool search, saves results over 50,000 characters to a file unless the tool sets a size hint, and caps server instructions at 4,096 characters (clients.json, fetched). Windsurf caps at 100 tools.",
+    "refs": [
+     "t_t18",
+     "t_t19"
+    ]
+   }
+  },
+  "cl_dist": {
+   "line": "One manifest {name,url} renders each client's config file; Claude Code, Codex, Cursor, Gemini CLI and more\nunconfirmed fields say check current docs",
+   "dumb": "Every AI client wants its connection set up in a different file. An admin fills in one short form with the brain's name and web address. We generate the right file for each client from it. Where our research could not read a client's admin page, the generated file says to check that client's current docs.",
+   "inn": "A manifest {name, url, tools[], oauth: {static_client_id?}} and a target list of client families.",
+   "out": "One file or instruction block per client family: managed-mcp.json (Claude Code), config.toml fragment (Codex), mcp.json (Cursor), settings.json fragment (Gemini CLI), mcp_config.json (Windsurf), an admin step list (Claude.ai, ChatGPT, Copilot policy).",
+   "store": "Reads the manifest and templates from the repository. Writes the rendered files to a rollout folder and a version row to the admin log. No credentials: only the server URL and, for static OAuth hosts, a public client id.",
+   "fail": "A template that cannot render because a field is missing fails the render run with the file name and field; nothing is partially written. A rendered file that fails its schema check (JSON or TOML parse) is not published. After a client changes its format the check fails within 1 day because the nightly test pulls current docs (design).",
+   "req": "Requirement: 'managed-mcp.json, managedMcpServers, allowedMcpServers, deniedMcpServers'",
+   "hard": "Only the control names for Claude Code managed MCP were confirmed (page text partly read, status snippet); Cursor org distribution is not confirmed; Gemini Enterprise page returned 404; ChatGPT admin pages returned 403 (snippets only); Codex enterprise requirement exists but its exact fields were not captured. Those parts stay as check current docs.",
+   "prop": "Proposal: five client families, five formats; generating them from one manifest keeps the server URL and names identical everywhere and makes a change one edit.",
+   "deep": {
+    "purpose": "Give an admin ready files for each client family from one manifest, so rollout is copy and apply, and never a hand-edited config.",
+    "expected": [
+     "One manifest edit changes the URL in every generated file",
+     "Every JSON or TOML output parses, and a Claude Code entry always carries a type field",
+     "Parts we could not confirm are marked check current docs and are never presented as exact"
+    ],
+    "not_expected": [
+     "It does not push files to user machines or enrol devices; the admin applies them",
+     "It does not put tokens, keys or passwords in any file"
+    ],
+    "algorithm": {
+     "name": "Template render from a single manifest with a parse check",
+     "formula": "files = { client: parse_check(render(template[client], manifest)) for client in targets }",
+     "steps": [
+      "Load and validate the manifest (name has no underscores and is under 63 chars, url is https)",
+      "Render each client's template with the manifest values",
+      "Parse every JSON and TOML output; fail the run on a parse error",
+      "Write files and a README of manual admin steps for clients without a file, then record a version row"
+     ],
+     "params": {
+      "name_rule": "hyphenated, no underscore (Gemini CLI policy parser splits on underscores, clients.json)",
+      "name_max": "63 chars (Gemini CLI truncates longer tool names)",
+      "targets": "claude-code, claude-ai, codex, chatgpt, cursor, copilot, gemini-cli, windsurf (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "A wiki page per client",
+      "why_rejected": "Goes stale at the first client change and copy errors move the URL out of sync."
+     },
+     {
+      "name": "One universal file",
+      "why_rejected": "No such file exists; each client reads its own format."
+     }
+    ],
+    "security": [
+     "Poisoned rollout: an attacker edits a generated config to point at a lookalike server; control is that the rollout folder is in version control with review and the files carry a hash logged in the admin log",
+     "Secret in config: an API key pasted into a file ends up in a repo; control is a render check that rejects any header named Authorization and any value that looks like a token, because the brain uses per-user OAuth"
+    ],
+    "performance": {
+     "slo": "full render of 8 targets under 2 s (design)",
+     "complexity": "O(clients)",
+     "scaling": "At 10x tenants render per tenant from the same templates; the cost stays negligible. The real load is human review of changes."
+    },
+    "edge_cases": [
+     "Two tenants with different URLs: one manifest per tenant, separate output folders",
+     "Client that needs a fixed callback port or static client id (Claude Code, Cursor static OAuth): optional oauth block fills those fields",
+     "Allowlisting one server in Windsurf blocks all others: the generated note warns to merge with the existing list",
+     "Manifest name with unicode or spaces: rejected by the name rule",
+     "A new AI client joins by adding one template file; a new source app does not touch this card"
+    ],
+    "tests": [
+     {
+      "name": "parse check",
+      "given": "render all targets for name company-brain",
+      "expect": "every JSON and TOML output parses"
+     },
+     {
+      "name": "type present",
+      "given": "Claude Code output",
+      "expect": "every entry with url has a type field"
+     },
+     {
+      "name": "name rule",
+      "given": "name 'company_brain'",
+      "expect": "render fails with underscore error"
+     },
+     {
+      "name": "no secrets",
+      "given": "manifest with a header Authorization",
+      "expect": "render fails"
+     }
+    ],
+    "cost_levers": [
+     "One manifest and templates avoid per-client support tickets"
+    ],
+    "feedback_events": [
+     "Support tickets tagged by client family show which template needs a fix"
+    ],
+    "analytics_events": [
+     {
+      "name": "rollout.rendered",
+      "fields": [
+       "tenant_id",
+       "targets",
+       "manifest_hash"
+      ],
+      "when": "on every render"
+     },
+     {
+      "name": "rollout.connected",
+      "fields": [
+       "client_family",
+       "first_sign_in"
+      ],
+      "when": "when a client first completes sign-in"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t51",
+      "key_idea": "MCP gives a standard, OAuth-based way for any client to call a compliant server as the user, so one server URL fits all clients.",
+      "how": "Every generated file points at the same URL."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_contextforge",
+      "name": "IBM MCP Context Forge",
+      "take": "A gateway and registry; the idea of one front door that clients are pointed at."
+     }
+    ],
+    "industry": "Claude Code uses managed-mcp.json and managedMcpServers. Claude.ai Team and Enterprise Owners add org connectors. GitHub Copilot uses the policy named MCP servers in Copilot (disabled by default, Business and Enterprise only). Windsurf admins use an allowlist. Codex has an enterprise mcp_servers requirement. ChatGPT admins enable developer mode and apps (snippet level). Sources: clients.json.",
+    "refs": [
+     "t_t51",
+     "t_t24",
+     "r_mcp-registry"
+    ]
+   }
+  },
+  "cl_plugin": {
+   "line": "Claude plugin with one skill, plus CLAUDE.md and AGENTS.md snippets generated from the tool list\nSKILL.md under 500 lines",
+   "dumb": "Giving an agent a tool does not tell it when to use it. We ship a small package with one skill file that says when to ask the brain, and two short text snippets people paste into their project notes. The text is generated from the real tool list, so the names are never out of date.",
+   "inn": "The tool registry (names, one-line purposes) from ll_schema and a short list of when-to-use rules.",
+   "out": "A plugin folder with SKILL.md (frontmatter name, description, optional when_to_use, plus body), a CLAUDE.md snippet and an AGENTS.md snippet, each naming the brain tools and when to call them.",
+   "store": "Reads the tool registry at build time. Writes files into the plugin repository and a version tag. Skills are files, not a network service, so nothing runs at query time.",
+   "fail": "A lint failure (description over 1,536 chars, SKILL.md over 500 lines, or a tool name not in the registry) blocks the release. A snippet that names a removed tool fails the nightly name check within 1 day (design).",
+   "req": "Requirement: 'Ship a Claude plugin with a skill and CLAUDE.md or AGENTS.md snippets'",
+   "hard": "The skills page was fetched; managed rollout details (plugin marketplaces, strictPluginOnlyCustomization, skillOverrides) are named only. Which non-Claude agents read AGENTS.md was not confirmed in clients.json, so the snippet is a plain text convention.",
+   "prop": "Proposal: models call a tool more reliably when the project notes say when to call it, and the skill keeps that text out of context until it is needed.",
+   "deep": {
+    "purpose": "Tell agents when to ask the brain and how to use its tools, using files they already load, with text that cannot drift from the real tool names.",
+    "expected": [
+     "SKILL.md description plus when_to_use stay under 1,536 characters",
+     "Every tool name in the snippets exists in the tool registry",
+     "The skill body stays under 500 lines and tells the agent to cite the returned url"
+    ],
+    "not_expected": [
+     "The skill does not grant access or hold credentials",
+     "It does not replace tool descriptions; it adds when-to-use guidance"
+    ],
+    "algorithm": {
+     "name": "Generate and lint skill and snippets from the tool registry",
+     "formula": "valid iff len(description + when_to_use) <= 1536 and lines(SKILL.md) <= 500 and names(files) subset of names(registry)",
+     "steps": [
+      "Read tool names and one-line purposes from the registry",
+      "Fill the SKILL.md, CLAUDE.md and AGENTS.md templates",
+      "Lint the length limits and check every tool name against the registry",
+      "Package the plugin and tag a version; claude.ai uploads accept only name, description, license, compatibility, metadata and allowed-tools, so a separate upload variant strips other fields"
+     ],
+     "params": {
+      "description_limit": "1,536 chars (Claude skills page, clients.json)",
+      "body_limit": "500 lines (same page)",
+      "after_compaction": "first 5,000 tokens per skill, 25,000 combined: keep the key rules at the top"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Rely on tool descriptions only",
+      "why_rejected": "They load every time and cost context; a skill loads on demand."
+     },
+     {
+      "name": "Long hand-written guide",
+      "why_rejected": "Drifts from tool names and gets truncated after compaction."
+     }
+    ],
+    "security": [
+     "Instruction injection through the skill: a tampered skill file could tell the agent to send data elsewhere; control is that the plugin is delivered through the managed marketplace, signed in release, and the lint rejects any URL that is not the brain host",
+     "Over-trust of retrieved text: the skill must say retrieved text is data not instructions; control is a required sentence checked by the lint"
+    ],
+    "performance": {
+     "slo": "plugin build under 10 s (design); description loads with every session so it stays under 1,536 chars",
+     "complexity": "O(tools)",
+     "scaling": "At 10x tools the description would overflow; the cap of 6 tools in cl_budget prevents it."
+    },
+    "edge_cases": [
+     "Tool renamed: nightly name check fails the build",
+     "Two skills with similar descriptions in one org: put the brain name in the description to avoid a wrong pick",
+     "claude.ai upload rejects extra frontmatter fields: build a stripped variant",
+     "Project without CLAUDE.md: the AGENTS.md snippet is the fallback",
+     "A new tool from so_mcp or so_sdk is added to the snippets only after cl_budget allows it"
+    ],
+    "tests": [
+     {
+      "name": "length lint",
+      "given": "description of 1,600 chars",
+      "expect": "lint fails"
+     },
+     {
+      "name": "name check",
+      "given": "snippet names tool find_stuff not in registry",
+      "expect": "lint fails"
+     },
+     {
+      "name": "upload variant",
+      "given": "skill with a custom frontmatter field",
+      "expect": "stripped variant keeps only the allowed fields"
+     }
+    ],
+    "cost_levers": [
+     "Progressive disclosure keeps the body out of context until the skill is picked"
+    ],
+    "feedback_events": [
+     "Sessions where the agent should have called the brain but did not, flagged by users, update when_to_use"
+    ],
+    "analytics_events": [
+     {
+      "name": "plugin.installed",
+      "fields": [
+       "client_family",
+       "version"
+      ],
+      "when": "on install"
+     },
+     {
+      "name": "tool.called_after_skill",
+      "fields": [
+       "tool",
+       "client_family"
+      ],
+      "when": "when a tool call follows skill load"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t18",
+      "key_idea": "Load instructions and tool schemas on demand so context holds only what is needed.",
+      "how": "A skill is loaded only when its description matches."
+     }
+    ],
+    "repos": [],
+    "industry": "Claude Code skills are SKILL.md files with progressive disclosure, shipped inside plugins from marketplaces, with enterprise controls in managed settings (clients.json, fetched).",
+    "refs": [
+     "t_t18",
+     "t_t51"
+    ]
+   }
+  },
+  "cl_net": {
+   "line": "Public HTTPS URL, vendor IP allowlist optional for cloud clients; private registry, not the public one\nOAuth stays the gate",
+   "dumb": "Some clients, such as Claude.ai and ChatGPT, call from the vendor's own cloud, so the brain must have a public web address. We can limit which networks may reach it, but local tools like Claude Code call from the user's laptop, so sign-in stays the real lock. We keep our own list of servers instead of using the public one.",
+   "inn": "An inbound HTTPS request with a source IP, TLS handshake, and the Host header; the vendor IP range lists (fetched from each vendor's page); the org's own network ranges.",
+   "out": "Traffic passed to the MCP server (ll_mcp) or refused with 403 at the edge. A private registry entry {name, url, version} for the org.",
+   "store": "Reads the allowlist file (CIDR list per source) and TLS certificates. Writes the refreshed allowlist and its version, and the edge access log.",
+   "fail": "If a vendor range refresh fails, keep the last list and alert after 2 failed daily runs (design); never switch to open. If the edge proxy fails the health check 3 times in 30 s, the load balancer drains it. A bad new list (empty or over 10x size change) is rejected before apply (design).",
+   "req": "Requirement: 'private or VPN servers need Anthropic IP ranges allowlisted'",
+   "hard": "No vendor IP ranges are in our research: take them from each vendor's own published page at deploy time (check current docs). The public MCP Registry does not support private servers; the private registry software choice is open. IP allowlists cannot cover local clients, so the mode (open with OAuth, or vendor-only) is the owner's decision.",
+   "prop": "Proposal: cloud-hosted clients need a public URL, so the edge limits who can reach it, refreshes the vendor lists by itself, and OAuth stays the actual control.",
+   "deep": {
+    "purpose": "Make the brain reachable from vendor clouds over HTTPS, narrow who can reach it where that is possible, and list it in a private registry.",
+    "expected": [
+     "The MCP URL answers over HTTPS with a valid certificate from outside the company network",
+     "In vendor-only mode a request from an unlisted address gets 403 before reaching the MCP server",
+     "The org registry lists the brain and not any public registry entry"
+    ],
+    "not_expected": [
+     "The allowlist is not an access control by itself; a request from a listed range still needs a valid token",
+     "It does not terminate OAuth; cl_aud does"
+    ],
+    "algorithm": {
+     "name": "Edge allowlist with scheduled refresh and diff guard",
+     "formula": "allow(ip) = ip in union(vendor_ranges, org_ranges); apply(new) only if |new| > 0 and size(new) / size(old) < 10",
+     "steps": [
+      "Daily, fetch each vendor's published range list from its own page and merge with org ranges",
+      "Diff against the current list; reject an empty list or a change over 10x in size",
+      "Apply to the edge rule set and keep the previous version for rollback",
+      "Publish the brain entry in the private registry and keep it out of public ones"
+     ],
+     "params": {
+      "mode": "open_oauth or vendor_allowlist (owner decision)",
+      "refresh_interval": "24 h (design)",
+      "size_guard": "reject empty or 10x change (design)",
+      "alert_after": "2 failed refreshes (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "VPN only",
+      "why_rejected": "Claude.ai calls from Anthropic's cloud and cannot join a customer VPN; clients.json says private servers need the vendor ranges allowlisted."
+     },
+     {
+      "name": "Register in the public MCP Registry",
+      "why_rejected": "It supports public servers only (clients.json), and GitHub's registry for Copilot is also public-only."
+     }
+    ],
+    "security": [
+     "Allowlist drift: a stale range lets a former tenant of an address block reach the server; control is daily refresh, and OAuth still required on every call",
+     "Spoofed source address through a proxy header: the edge trusts only the socket address unless the header comes from the known load balancer; control is a trusted-proxy list",
+     "Public exposure scanning: control is no tool works without a valid audience-bound token, and unauthenticated paths are only the 401 and two metadata files"
+    ],
+    "performance": {
+     "slo": "edge adds under 10 ms p95 (design)",
+     "complexity": "O(log n) CIDR lookup in a prefix tree, n under a few thousand ranges",
+     "scaling": "At 10x traffic add edge instances behind the load balancer; the allowlist is small and cached in memory."
+    },
+    "edge_cases": [
+     "Vendor adds a new range between refreshes: calls from it get 403 for up to 24 h; the alert on a spike in 403 with valid tokens shortens that",
+     "IPv6 ranges: stored and matched the same as IPv4",
+     "Certificate expiry: renew at 30 days left, alert at 14",
+     "Two tenants on one edge: host header selects the tenant allowlist",
+     "A new AI client joins by adding its range list to the refresh job; a new source app is unaffected"
+    ],
+    "tests": [
+     {
+      "name": "unlisted address",
+      "given": "vendor-only mode, request from 203.0.113.9 not in the list",
+      "expect": "403 at the edge"
+     },
+     {
+      "name": "empty list guard",
+      "given": "refresh returns zero ranges",
+      "expect": "not applied, alert raised"
+     },
+     {
+      "name": "registry",
+      "given": "query the org registry",
+      "expect": "brain entry present with the https url"
+     }
+    ],
+    "cost_levers": [
+     "Edge filtering drops scans before they reach the app servers"
+    ],
+    "feedback_events": [
+     "403 for a valid token from a new vendor address flags a missing range"
+    ],
+    "analytics_events": [
+     {
+      "name": "edge.request",
+      "fields": [
+       "host",
+       "source_class",
+       "status",
+       "ms"
+      ],
+      "when": "on every request"
+     },
+     {
+      "name": "edge.allowlist_applied",
+      "fields": [
+       "version",
+       "n_ranges",
+       "delta"
+      ],
+      "when": "on every refresh"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "Enterprise MCP deployments need network controls, tool allow-lists and audit around the server.",
+      "how": "Edge filter plus audit log of every request."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_mcp-registry",
+      "name": "MCP Registry",
+      "take": "Community registry software; the public instance is public-only, so we study it for a private registry design."
+     },
+     {
+      "ref": "r_mcp-gw-registry",
+      "name": "MCP Gateway and Registry",
+      "take": "A gateway with a registry that can run privately."
+     }
+    ],
+    "industry": "Claude.ai custom connectors connect from Anthropic's cloud; the Claude API MCP connector needs a public HTTP URL; Glean offers IP allowlists and Slack's IP allowlist applies to its MCP server (clients.json, fetched).",
+    "refs": [
+     "p_mcp-enterprise",
+     "t_t24",
+     "r_mcp-registry"
+    ]
+   }
+  },
+  "cl_tasks": {
+   "line": "MCP Tasks extension: slow search returns a task handle, client polls tasks/get, cancel stops the work\nstate machine with expiry",
+   "dumb": "Some questions span many apps and take a minute. Instead of holding the connection open, the brain answers at once with a ticket number. The client checks the ticket every few seconds and can cancel it. When the work is done, the client picks up the result.",
+   "inn": "A tool call made as a task (the client asks for task execution) with the same arguments as search, plus the caller's identity; later poll and cancel requests carrying the task id.",
+   "out": "At once: a task handle {taskId, status: working, pollInterval, ttl}. On poll: status working, input_required, completed, failed or cancelled; on completed, the same result as the synchronous call. On cancel: status cancelled.",
+   "store": "A task table (task_id, user_id, status, result pointer, created, expires). Result bodies are kept for the ttl only and deleted at expiry. The task runs on the durable work queue of the retrieval path.",
+   "fail": "Worker crash: the task is retried from the queue up to 2 times (design) then marked failed with a short reason. A task with no poll for ttl (default 15 minutes, design) is cancelled and its result deleted. Poll for an unknown or other user's task id returns not found.",
+   "req": "Requirement: 'Experimental task utility for long-running requests.'",
+   "hard": "Tasks were experimental in 2025-11-25 and move to the io.modelcontextprotocol/tasks extension in 2026-07-28 with poll-based tasks/get and tasks/update; exact method names and the cancel call must be read from the spec text. Which clients support tasks was not confirmed in clients.json.",
+   "prop": "Proposal: a multi-source question can outlast a client's tool timeout (Codex tool_timeout_sec default 60), so long queries get a handle instead of a held connection.",
+   "deep": {
+    "purpose": "Let slow multi-source questions finish without holding a connection or hitting a client timeout, with polling and cancellation the user controls.",
+    "expected": [
+     "A task-mode search returns a handle in under 500 ms",
+     "Polling shows working then completed, and the final result equals what the synchronous call would return",
+     "Cancelling stops the retrieval work within 5 seconds (design) and later polls show cancelled"
+    ],
+    "not_expected": [
+     "A task is not visible to any other user, even in the same tenant",
+     "It does not change what the user may see; permissions are checked the same way at run time"
+    ],
+    "algorithm": {
+     "name": "Task state machine with polling and expiry",
+     "formula": "status: working -> completed | failed | cancelled; expire when now - last_poll > ttl; poll_interval = 5 s",
+     "steps": [
+      "Create the task row with status working and enqueue the retrieval job with the caller's token",
+      "Return the handle with pollInterval and ttl",
+      "Worker writes the result pointer and sets completed, or sets failed on error",
+      "On poll, return the row if it belongs to the caller; on cancel, flip to cancelled and signal the worker to stop",
+      "A sweeper deletes expired tasks and their results every minute"
+     ],
+     "params": {
+      "poll_interval_s": "5 (design)",
+      "ttl_s": "900 (design): longer than the slowest observed multi-source query",
+      "max_retries": "2 (design)",
+      "max_open_tasks_per_user": "3 (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Hold the connection open",
+      "why_rejected": "Hits client timeouts such as Codex tool_timeout_sec default of 60 s."
+     },
+     {
+      "name": "Server push of results",
+      "why_rejected": "The 2026-07-28 spec moves to poll-based tasks and Tasks support in clients is not confirmed; polling works with fewer assumptions."
+     }
+    ],
+    "security": [
+     "Task id guessing: an attacker polls another user's task; control is that ids are random 128-bit values and every poll checks the owner, returning not found otherwise",
+     "Result leak after logout or revocation: control is that the task runs with the user's token, and ac_live rechecks access when the result is read, so revoked access returns no content",
+     "Resource exhaustion: unlimited open tasks; control is the 3 open tasks per user cap and ll_quota"
+    ],
+    "performance": {
+     "slo": "handle in under 500 ms; poll answer under 100 ms (design)",
+     "complexity": "O(1) per poll",
+     "scaling": "At 10x polls, polls are single-row reads; raise pollInterval for busy tenants to cut load."
+    },
+    "edge_cases": [
+     "Client that does not support tasks: the tool runs synchronously with an 8 s cap and returns partial results",
+     "Two identical task calls: both run; a deduplication key is not used (design) because results depend on the moment",
+     "Task completes after the client stopped polling: result kept until ttl, then deleted",
+     "Clock skew between workers: ttl uses the database clock",
+     "A new source app joins through so_mcp or so_sdk and is included in task fan-out without change here"
+    ],
+    "tests": [
+     {
+      "name": "handle fast",
+      "given": "task-mode search",
+      "expect": "handle returned in under 500 ms with status working"
+     },
+     {
+      "name": "cancel",
+      "given": "cancel a running task",
+      "expect": "status cancelled within 5 s and worker stops"
+     },
+     {
+      "name": "other user",
+      "given": "poll task id of user A as user B",
+      "expect": "not found"
+     },
+     {
+      "name": "expiry",
+      "given": "no poll for 901 s",
+      "expect": "task deleted and poll returns not found"
+     }
+    ],
+    "cost_levers": [
+     "Cancel stops paid source calls; the open-task cap bounds fan-out cost"
+    ],
+    "feedback_events": [
+     "Cancel rate per query type shows which queries are too slow"
+    ],
+    "analytics_events": [
+     {
+      "name": "task.created",
+      "fields": [
+       "tenant_id",
+       "client_family"
+      ],
+      "when": "on creation"
+     },
+     {
+      "name": "task.finished",
+      "fields": [
+       "status",
+       "seconds",
+       "n_sources"
+      ],
+      "when": "on terminal state"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "t_t32",
+      "key_idea": "Multi-step retrieval costs many more tokens and time than a single pass.",
+      "how": "Slow multi-source work gets a task so the client is not blocked."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_fastmcp",
+      "name": "FastMCP",
+      "take": "Check current docs for its task support in your version before building our own."
+     }
+    ],
+    "industry": "The MCP 2025-11-25 spec has an experimental task utility; the 2026-07-28 spec moves it into the io.modelcontextprotocol/tasks extension with polling (clients.json, fetched).",
+    "refs": [
+     "t_t32",
+     "t_t51"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "cl_search",
+   "b": "qr_hyd",
+   "l": "fetch call",
+   "k": "e",
+   "d": "Opaque id and the caller's identity; the hydrator re-reads live text and rechecks access"
+  },
+  {
+   "a": "cl_search",
+   "b": "ll_fmt",
+   "l": "result shape",
+   "k": "n",
+   "d": "Hits {id, title, url, snippet} mapped to the search and fetch output shape"
+  }
+ ]
+}

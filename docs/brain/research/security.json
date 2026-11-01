@@ -1,0 +1,212 @@
+[
+ {
+  "key": "rfc9700-refresh",
+  "cite": "RFC 9700 s2.2.2, 2.3, 4.10",
+  "url": "https://www.rfc-editor.org/rfc/rfc9700",
+  "status": "ok",
+  "claim": "Refresh tokens for public clients MUST be sender-constrained or use rotation (4.14); access tokens SHOULD be audience-restricted and sender-constrained; a resource server MUST refuse tokens not meant for it. Sec 4.14 body not read."
+ },
+ {
+  "key": "rfc8707",
+  "cite": "RFC 8707 Resource Indicators",
+  "url": "https://www.rfc-editor.org/rfc/rfc8707",
+  "status": "ok",
+  "claim": "The resource parameter names the target resource so the AS can audience-restrict the token, reducing redirect risk; distinct from scope."
+ },
+ {
+  "key": "rfc8693",
+  "cite": "RFC 8693 Token Exchange",
+  "url": "https://www.rfc-editor.org/rfc/rfc8693",
+  "status": "ok",
+  "claim": "Token exchange via grant type token-exchange with subject_token and optional actor_token; impersonation hides the actor, delegation keeps actor identity (act claim)."
+ },
+ {
+  "key": "mcp-auth",
+  "cite": "MCP Authorization spec (draft)",
+  "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization",
+  "status": "ok",
+  "claim": "Clients MUST send RFC 8707 resource on auth and token requests; servers MUST validate audience and MUST NOT accept or transit other tokens; clients MUST keep refresh tokens confidential in transit and storage; STDIO servers should take credentials from env."
+ },
+ {
+  "key": "mcp-sec",
+  "cite": "MCP Security Best Practices (draft)",
+  "url": "https://modelcontextprotocol.io/specification/draft/basic/security_best_practices",
+  "status": "ok",
+  "claim": "Token passthrough is forbidden (servers MUST NOT accept tokens not issued to them); confused-deputy proxies MUST do per-client consent, exact redirect_uri match; state handles are not auth and must be bound server-side to the verified user (draft replaced 2025-11-25 session hijacking section); local servers need sandboxing and consent; scope minimization."
+ },
+ {
+  "key": "auth0-vault",
+  "cite": "Auth0 Token Vault",
+  "url": "https://auth0.com/docs/secure/call-apis-on-users-behalf/token-vault",
+  "status": "ok",
+  "claim": "Token Vault stores external-provider access and refresh tokens; the app presents an Auth0 refresh token and receives the provider access token via exchange; AI agent calendar example. Only the page's own summary; internals not verified."
+ },
+ {
+  "key": "slack-rotation",
+  "cite": "Slack token rotation",
+  "url": "https://docs.slack.dev/authentication/using-token-rotation",
+  "status": "ok",
+  "claim": "Rotation is opt-in and cannot be turned off; access tokens expire in 12 hours; refresh tokens are single-use and revoked after a short grace period; only 2 active tokens kept if refreshed repeatedly."
+ },
+ {
+  "key": "entra-consent",
+  "cite": "Entra tenant-wide admin consent",
+  "url": "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent",
+  "status": "ok",
+  "claim": "Admin consent grants permissions on behalf of the whole org and lets all users access the app unless assignment is required; Privileged Role Admin needed for Graph application permissions; granting may revoke prior tenant-wide grants; user-granted permissions unaffected. Behavior on consent revocation not covered by page."
+ },
+ {
+  "key": "google-dwd",
+  "cite": "Google Workspace domain-wide delegation",
+  "url": "https://knowledge.workspace.google.com/admin/apps/control-api-access-with-domain-wide-delegation",
+  "status": "ok",
+  "claim": "DWD gives the app access to data of all users in the domain without per-user consent; super admin lists client ID and narrow scopes; deleting the client stops dependent apps immediately; changes can take up to 24 hours."
+ },
+ {
+  "key": "glean-perms",
+  "cite": "Glean security principles",
+  "url": "https://docs.glean.com/security/security-principles",
+  "status": "snippet",
+  "claim": "From search summary only (page not fetched): Glean mirrors source-system ACLs and checks user identity at query time; indexed mode relies on crawl snapshots so revocations lag (third-party deepinspect.ai view, unverified)."
+ },
+ {
+  "key": "glean-auth",
+  "cite": "Glean API authentication",
+  "url": "https://developers.glean.com/get-started/authentication",
+  "status": "ok",
+  "claim": "OAuth preferred for per-user integrations; Glean-issued tokens with X-Glean-ActAs for global permissions; Indexing API needs Glean-issued tokens. Page does not describe permission enforcement."
+ },
+ {
+  "key": "purview-copilot",
+  "cite": "Purview considerations for M365 Copilot",
+  "url": "https://learn.microsoft.com/en-us/purview/ai-m365-copilot-considerations",
+  "status": "ok",
+  "claim": "Copilot honors EXTRACT usage right; will not summarize content lacking EXTRACT; DLP can block summarizing labeled files; DKE and user-defined-permission labeled unopened files are inaccessible; container labels are not inherited by items; Teams chat labels not recognized; Graph connector/plugin data labels not recognized; Channel Agent does not check permissions for all channel users."
+ },
+ {
+  "key": "owasp-llm",
+  "cite": "OWASP Top 10 for LLM Apps 2025",
+  "url": "https://genai.owasp.org/llm-top-10/",
+  "status": "ok",
+  "claim": "LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM03 Supply Chain, LLM04 Data and Model Poisoning, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM08 Vector and Embedding Weaknesses, LLM09 Misinformation, LLM10 Unbounded Consumption."
+ },
+ {
+  "key": "owasp-llm06",
+  "cite": "OWASP LLM06 Excessive Agency",
+  "url": "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/",
+  "status": "ok",
+  "claim": "Root causes: excessive functionality, permissions, autonomy. Mitigations: minimal tools, narrow read-only extensions, run in the user's context, human approval for high impact, complete mediation downstream."
+ },
+ {
+  "key": "owasp-llm08",
+  "cite": "OWASP LLM08 Vector and Embedding Weaknesses",
+  "url": "https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/",
+  "status": "ok",
+  "claim": "Shared vector DB in multi-tenant setups can leak one group's embeddings to another; embedding inversion; poisoning via hidden text; mitigate with permission-aware vector stores, logical partitioning, classification tags, immutable retrieval logs."
+ },
+ {
+  "key": "vec2text",
+  "cite": "Morris et al. Text Embeddings Reveal (Almost) As Much As Text (EMNLP 2023)",
+  "url": "https://arxiv.org/pdf/2310.06816",
+  "status": "snippet",
+  "claim": "From search summary: Vec2Text recovers 92% of 32-token inputs exactly; authors say embeddings should be protected like raw text; recovered names from clinical notes. Paper not fetched."
+ },
+ {
+  "key": "trifecta",
+  "cite": "Simon Willison, The lethal trifecta",
+  "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
+  "status": "ok",
+  "claim": "Three legs: access to private data, exposure to untrusted content, external communication. Avoid combining all three; guardrail products are not a reliable fix."
+ },
+ {
+  "key": "camel",
+  "cite": "Debenedetti et al., Defeating Prompt Injections by Design (CaMeL)",
+  "url": "https://arxiv.org/abs/2503.18813",
+  "status": "ok",
+  "claim": "CaMeL separates control and data flow from the trusted query and uses capabilities enforced at tool calls; solves 77% of AgentDojo tasks with provable security vs 84% undefended."
+ },
+ {
+  "key": "gitleaks",
+  "cite": "gitleaks",
+  "url": "https://github.com/gitleaks/gitleaks",
+  "status": "ok",
+  "claim": "Detects secrets in git, dirs, stdin; TOML rules, baselines, base64/hex decode, SARIF output; feature complete, security patches only, maintainer moving to Betterleaks."
+ },
+ {
+  "key": "presidio",
+  "cite": "Microsoft Presidio",
+  "url": "https://microsoft.github.io/presidio/",
+  "status": "failed",
+  "claim": "Page only says it moved to data-privacy-stack.github.io/presidio; not read. No claim made."
+ },
+ {
+  "key": "trufflehog",
+  "cite": "trufflehog",
+  "url": "",
+  "status": "failed",
+  "claim": "Not researched; no source read."
+ },
+ {
+  "key": "recall-ms",
+  "cite": "Manage Recall (Microsoft Learn)",
+  "url": "https://learn.microsoft.com/en-us/windows/client-management/manage-recall",
+  "status": "ok",
+  "claim": "Recall is off and removed on managed devices by default; snapshots need user opt-in; Windows Hello required; snapshots and vector DB always encrypted with TPM-protected keys used in a VBS enclave; sensitive information filtering on by default; app, URI, retention, storage and Purview DLP policies; WDA_EXCLUDEFROMCAPTURE excludes a window."
+ },
+ {
+  "key": "recall-incident",
+  "cite": "TotalRecall coverage (Hagenah, Beaumont)",
+  "url": "https://www.bankinfosecurity.com/microsoft-recall-again-spills-secrets-a-31083",
+  "status": "snippet",
+  "claim": "From search summaries: 2024 preview stored data in a readable local SQLite DB; Microsoft pulled and redesigned it (relaunched April 2025); 2026 TotalRecall Reloaded claims same-user malware can still extract data, Microsoft closed as by design (researcher's claim, unverified)."
+ },
+ {
+  "key": "limitless",
+  "cite": "Meta acquires Limitless (Rewind)",
+  "url": "https://9to5mac.com/2025/12/05/rewind-limitless-meta-acquisition/",
+  "status": "snippet",
+  "claim": "From search summaries: Meta acquired Limitless on Dec 5 2025; Rewind desktop capture ended Dec 19 2025; users can export or delete data; service ended in EU, UK and several other regions. Page not fetched."
+ },
+ {
+  "key": "apple-notary",
+  "cite": "Apple notarization",
+  "url": "https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution",
+  "status": "snippet",
+  "claim": "WebFetch returned no page body; the summary was model background, not the page. Treat Developer ID, hardened runtime and notarytool as unverified."
+ },
+ {
+  "key": "sparkle",
+  "cite": "Sparkle security",
+  "url": "https://sparkle-project.org/documentation/security/",
+  "status": "failed",
+  "claim": "404; not read. No claim made."
+ },
+ {
+  "key": "screenpipe-granola",
+  "cite": "Screenpipe / Granola privacy",
+  "url": "",
+  "status": "failed",
+  "claim": "Not researched; no source read."
+ },
+ {
+  "key": "keychain-mdm",
+  "cite": "macOS Keychain, Jamf/Intune rollout",
+  "url": "",
+  "status": "failed",
+  "claim": "Not researched; no source read."
+ },
+ {
+  "key": "nango-composio-arcade",
+  "cite": "Nango, Composio, Arcade token vaults",
+  "url": "",
+  "status": "failed",
+  "claim": "Not researched; no source read."
+ },
+ {
+  "key": "gworkspace-atlassian-rotation",
+  "cite": "Google and Atlassian refresh token specifics",
+  "url": "",
+  "status": "failed",
+  "claim": "Not researched; no source read."
+ }
+]

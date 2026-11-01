@@ -1,0 +1,393 @@
+{
+ "cp_hook": {
+  "milestone": "M4",
+  "effort_days": 4,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12 standard library only",
+    "why": "reading from an offset needs only open, seek and read; fewer dependencies means a smaller signed bundle"
+   },
+   {
+    "part": "file events",
+    "pick": "watchfiles (Rust notify under the hood), check current docs for the version",
+    "why": "cross-platform folder watching; do NOT poll whole files every minute, cost grows with file size"
+   },
+   {
+    "part": "state",
+    "pick": "one JSON file per device with an atomic rename",
+    "why": "{path, inode, offset} per file is tiny; do NOT use a database for 2,000 rows"
+   }
+  ],
+  "install": [
+   "python3.12 -m venv .venv && . .venv/bin/activate",
+   "pip install watchfiles pytest"
+  ],
+  "layout": [
+   "companion/hook/tail.py : offset tail with inode check and partial-line hold-back",
+   "companion/hook/state.py : atomic load and save of the offset table",
+   "companion/hook/hookcmd.py : the small command the tool's Stop and SessionEnd hooks call",
+   "tests/test_tail.py : resume, partial line, rollover, bad line"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"OffsetState\",\n  \"type\": \"object\",\n  \"additionalProperties\": {\n    \"type\": \"object\",\n    \"required\": [\"inode\", \"offset\", \"head_hash\"],\n    \"properties\": {\n      \"inode\": {\"type\": \"integer\"},\n      \"offset\": {\"type\": \"integer\", \"minimum\": 0},\n      \"head_hash\": {\"type\": \"string\", \"description\": \"sha256 of the first 4096 bytes\"}\n    }\n  }\n}",
+  "interface": "def read_new(path: str, state: dict) -> tuple[list[dict], int, int]  # (parsed lines, new_offset, bad_line_count); the offset is committed by the caller after upload is acknowledged",
+  "code": "import hashlib, json, os\n\nCHUNK = 64 * 1024\nMAX_PER_SCAN = 8 * 1024 * 1024\n\ndef head_hash(f):\n    f.seek(0)\n    return hashlib.sha256(f.read(4096)).hexdigest()\n\ndef read_new(path, state):\n    st = os.stat(path)\n    row = state.get(path, {'inode': st.st_ino, 'offset': 0, 'head_hash': ''})\n    with open(path, 'rb') as f:\n        hh = head_hash(f)\n        # tricky part: a replaced or truncated file must restart at 0\n        if st.st_ino != row['inode'] or st.st_size < row['offset'] or (row['head_hash'] and hh != row['head_hash']):\n            row = {'inode': st.st_ino, 'offset': 0, 'head_hash': hh}\n        f.seek(row['offset'])\n        buf, total = b'', 0\n        while total < MAX_PER_SCAN:\n            chunk = f.read(CHUNK)\n            if not chunk:\n                break\n            buf += chunk\n            total += len(chunk)\n    cut = buf.rfind(b'\\n')\n    if cut < 0:\n        return [], row['offset'], 0       # only a partial line so far\n    complete = buf[:cut + 1]\n    out, bad = [], 0\n    for raw in complete.split(b'\\n'):\n        if not raw:\n            continue\n        try:\n            out.append(json.loads(raw))\n        except ValueError:\n            bad += 1\n    state[path] = {'inode': st.st_ino, 'offset': row['offset'] + len(complete), 'head_hash': hh}\n    return out, row['offset'] + len(complete), bad",
+  "steps": [
+   {
+    "do": "Write state.py with atomic save (write temp file, fsync, rename)",
+    "done_when": "kill -9 during a save never leaves a half file; test passes"
+   },
+   {
+    "do": "Write read_new for the append-only case",
+    "done_when": "test: 900 new bytes after offset reads 900 bytes, not the whole file"
+   },
+   {
+    "do": "Add partial-line hold-back",
+    "done_when": "test: a line cut after 60 bytes is not emitted, then emitted whole after the newline"
+   },
+   {
+    "do": "Add inode, size and first-4-KB check for rollover",
+    "done_when": "test: replaced file resets offset to 0 and logs a rollover"
+   },
+   {
+    "do": "Add the hook command that sends the transcript path to the daemon over a local socket",
+    "done_when": "running the command prints ok and the daemon logs the path"
+   },
+   {
+    "do": "Install the hook entries through the tool's managed settings (see cp_mdm)",
+    "done_when": "a new Claude Code session end triggers the command within 2 s"
+   }
+  ],
+  "config": {
+   "ALLOWLIST_ROOTS": "~/.claude/projects, $CODEX_HOME // only these folders are ever opened; check current docs for the Codex folder names",
+   "CHUNK_BYTES": "65536 // default read size",
+   "MAX_BYTES_PER_SCAN": "8388608 // protects against a huge or crafted file",
+   "FALLBACK_SCAN_S": "30 // scan interval when no hook fires"
+  },
+  "verify": [
+   "pytest tests/test_tail.py -q  # 4 passed",
+   "python -m companion.hook.tail --demo tests/fixtures/session.jsonl  # prints: read 900 bytes, 5 lines, bad 0"
+  ],
+  "pitfalls": [
+   "Splitting on every newline and committing the offset after the last chunk commits a half line: the next scan then parses a broken line and counts it as bad",
+   "Using file size alone to detect a rewrite misses a replaced file of the same size: always compare inode and the first-4-KB hash",
+   "The Codex rollout format (.jsonl or .jsonl.zst) is disputed between sources: skip compressed files with a counter until confirmed, check current docs"
+  ]
+ },
+ "cp_redact": {
+  "milestone": "M4",
+  "effort_days": 6,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "rules",
+    "pick": "gitleaks-style TOML rule file parsed with Python tomllib",
+    "why": "same fields as the gitleaks format (regex, keywords, entropy) but no runtime dependency on a project in maintenance mode"
+   },
+   {
+    "part": "regex engine",
+    "pick": "google-re2 Python binding, check current docs for the exact package",
+    "why": "linear time, so a crafted line cannot cause catastrophic backtracking; do NOT use the plain re module for untrusted text"
+   },
+   {
+    "part": "masking",
+    "pick": "own patterns for email and phone",
+    "why": "fixed patterns are enough for a first version; do NOT send text to a model to find personal data"
+   }
+  ],
+  "install": [
+   "pip install google-re2 pytest",
+   "mkdir -p companion/redact rules"
+  ],
+  "layout": [
+   "rules/secrets.toml : shared rule set (also loaded by the index-side scan)",
+   "companion/redact/scan.py : keyword prefilter, regex, entropy, masking",
+   "companion/redact/entropy.py : Shannon entropy",
+   "tests/test_redact.py : known keys, entropy gate, timeout, no raw text out"
+  ],
+  "schema": "# rules/secrets.toml\n[[rules]]\nid = \"cloud-access-key\"\ndescription = \"example rule: cloud access key id\"\nregex = '''AKIA[0-9A-Z]{16}'''\nkeywords = [\"akia\"]\nentropy = 3.0\n\n[[rules]]\nid = \"generic-high-entropy\"\ndescription = \"any 20+ char token with high entropy\"\nregex = '''[A-Za-z0-9+/=_-]{20,}'''\nkeywords = []\nentropy = 4.0",
+  "interface": "def redact(text: str, rules: list[Rule], budget_ms: int = 50) -> dict  # {text_redacted, redactions: [{rule_id, start, end}], content_dropped: bool}",
+  "code": "import math, time, unicodedata\nfrom collections import Counter\n\ndef entropy(s):\n    n = len(s)\n    return -sum(c / n * math.log2(c / n) for c in Counter(s).values())\n\ndef redact(text, rules, budget_ms=50):\n    t0 = time.monotonic()\n    text = unicodedata.normalize('NFKC', text)       # defeats look-alike characters\n    low = text.lower()\n    spans = []\n    for r in rules:\n        if r.keywords and not any(k in low for k in r.keywords):\n            continue                                  # cheap prefilter\n        for m in r.rx.finditer(text):\n            tok = m.group(0)\n            if r.entropy and entropy(tok) < r.entropy:\n                continue\n            spans.append((m.start(), m.end(), r.id))\n        if (time.monotonic() - t0) * 1000 > budget_ms:\n            # tricky part: fail closed, send no text at all\n            return {'text_redacted': '', 'redactions': [], 'content_dropped': True}\n    spans.sort()\n    merged = []\n    for s, e, rid in spans:\n        if merged and s <= merged[-1][1]:\n            merged[-1] = (merged[-1][0], max(e, merged[-1][1]), merged[-1][2])\n        else:\n            merged.append((s, e, rid))\n    out, pos = [], 0\n    for s, e, rid in merged:\n        out.append(text[pos:s]); out.append(f'[REDACTED:{rid}]'); pos = e\n    out.append(text[pos:])\n    return {'text_redacted': ''.join(out),\n            'redactions': [{'rule_id': r, 'start': s, 'end': e} for s, e, r in merged],\n            'content_dropped': False}",
+  "steps": [
+   {
+    "do": "Write entropy() and test it on the four worked strings",
+    "done_when": "values 0.00, 3.45, 4.32, 4.66 to two decimals"
+   },
+   {
+    "do": "Load the TOML rules and compile each regex with the RE2 engine",
+    "done_when": "load prints the rule count and fails on a bad regex"
+   },
+   {
+    "do": "Add the keyword prefilter and merge overlapping spans",
+    "done_when": "test: two overlapping hits give one [REDACTED] label"
+   },
+   {
+    "do": "Add the 50 ms budget with fail-closed output",
+    "done_when": "test: a 5 MB line returns content_dropped true and empty text"
+   },
+   {
+    "do": "Add email and phone masking and NFKC normalisation",
+    "done_when": "test: a look-alike character key is still redacted"
+   },
+   {
+    "do": "Plant 1,000 fake secrets in sample lines and run the full path",
+    "done_when": "zero outputs contain any planted string"
+   }
+  ],
+  "config": {
+   "ENTROPY_MIN": "4.0 // bits per character for the generic rule; hex rules use 3.0",
+   "BUDGET_MS": "50 // per line, then fail closed",
+   "RULES_REFRESH_H": "24 // signed rule file re-read interval",
+   "MIN_TOKEN_LEN": "20 // characters for the generic rule"
+  },
+  "verify": [
+   "pytest tests/test_redact.py -q  # 5 passed",
+   "python tests/plant.py --n 1000  # leaked: 0 of 1000"
+  ],
+  "pitfalls": [
+   "Using the plain re module on untrusted chat text: one crafted line can hang the daemon for minutes; use a linear-time engine plus the time budget",
+   "Writing the matched text into the redaction record or a log: the record keeps positions and rule ids only, or the secret leaks into the log",
+   "Hex strings top out at 4.0 bits, so a global 4.0 threshold misses hex secrets; give hex rules their own lower threshold"
+  ]
+ },
+ "cp_vault": {
+  "milestone": "M4",
+  "effort_days": 5,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "keychain access",
+    "pick": "Python keyring library, check current docs for the version",
+    "why": "one API over macOS Keychain, Windows Credential Manager and the Linux secret service; do NOT store the token in a config file"
+   },
+   {
+    "part": "signing the pause flag",
+    "pick": "HMAC-SHA256 with a random key held in the keychain",
+    "why": "a tampered pause file fails the check and counts as paused"
+   },
+   {
+    "part": "status icon",
+    "pick": "pystray for the tray icon, check current docs",
+    "why": "the pause button must be visible; a hidden switch breaks the consent promise"
+   }
+  ],
+  "install": [
+   "pip install keyring pystray pillow pytest",
+   "python -c \"import keyring; print(keyring.get_keyring())\""
+  ],
+  "layout": [
+   "companion/vault/keychain.py : get, set and delete of token and flag key",
+   "companion/vault/pause.py : signed pause state and capture_allowed()",
+   "companion/vault/consent.py : notice version and acceptance record",
+   "companion/ui/tray.py : icon and pause button"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"PauseAndConsent\",\n  \"type\": \"object\",\n  \"required\": [\"paused\", \"counter\", \"mac\", \"consent\"],\n  \"properties\": {\n    \"paused\": {\"type\": \"boolean\"},\n    \"counter\": {\"type\": \"integer\", \"description\": \"monotonic, orders changes\"},\n    \"since\": {\"type\": \"string\", \"format\": \"date-time\"},\n    \"mac\": {\"type\": \"string\", \"description\": \"HMAC-SHA256 hex over paused|counter|since\"},\n    \"consent\": {\"type\": \"object\", \"properties\": {\"notice_version\": {\"type\": \"integer\"}, \"accepted_at\": {\"type\": \"string\"}}}\n  }\n}",
+  "interface": "def capture_allowed() -> bool  # True only if consent matches the current notice, the pause flag verifies and is false, and a token exists",
+  "code": "import hashlib, hmac, json, keyring\n\nSERVICE = 'brain-companion'\nNOTICE_VERSION = 4\n\ndef _key():\n    k = keyring.get_password(SERVICE, 'flag-key')\n    if k is None:\n        import secrets\n        k = secrets.token_hex(32)\n        keyring.set_password(SERVICE, 'flag-key', k)\n    return k.encode()\n\ndef _mac(p):\n    msg = f\"{p['paused']}|{p['counter']}|{p.get('since','')}\".encode()\n    return hmac.new(_key(), msg, hashlib.sha256).hexdigest()\n\ndef save_state(path, paused, counter, since, consent):\n    p = {'paused': paused, 'counter': counter, 'since': since, 'consent': consent}\n    p['mac'] = _mac(p)\n    open(path, 'w').write(json.dumps(p))\n\ndef capture_allowed(path):\n    try:\n        p = json.load(open(path))\n    except (OSError, ValueError):\n        return False                                   # no state means no capture\n    # tricky part: a bad signature means paused, never 'unpaused'\n    if not hmac.compare_digest(p.get('mac', ''), _mac(p)):\n        return False\n    if p['paused']:\n        return False\n    if p['consent'].get('notice_version') != NOTICE_VERSION:\n        return False\n    return keyring.get_password(SERVICE, 'device-token') is not None",
+  "steps": [
+   {
+    "do": "Write the keychain wrapper and store a dummy token",
+    "done_when": "keyring get returns the token; the token string is not found by grep in the home folder"
+   },
+   {
+    "do": "Write save_state and capture_allowed with the signed flag",
+    "done_when": "test: flipping paused to false by hand makes capture_allowed return False"
+   },
+   {
+    "do": "Add consent with a notice version",
+    "done_when": "test: bumping NOTICE_VERSION stops capture until accepted again"
+   },
+   {
+    "do": "Add the tray icon with Pause and Resume",
+    "done_when": "pressing pause shows paused within 250 ms"
+   },
+   {
+    "do": "Wire capture_allowed into the daemon loop before every read and upload",
+    "done_when": "with pause on, 10 s of file growth gives zero reads and zero requests"
+   },
+   {
+    "do": "Send consent and pause events to the brain",
+    "done_when": "the brain log shows both events with the device id"
+   }
+  ],
+  "config": {
+   "NOTICE_VERSION": "4 // bump when the list of folders or what is collected changes",
+   "TOKEN_CACHE_S": "60 // avoid a keychain call per batch",
+   "LOCKED_RECHECK_S": "30 // retry period when the keychain is locked",
+   "TOKEN_ROTATE_DAYS": "30 // rotate on use; confirm with the brain's token policy"
+  },
+  "verify": [
+   "pytest tests/test_vault.py -q  # 4 passed (tampered flag, notice bump, no token on disk, locked keychain)",
+   "grep -r \"$(python -c 'import keyring;print(keyring.get_password(\"brain-companion\",\"device-token\"))')\" ~ --include='*' -l 2>/dev/null | wc -l  # 0"
+  ],
+  "pitfalls": [
+   "Keeping the pause flag as a plain boolean file: any program can write false and re-enable capture; sign it",
+   "Treating a keychain read error as 'allowed': the daemon then captures while locked; every error path returns False",
+   "Checking pause only at start of a batch: files read before the press still upload; check again just before the POST and drop the batch"
+  ]
+ },
+ "cp_daemon": {
+  "milestone": "M4",
+  "effort_days": 8,
+  "depends_on": [
+   "cp_hook",
+   "cp_redact",
+   "cp_vault"
+  ],
+  "stack": [
+   {
+    "part": "runtime",
+    "pick": "Python 3.12 with httpx 0.27 or newer, check current docs",
+    "why": "async client with timeouts; ship as a signed bundle (see cp_mdm); a Rust rewrite is a later hardening step, not a first need"
+   },
+   {
+    "part": "service manager",
+    "pick": "launchd on macOS, a Windows service, systemd user unit on Linux",
+    "why": "restart within 5 s after a crash; do NOT run it from a login script"
+   },
+   {
+    "part": "transport",
+    "pick": "HTTPS to one pinned hostname, outbound only",
+    "why": "no listening socket; do NOT add a local web server for status, use a local socket"
+   }
+  ],
+  "install": [
+   "pip install httpx watchfiles pytest",
+   "launchctl load ~/Library/LaunchAgents/com.example.brain-companion.plist  # macOS example"
+  ],
+  "layout": [
+   "companion/daemon/main.py : the loop",
+   "companion/daemon/upload.py : batching, backoff, ack",
+   "companion/daemon/paths.py : realpath and allowlist check",
+   "packaging/ : plist, service file and installer scripts handed to cp_mdm"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"TurnBatch\",\n  \"type\": \"object\",\n  \"required\": [\"device_id\", \"tool\", \"session\", \"turns\"],\n  \"properties\": {\n    \"device_id\": {\"type\": \"string\"},\n    \"tool\": {\"enum\": [\"claude-code\", \"codex\"]},\n    \"session\": {\"type\": \"string\"},\n    \"turns\": {\"type\": \"array\", \"maxItems\": 200, \"items\": {\n      \"type\": \"object\", \"required\": [\"offset_start\", \"offset_end\", \"text_redacted\", \"content_dropped\"],\n      \"properties\": {\"offset_start\": {\"type\": \"integer\"}, \"offset_end\": {\"type\": \"integer\"}, \"text_redacted\": {\"type\": \"string\"}, \"content_dropped\": {\"type\": \"boolean\"}}}}\n  }\n}",
+  "interface": "POST https://ingest.example.com/v1/turns  headers {Authorization: Bearer <device token>, Content-Encoding: gzip}  body TurnBatch  -> 202 {acked_through: <offset_end>} | 401 | 429 | 5xx",
+  "code": "import asyncio, os, random\nimport httpx\n\nBASE, CAP = 2.0, 300.0\n\ndef real_under(path, roots):\n    p = os.path.realpath(path)\n    return any(p == r or p.startswith(r + os.sep) for r in roots)\n\nasync def send_with_backoff(client, batch, token, allowed):\n    n = 0\n    while True:\n        if not allowed():                 # pause check right before the POST\n            return None\n        try:\n            r = await client.post('/v1/turns', json=batch,\n                                  headers={'Authorization': f'Bearer {token()}'}, timeout=20)\n            if r.status_code == 202:\n                return r.json()['acked_through']\n            if r.status_code == 401:\n                raise PermissionError('relink')\n        except httpx.TransportError:\n            pass\n        delay = min(CAP, BASE * 2 ** n) * random.uniform(0.5, 1.0)\n        n += 1\n        await asyncio.sleep(delay)\n\nasync def run_file(client, path, state, roots, read_new, build_batch, allowed, token):\n    if not real_under(path, roots):\n        return                             # symlink escape\n    lines, new_off, bad = read_new(path, state)\n    if not lines:\n        return\n    acked = await send_with_backoff(client, build_batch(path, lines), token, allowed)\n    if acked is not None:\n        state[path]['acked_offset'] = new_off     # advance only after the 2xx",
+  "steps": [
+   {
+    "do": "Write paths.real_under and test the symlink escape",
+    "done_when": "test: a link to ~/.ssh/config is rejected"
+   },
+   {
+    "do": "Write send_with_backoff with jitter and the pause check",
+    "done_when": "test: with the server down, delays follow 2, 4, 8 s ceilings"
+   },
+   {
+    "do": "Write the loop: watch, read_new, redact, batch, send, ack",
+    "done_when": "40 turns written offline arrive once each after the network returns"
+   },
+   {
+    "do": "Add the signed state file with fsync on ack",
+    "done_when": "kill -9 after POST but before 2xx gives a resend and the server dedupes"
+   },
+   {
+    "do": "Add the heartbeat and the policy signature check",
+    "done_when": "heartbeat shows in the brain log every 300 s; a changed policy file stops the daemon"
+   },
+   {
+    "do": "Package and hand to cp_mdm",
+    "done_when": "the signed bundle installs on a test laptop and survives a reboot"
+   }
+  ],
+  "config": {
+   "INGEST_URL": "https://ingest.example.com // pinned host; replace per environment",
+   "BATCH_MAX_TURNS": "200 // design",
+   "BATCH_MAX_BYTES": "262144 // 256 KB, design",
+   "BATCH_MAX_WAIT_S": "5 // flush timer",
+   "SPOOL_MAX_MB": "50 // stop reading when full and alert",
+   "HEARTBEAT_S": "300 // design"
+  },
+  "verify": [
+   "pytest tests/test_daemon.py -q  # 6 passed (offline gap, pause, escape, crash before ack, backoff, spool full)",
+   "python tests/e2e_offline.py --turns 40  # delivered: 40, duplicates after dedupe: 0"
+  ],
+  "pitfalls": [
+   "Writing acked_offset when the POST is sent instead of when the 202 arrives: a crash loses a batch silently",
+   "Using wall-clock time for backoff: a clock change makes the delay huge or zero; use a monotonic clock",
+   "Opening a local HTTP port for a status page: any local page can then call it; use a Unix socket or named pipe with file permissions",
+   "Claude Code removes sessions after about 30 days by default: an offline gap longer than that loses turns, so emit a gap event with the dates"
+  ]
+ },
+ "cp_mdm": {
+  "milestone": "M4",
+  "effort_days": 10,
+  "depends_on": [
+   "cp_daemon"
+  ],
+  "stack": [
+   {
+    "part": "signing and notarising",
+    "pick": "Apple Developer ID certificate with notarytool on macOS; Authenticode certificate on Windows",
+    "why": "the operating system refuses unsigned background tools; exact flags: check current docs (our research could not verify Apple's page)"
+   },
+   {
+    "part": "rollout",
+    "pick": "Jamf Pro or Microsoft Intune, whichever the company already runs",
+    "why": "pushes the package and policy file; do NOT ask users to install by hand"
+   },
+   {
+    "part": "update signature",
+    "pick": "Ed25519 with the Python cryptography library",
+    "why": "small keys and fast checks; the public key is pinned in the app, the private key stays with the release team"
+   }
+  ],
+  "install": [
+   "pip install cryptography pytest",
+   "xcrun notarytool --help  # macOS only; check current docs for flags"
+  ],
+  "layout": [
+   "release/sign_manifest.py : signs {version, sha256, min_version}",
+   "companion/update/apply.py : verify, compare version, swap build",
+   "companion/update/heartbeat.py : 300 s check-in and disable flag",
+   "mdm/policy.example.json : allowlist, hostname, channel, min version"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"UpdateManifest\",\n  \"type\": \"object\",\n  \"required\": [\"version\", \"sha256\", \"min_version\", \"channel\", \"signature\"],\n  \"properties\": {\n    \"version\": {\"type\": \"string\", \"pattern\": \"^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\"},\n    \"sha256\": {\"type\": \"string\"},\n    \"min_version\": {\"type\": \"string\"},\n    \"channel\": {\"enum\": [\"stable\", \"pilot\"]},\n    \"signature\": {\"type\": \"string\", \"description\": \"base64 Ed25519 over version|sha256|min_version|channel\"}\n  }\n}",
+  "interface": "def apply_update(manifest: dict, package: bytes, current: str, pinned_channel: str, pubkey: bytes) -> bool  # True only if signature, hash, channel and version all pass\n# heartbeat: GET https://ingest.example.com/v1/heartbeat?device=<id> -> {\"disable\": bool, \"policy_version\": int}",
+  "code": "import base64, hashlib\nfrom cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey\nfrom cryptography.exceptions import InvalidSignature\n\ndef vkey(v):\n    return tuple(int(x) for x in v.split('.'))\n\ndef apply_update(m, package, current, pinned_channel, pubkey):\n    msg = f\"{m['version']}|{m['sha256']}|{m['min_version']}|{m['channel']}\".encode()\n    try:\n        Ed25519PublicKey.from_public_bytes(pubkey).verify(base64.b64decode(m['signature']), msg)\n    except (InvalidSignature, ValueError):\n        return False\n    if m['channel'] != pinned_channel:\n        return False                         # pinned channel only\n    if hashlib.sha256(package).hexdigest() != m['sha256']:\n        return False\n    # tricky part: refuse any version that is not strictly higher\n    if vkey(m['version']) <= vkey(current):\n        return False\n    install_atomically(package)              # keep the old build until the new one verifies\n    return True\n\ndef heartbeat_step(get, device_id, stop_daemon, last_ok):\n    try:\n        j = get(f'/v1/heartbeat?device={device_id}')\n        if j.get('disable'):\n            stop_daemon('remote disable')\n        return j, 0\n    except OSError:\n        return None, last_ok + 300            # seconds without an answer\n\ndef self_pause_needed(seconds_without_answer, limit=24 * 3600):\n    return seconds_without_answer >= limit",
+  "steps": [
+   {
+    "do": "Create the signing keys and pin the public key in the app",
+    "done_when": "a manifest signed with the key verifies in a unit test"
+   },
+   {
+    "do": "Write apply_update with the downgrade and channel checks",
+    "done_when": "tests: bad signature, wrong hash, old version and wrong channel all return False"
+   },
+   {
+    "do": "Sign and notarise a test build on macOS and sign a Windows build",
+    "done_when": "spctl --assess on macOS accepts the app; check current docs for the Windows check"
+   },
+   {
+    "do": "Write the management profile or package for Jamf or Intune with the policy file",
+    "done_when": "a test laptop in the group gets the app within 1 hour"
+   },
+   {
+    "do": "Add the heartbeat with the disable flag and the 24 h self-pause",
+    "done_when": "setting disable true stops a test device within 300 s plus jitter"
+   },
+   {
+    "do": "Run a staged rollout of 5 percent, 25 percent, then 100 percent on the pilot channel",
+    "done_when": "no update-refused alerts at 5 percent for 24 h"
+   }
+  ],
+  "config": {
+   "UPDATE_CHANNEL": "stable // pilot devices are pinned to pilot by policy",
+   "HEARTBEAT_S": "300 // design; 60 if the owner needs faster disable",
+   "UPDATE_CHECK_H": "24 // design",
+   "SELF_PAUSE_H": "24 // pause the daemon after this long without a heartbeat answer; confirm with the owner",
+   "ROLLOUT_WAVES": "5,25,100 // percent of devices"
+  },
+  "verify": [
+   "pytest tests/test_update.py -q  # 4 passed (bad signature, wrong hash, rollback, wrong channel)",
+   "spctl --assess --type execute -v /Applications/BrainCompanion.app  # accepted (macOS; source=Notarized Developer ID)"
+  ],
+  "pitfalls": [
+   "Keeping the signing key on the same account that publishes the package: one stolen login ships malware to every laptop; keep keys separate",
+   "Comparing versions as strings: '1.10.0' sorts below '1.9.0'; compare numeric tuples",
+   "Replacing the running build before the new one verifies: a failed update leaves a laptop with no capture and no way to recover; keep the old build until the new one runs",
+   "Exact notarisation and Intune or Jamf settings were not verified in our research: check current vendor docs before the first rollout"
+  ]
+ }
+}

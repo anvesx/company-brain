@@ -1,0 +1,643 @@
+{
+ "group": {
+  "line": "A mode table picks the admin grant for company data and the user's own grant for personal data, SSO session reuse links apps, the stricter ACL wins in the merged view, and a probe reports what the admin crawl misses.",
+  "dumb": "Company data is read with one admin grant. Personal data is read only with each person's own grant, which they give by signing in once with company login. When the company view and the person's view disagree, we show only what both allow. A report tells admins how much the company crawl cannot see, and prompts people to connect those apps."
+ },
+ "comps": {
+  "cr_mode": {
+   "line": "Policy table (connector, zone) to {app_only, user_grant, both, none}; strict mode forces user_grant\ndefault: company app_only, personal user_grant",
+   "dumb": "Each app can be read in two ways: by an admin's company-wide grant, or by each person's own grant. This table says which way to use for each app and each kind of data. Company data uses the admin grant. Personal data uses only the owner's own grant. A strict switch makes everything use personal grants, for companies that do not want any company-wide grant at all.",
+   "inn": "From the admin console: {tenant, connector, zone, mode} rows and the strict flag. From cr_link: link status {user_id, app, linked, at}. From a crawl job: a request to read {connector, zone, user_id|null}.",
+   "out": "To so_svc: company-zone sweeps, allowed only with mode app_only or both. To cr_link: personal-zone reads that need the user's own grant {user_id, app}. A deny {connector, zone, reason} when no allowed mode exists.",
+   "store": "Writes a policy table {tenant_id, connector, zone, mode, changed_by, changed_at} plus a tenant strict flag, with a change history. Reads link status.",
+   "fail": "No row for (connector, zone): deny (0 reads, never a default grant). Policy store unreachable for 2 s: use the last copy cached in memory for up to 5 minutes, then deny. A strict flag flip: in-flight jobs finish their page, then stop within 60 s (design).",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: the admin's company-wide grant must never be used to read personal data, so which grant reads which zone is an explicit table, not a side effect of whatever token a job has.",
+   "hard": "The vendor admin grants can technically reach more than we use. Google domain-wide delegation reaches all users' data without per-user consent (x_sec_google-dwd) and Entra admin consent applies tenant-wide (x_sec_entra-consent). Our limit is a policy in our crawler, not a vendor-side fence, so strict mode exists for customers who want the grant itself removed.",
+   "deep": {
+    "purpose": "Decide, for each app and each zone, which kind of credential may read it. Company and team data may be crawled with the admin's app-only grant (one grant for the whole app, no user present). Personal data may be read only with the owner's own grant. In strict mode even company data is read with user grants, so no company-wide grant exists. A new app joins by adding its rows through the connector manifest (so_sdk) with its own default; a missing row means deny.",
+    "expected": [
+     "With default policy, company sweeps use the app-only grant and personal reads use the user's grant",
+     "Strict mode makes every read use a user grant, with 0 app-only reads",
+     "A missing row denies the read"
+    ],
+    "not_expected": [
+     "It never lets an app-only job read a personal-zone source",
+     "It does not store tokens; so_oauth does",
+     "It does not make the vendor's grant narrower; it only limits what our crawler asks for"
+    ],
+    "algorithm": {
+     "name": "Mode table lookup with strict override and deny-by-default",
+     "formula": "mode(c, z) = user_grant if strict else table[c, z] if present else none; allow_read(job) iff job.credential_kind in modes(mode(c, z)) and (z != personal or job.credential_kind = user_grant)",
+     "steps": [
+      "Read the job's connector, target zone and credential kind",
+      "If the tenant strict flag is on, set the allowed kind to user_grant",
+      "Otherwise read table[connector, zone]; a missing row means none",
+      "If z is personal, allow only the user_grant kind and only for the matching user id",
+      "Return allow or deny with the reason, and write the decision to the audit log"
+     ],
+     "params": {
+      "default_company": "app_only (design)",
+      "default_personal": "user_grant (the pin; not changeable to app_only)",
+      "policy_cache": "5 minutes if the store is down (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "One grant type per connector",
+      "why_rejected": "A single Drive connector holds shared drives and personal files; one grant type either hides company data or exposes personal files."
+     },
+     {
+      "name": "Always require user grants",
+      "why_rejected": "Kept as strict mode; as a default it leaves the index empty until every user links every app."
+     }
+    ],
+    "security": [
+     "Confused deputy, where an app-only token is used to fetch a personal item because a job did not check zone: the zone check lives here and the personal branch accepts only user_grant",
+     "Over-broad admin grant such as domain-wide delegation reaching all users (x_sec_google-dwd): the crawler asks only for narrow scopes and company-zone targets, and strict mode removes the grant",
+     "Policy tampering by a non-admin: only the tenant admin role may write the table, every change is logged with actor and time and sent to ac_audit"
+    ],
+    "performance": {
+     "slo": "Mode decision under 2 ms p95 from the in-memory table (design target)",
+     "complexity": "O(1) per job",
+     "scaling": "At 10x connectors the table is still a small keyed lookup; the cost is admin effort, so ship tested defaults per connector."
+    },
+    "edge_cases": [
+     "Row for a connector the tenant has not installed: ignored",
+     "Strict flag on and a source that cannot issue user grants: that source is not indexed and shows in the gap report",
+     "Two admins edit the same row: last write wins and both are in history",
+     "Policy changes mid-crawl: the running page finishes, the next page re-checks",
+     "Mode both: the admin crawl and the user view are merged by cr_union",
+     "Unknown zone value in a job: deny"
+    ],
+    "tests": [
+     {
+      "name": "personal needs user grant",
+      "given": "job with app_only credential targets a personal zone",
+      "expect": "deny, reason personal_requires_user_grant"
+     },
+     {
+      "name": "strict mode",
+      "given": "strict on, company sweep requested",
+      "expect": "uses user_grant, 0 app_only reads"
+     },
+     {
+      "name": "missing row",
+      "given": "no row for (notion, team)",
+      "expect": "deny with reason no_policy"
+     },
+     {
+      "name": "cached policy",
+      "given": "store down for 3 minutes",
+      "expect": "last table used, then deny after 5 minutes"
+     }
+    ],
+    "cost_levers": [
+     "The table is a keyed lookup with no model call; strict mode raises read cost because every user's grant is used"
+    ],
+    "feedback_events": [
+     "Admin edits and deny counts show which connectors need a policy row or a better default"
+    ],
+    "analytics_events": [
+     {
+      "name": "mode.decided",
+      "fields": [
+       "tenant_id",
+       "connector",
+       "zone",
+       "mode",
+       "allowed"
+      ],
+      "when": "for every read request"
+     },
+     {
+      "name": "mode.changed",
+      "fields": [
+       "tenant_id",
+       "connector",
+       "zone",
+       "from",
+       "to",
+       "actor"
+      ],
+      "when": "on a policy write"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_facts-rag",
+      "key_idea": "Access control is a first-class design input for enterprise retrieval.",
+      "how": "Which credential reads which zone is data in a table, visible and auditable."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Per-user and per-tenant OAuth and token refresh for many APIs; a candidate to hold user grants, licence to check."
+     }
+    ],
+    "industry": "Glean documents OAuth for per-user integrations and its own tokens for global permissions (x_sec_glean-auth), the same split between a user grant and a company-wide grant that this table makes explicit. The page does not describe enforcement.",
+    "refs": [
+     "p_facts-rag",
+     "x_sec_google-dwd",
+     "x_sec_entra-consent",
+     "x_sec_glean-auth",
+     "x_sec_owasp-llm06",
+     "r_nango"
+    ]
+   }
+  },
+  "cr_link": {
+   "line": "Sign in once with company SSO; linking an app reuses that session via token exchange\nconsent page only where the app cannot federate",
+   "dumb": "People sign in to the brain once with their company login (single sign-on, SSO). When they connect Drive or Jira, we reuse that sign-in and ask the app for access on their behalf, so there is no second password. Some apps cannot trust our company login. Only for those apps, we show a short consent page. The token we get is stored locked under the user's own key.",
+   "inn": "From cr_mode: a personal-zone read that needs {user_id, app}. From cr_gap: a link prompt {user, app, count}. From the identity provider: the user's verified session (OpenID Connect, OIDC, ID token).",
+   "out": "To so_oauth: the user grant {user_id, app, refresh_token, scopes, expires_at} stored under the user's key. To cl_consent: a missing link {user_id, app, reason}. To cr_mode: link status {user_id, app, linked, at}.",
+   "store": "Writes nothing itself except a link-state row {tenant_id, user_id, app, state, last_ok_at}. Tokens are written to so_oauth (the token vault), encrypted under the user's data key from zn_key.",
+   "fail": "Token exchange rejected: fall back to the consent page once, then mark the link failed after 2 attempts in 10 minutes. Refresh fails 3 times (1 min, 5 min, 30 min apart): mark the link expired, stop personal sweeps for that user and app, and prompt the user. Session expired: the user signs in again through SSO; no data is lost.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: people should not have to log in twice, and the brain should hold a per-user grant only where it must and only for personal data.",
+   "hard": "Which of our apps accept a company-identity token exchange and which need the consent page is not in our research and is unverified for every named app: check current docs per app. Reusing the SSO session removes the second password but may not remove an app's own consent click.",
+   "deep": {
+    "purpose": "Give each user a grant for each app that holds personal data, using the sign-in they already did. The user signs in once with company SSO. To link an app we exchange that identity for the app's token where the app supports it (RFC 8693 token exchange, x_sec_rfc8693); for apps that do not, we show the standard consent page. The grant is audience-restricted to the brain (x_sec_rfc8707) and the refresh token is kept in the vault under the user's key. A new app joins through the connector manifest (so_sdk), which says whether it federates; the default is the consent page.",
+    "expected": [
+     "A user who is signed in once links a federating app with no second login",
+     "An app that cannot federate shows the consent page and nothing else",
+     "The stored refresh token is readable only with that user's data key"
+    ],
+    "not_expected": [
+     "It never uses the admin's grant to read a personal zone",
+     "It never returns a token to an agent or a model",
+     "It does not decide which zone an item is in; zn_tag does"
+    ],
+    "algorithm": {
+     "name": "SSO session reuse with token exchange and consent fallback",
+     "formula": "link(u, app) = exchange(subject_token = u.sso_token, audience = app, resource = brain) if federates(app) else consent_flow(u, app); store under key(u)",
+     "steps": [
+      "Check that the user's SSO session is valid and bound to the verified user id",
+      "Look up the app's manifest: does it accept a token exchange from the company identity provider",
+      "If yes, call token exchange with the user's token as subject and the brain as the resource indicator; if no, send the user to the consent page",
+      "Receive access and refresh tokens; keep them only in so_oauth, encrypted under the user's data key",
+      "Rotate refresh tokens as the app requires; mark the link expired after 3 failed refreshes"
+     ],
+     "params": {
+      "refresh_retry": "3 tries at 1 min, 5 min, 30 min (design)",
+      "consent_fallback": "once per 10 minutes per user and app (design)",
+      "token_audience": "the brain only, per RFC 8707 (x_sec_rfc8707)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Separate password login per app",
+      "why_rejected": "Two logins is the friction we are removing, and passwords would pass through us."
+     },
+     {
+      "name": "Admin grant plus impersonation of the user",
+      "why_rejected": "It makes the admin able to read personal data; RFC 8693 separates delegation (the actor stays visible) from impersonation (x_sec_rfc8693), and we use neither for personal reads."
+     }
+    ],
+    "security": [
+     "Token passthrough or confused deputy, where the brain forwards a token not issued to it: the MCP spec forbids servers from accepting other tokens (x_sec_mcp-sec, x_sec_mcp-auth), so the brain only uses tokens issued to it by the exchange",
+     "Refresh token theft from the vault: refresh tokens are rotated where the app supports it (RFC 9700, x_sec_rfc9700-refresh) and stored under the user's key, so a database dump alone yields nothing",
+     "State or session hijack during linking: the OAuth state value is bound server-side to the verified user (x_sec_mcp-sec), so a link started by one user cannot be completed as another",
+     "Lending a personal connection: a stored personal token is used only for requests its owner makes. No lend call exists, so a request from another person never reaches the owner's vault entry. Supermemory lets a teammate lend a tool connection for 10 minutes; we forbid that by default, and any later lease needs a time limit, an owner prompt and an audit row (r_supermemory-cb)."
+    ],
+    "performance": {
+     "slo": "Link flow completes in under 5 s for federating apps (design target, depends on the app); refresh under 1 s p95",
+     "complexity": "O(1) vendor calls per link and per refresh",
+     "scaling": "At 10x users refresh traffic grows with users times apps; spread refresh over time and respect each vendor's token lifetime (for example Slack access tokens last 12 hours, x_sec_slack-rotation)."
+    },
+    "edge_cases": [
+     "User links the same app twice: the second replaces the first and the old token is revoked",
+     "User leaves the company: the grant is revoked at the app where possible and the key is shredded by zn_key",
+     "App returns a refresh token that is single use: the new one is stored before the old one is dropped",
+     "SSO session ends mid-flow: the flow stops with 0 tokens stored",
+     "Admin removes the brain's app at the vendor: next refresh fails, link marked expired, the user is prompted",
+     "Unicode or long app names: handled as ids, not display text",
+     "A teammate asks the brain to act with the owner's personal connection: refused, 1 audit row, the teammate is told to link their own"
+    ],
+    "tests": [
+     {
+      "name": "single sign-on",
+      "given": "signed-in user links a federating app",
+      "expect": "0 password prompts, link state linked"
+     },
+     {
+      "name": "no federation",
+      "given": "app manifest says federates false",
+      "expect": "consent page shown, 1 page"
+     },
+     {
+      "name": "rotation",
+      "given": "app returns a new refresh token",
+      "expect": "new token stored before the old one is deleted"
+     },
+     {
+      "name": "bad refresh",
+      "given": "3 refresh failures",
+      "expect": "link state expired and user prompted"
+     },
+     {
+      "name": "no lending",
+      "given": "user u2 asks for an answer that needs u1's personal token",
+      "expect": "0 vault reads of u1's entry, 1 audit row, u2 prompted to link their own"
+     }
+    ],
+    "cost_levers": [
+     "Exchange calls are cheap; the cost is refresh traffic, so refresh lazily when a user's personal sweep is due, not on a timer for idle users"
+    ],
+    "feedback_events": [
+     "Consent-page drop-off per app shows which apps most need a federation upgrade"
+    ],
+    "analytics_events": [
+     {
+      "name": "link.completed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "method",
+       "ms"
+      ],
+      "when": "when a link is stored; method is exchange or consent"
+     },
+     {
+      "name": "link.failed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "reason"
+      ],
+      "when": "on a failed or expired link"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "Live fetch through MCP-style connectors should adopt scoped tokens, tool allowlists and audit.",
+      "how": "Per-user scoped grants and no token passthrough are the identity layer under the brain's connectors."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Auth, token refresh and API proxy for about 1,000 APIs; candidate vault, licence to check."
+     }
+    ],
+    "industry": "Auth0 Token Vault stores provider tokens and lets an app present its own refresh token to receive a provider token by exchange (x_sec_auth0-vault, the page's own summary). The MCP spec requires the RFC 8707 resource parameter and keeping refresh tokens confidential (x_sec_mcp-auth).",
+    "refs": [
+     "x_sec_rfc8693",
+     "x_sec_rfc8707",
+     "x_sec_rfc9700-refresh",
+     "x_sec_mcp-auth",
+     "x_sec_mcp-sec",
+     "x_sec_auth0-vault",
+     "x_sec_slack-rotation",
+     "p_mcp-enterprise",
+     "r_nango",
+     "r_supermemory-cb"
+    ]
+   }
+  },
+  "cr_union": {
+   "line": "Merge admin-index and user-index hits by uri; effective ACL = admin ACL intersect user ACL\nstricter wins",
+   "dumb": "A document can show up twice: once from the company-wide crawl and once from what the user's own grant can see. We merge them into one result per link. If the two views disagree about who may open it, the stricter answer wins. So a result is shown only when both views allow it, and the user's own view can only remove, never add, access.",
+   "inn": "From so_svc: admin view hits {uri, score, zone, acl_version, allow[]}. From the user-linked index: user view hits {uri, score, zone, user_can_open}. Both after the owner and access filters.",
+   "out": "To qr_rerank: merged candidates {uri, best_score, zone, effective_allow[], source_views[]}, deduplicated by uri. Conflicts {uri, admin_allows, user_allows} to ac_audit.",
+   "store": "Stateless merge. Writes one conflict count per query to the observability store; no content.",
+   "fail": "One view times out after 800 ms (design): use the other view only if it is the user view; if only the admin view answers, return company-zone hits only and flag degraded, never personal. Both fail: return 0 candidates. Duplicate uri with different versions: keep the newer version and log it.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: when two views of the same document disagree about access, the safer answer should always apply, so a stale admin copy of an access list cannot expose what the user's own grant says is closed.",
+   "hard": "The user view only covers apps the user has linked; a document visible to the admin crawl but whose app the user has not linked cannot be double-checked here and relies on the live recheck at hydrate.",
+   "deep": {
+    "purpose": "Join the two sources of candidates without ever widening access. The admin crawl sees what the company shares; the user-linked index sees what that one person can open. Merge by uri, take the stricter ACL where both exist, and mark the zone as the stricter one too. The result goes to the reranker as one list. A new app needs no change; both views key documents by uri.",
+    "expected": [
+     "The same uri from both views appears once",
+     "If the admin ACL allows the user but the user view says no, the document is dropped",
+     "A document visible only in the user view (a personal or unshared item) is kept when the user view allows it"
+    ],
+    "not_expected": [
+     "The user view never adds access to a document the admin ACL denies",
+     "It does not rerank; qr_rerank does",
+     "It does not call the source app; the hydrate recheck does"
+    ],
+    "algorithm": {
+     "name": "Merge by uri with intersection of allow lists",
+     "formula": "effective_allow(d) = allow_admin(d) intersect allow_user(d) when d is in both views; zone(d) = max rank of both zones; score(d) = max(score_admin, score_user)",
+     "steps": [
+      "Collect hits from both views, keyed by uri",
+      "For a uri in both views, compute the intersection of the two allow sets and take the stricter zone",
+      "If the intersection excludes the asker, drop the document and count a conflict",
+      "For a uri in one view only, keep it with that view's allow set; a uri only in the admin view needs the live recheck",
+      "Sort by best score, cap at 200, and pass to qr_rerank"
+     ],
+     "params": {
+      "merge_cap": "200 candidates (design, matches the reranker input)",
+      "view_timeout": "800 ms (design, tune on p95 of each view)",
+      "tie_break": "newer version, then lower uri (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "A: allow set from the admin view",
+      "U: allow set from the user view",
+      "E: effective allow set",
+      "q: asker principal set"
+     ],
+     "formula_full": "E = A intersect U; visible iff q intersect E is not empty; when only one view has the uri, E is that view's set",
+     "derivation": "Access is allowed only if every view that knows the document allows it. For sets, 'every view allows' is intersection, so E can only be smaller or equal to A and to U. That makes the merge monotone: adding a view never grants more.",
+     "worked_example": "Document d: A = {u1, team7}, U = {u1}. E = {u1}; the asker u1 sees it. If the user later loses access, U = {} and E = {} so d disappears even though A still lists team7. A uri seen only in the admin view with A = {team7} is kept for team7 members and rechecked live.",
+     "complexity": "O(n) with a hash map over n candidates, n at most 400; a few hundred microseconds.",
+     "failure_modes": [
+      "Admin ACL is stale after a revoke: the user view or the live recheck removes it",
+      "Clock skew makes versions look reversed: compare a counter, not a time",
+      "A uri normalised differently by two connectors fails to merge: uri normalisation is one function shared by both"
+     ],
+     "calibration": "Replay 1,000 logged queries and count conflicts; a conflict rate above 2 percent (default alert level, tune) points to a stale access sync."
+    },
+    "alternatives": [
+     {
+      "name": "Union of both views",
+      "why_rejected": "A stale admin ACL could expose a document the user's own app already closed."
+     },
+     {
+      "name": "User view only",
+      "why_rejected": "Empty until the user links every app, and loses company-wide crawl coverage."
+     }
+    ],
+    "security": [
+     "Stale admin ACL exposes a revoked document: the intersection with the user view and the live recheck at hydrate catch it (Glean's indexed mode is reported to lag on revocations, x_sec_glean-perms, third-party view, unverified)",
+     "Result of one user leaks into another user's merged list through a shared cache: the merged list is keyed by the asker's principal set and owner id and never cached across users",
+     "Zone downgrade by a merge bug: the merged zone is the maximum rank of the two, never lower"
+    ],
+    "performance": {
+     "slo": "Merge p95 under 3 ms for 400 candidates (design target)",
+     "complexity": "O(n) in candidates, n at most 400",
+     "scaling": "Stateless, scales by workers; at 10x load the cost is the two upstream searches, not the merge."
+    },
+    "edge_cases": [
+     "Empty user view: only admin hits, rechecked live",
+     "Empty admin view: only user hits",
+     "Same uri twice in one view: best score kept",
+     "Uri with trailing slash or different case: normalised before keying",
+     "Conflict on 500 documents in one query: logged as one aggregate event, not 500 rows",
+     "Document deleted between views: tombstone wins and the document is dropped"
+    ],
+    "tests": [
+     {
+      "name": "stricter wins",
+      "given": "admin allows u1 and team7, user view allows only u1",
+      "expect": "effective allow is {u1}"
+     },
+     {
+      "name": "user lost access",
+      "given": "admin allows u1, user view says no",
+      "expect": "document dropped, conflict counted 1"
+     },
+     {
+      "name": "zone max",
+      "given": "admin zone team, user zone personal",
+      "expect": "merged zone personal"
+     },
+     {
+      "name": "dedupe",
+      "given": "uri in both views",
+      "expect": "one candidate with source_views admin and user"
+     }
+    ],
+    "cost_levers": [
+     "Pure set arithmetic, no model call; the 200 candidate cap bounds the reranker cost"
+    ],
+    "feedback_events": [
+     "Conflict logs show where access sync is stale and feed the sync tuning"
+    ],
+    "analytics_events": [
+     {
+      "name": "union.merged",
+      "fields": [
+       "tenant_id",
+       "query_id",
+       "n_admin",
+       "n_user",
+       "n_merged",
+       "conflicts",
+       "ms"
+      ],
+      "when": "after every merge"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Authorization is a filter inside retrieval, evaluated per query with live permissions.",
+      "how": "Two views are two evaluations; the merge keeps only what both allow."
+     },
+     {
+      "ref": "p_participant-acl",
+      "key_idea": "Authorize against the full set of people in the session.",
+      "how": "The effective allow set is checked against every principal of the asker."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_openfga",
+      "name": "OpenFGA",
+      "take": "Relation checks between users and documents; one candidate to hold the user-view allow data."
+     }
+    ],
+    "industry": "Microsoft 365 Copilot honors usage rights and will not summarize content lacking them (x_sec_purview-copilot); the idea that the more restrictive control applies is the same direction as our intersection.",
+    "refs": [
+     "p_multitenant-rag",
+     "p_participant-acl",
+     "x_sec_glean-perms",
+     "x_sec_purview-copilot",
+     "r_openfga",
+     "t_t22"
+    ]
+   }
+  },
+  "cr_gap": {
+   "line": "Per source: gap = objects in the user's own listing minus objects the admin index holds, from a sample probe\nprompt to link",
+   "dumb": "The admin crawl cannot see private items, like personal files or direct messages. To tell people what is missing, we ask each person's own account for a count of what it can list, and compare that with what the index already knows. We show the admin only totals per app. We show each person their own gap and a button to link the app.",
+   "inn": "From the user's own grant (via cr_link): a listing probe {user_id, app, sample of ids, total count}. From ix_ptr: which ids the index holds. From cr_link: link state.",
+   "out": "To cr_link: link prompt {user, app, count}. To op_cov: gap count {tenant, app, gap_total, users_probed} with no per-user ids.",
+   "store": "Writes a per-user gap row {tenant_id, user_id, app, sampled, missing, total_estimate, at}, readable by that user only, and an aggregate row per app for the admin.",
+   "fail": "Probe rate limited (429): wait the Retry-After time, then 1 retry, then skip until the next daily run. Grant expired: skip and prompt to relink. Sample under 100 ids: report 'not enough data' with no percentage, never a guess.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: admins and users should see what the admin crawl cannot reach, so private data is not silently missing and nobody is tempted to widen the admin grant.",
+   "hard": "The gap is a sample estimate, and some apps give no cheap total count for a user's listing; those report 'unknown' until a probe method is proven. Per-source count APIs are not in our research.",
+   "deep": {
+    "purpose": "Make the blind spot visible. The admin crawl, by design, cannot list personal items. For each source, a user with a linked grant lists a sample of their own objects; the share not already in the index estimates the gap. The admin sees only per-app totals, so the report does not expose which person owns what. A user sees their own gap with a prompt to link. A new app joins through the connector manifest (so_sdk), which names its listing call for the probe; with none, the report says unknown.",
+    "expected": [
+     "For a source with 400 sampled ids of which 68 are missing, the report says about 17 percent missing with a stated margin",
+     "The admin sees app totals only, never user-level lists",
+     "A user sees only their own gap"
+    ],
+    "not_expected": [
+     "The probe never reads item content, only ids and counts",
+     "It does not link the app for the user; cr_link does after the user agrees",
+     "It does not use the admin grant to look at personal items"
+    ],
+    "algorithm": {
+     "name": "Sampled listing probe with a binomial confidence margin",
+     "formula": "p_hat = missing / n; margin = 1.96 x sqrt(p_hat x (1 - p_hat) / n); gap_total ~ p_hat x total_estimate",
+     "steps": [
+      "With the user's own grant, list a random sample of n object ids for one app (ids only)",
+      "Look up each id in ix_ptr to see whether the index holds it",
+      "Compute p_hat = missing / n and the margin; if n is under 100 report not enough data",
+      "Estimate gap_total = p_hat x the total count if the app exposes one, else report unknown",
+      "Send the user a link prompt if p_hat is above the threshold; send only the per-app aggregate to op_cov"
+     ],
+     "params": {
+      "sample_size": "400 ids (default, gives about plus or minus 5 points at 95 percent)",
+      "prompt_threshold": "5 percent missing (design, tune on prompt acceptance)",
+      "probe_frequency": "daily per user and app (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: sampled ids",
+      "m: sampled ids missing from the index",
+      "p_hat: m / n",
+      "z: 1.96 for 95 percent",
+      "N: total objects the user can list"
+     ],
+     "formula_full": "p_hat = m / n; margin = z x sqrt(p_hat x (1 - p_hat) / n); gap estimate = p_hat x N with range (p_hat plus or minus margin) x N",
+     "derivation": "Each sampled id is missing with an unknown probability p. The count m is binomial, so p_hat is an unbiased estimate with standard error sqrt(p(1-p)/n). The normal approximation gives the 95 percent margin; it is good when n x p and n x (1-p) are both above about 10.",
+     "worked_example": "n = 400, m = 68. p_hat = 0.17. Variance term 0.17 x 0.83 / 400 = 0.00035275; square root = 0.01878; margin = 1.96 x 0.01878 = 0.0368, so 17 percent plus or minus 3.7 points. With N = 12,000 objects the gap estimate is about 2,040 (range 1,600 to 2,480).",
+     "complexity": "O(n) index lookups per probe, one batched query; the listing call is the slow part.",
+     "failure_modes": [
+      "Listing is not random (newest first): sample by random page offsets or hashed ids, else the estimate is biased",
+      "Index lags behind the app so new items look missing: ignore items younger than the sync window",
+      "Small n gives a wide margin: below 100 the report says not enough data"
+     ],
+     "calibration": "Compare estimates with a full listing for 20 volunteer accounts; if the error exceeds the stated margin more than 1 time in 20, widen the sample."
+    },
+    "alternatives": [
+     {
+      "name": "Full listing of every user's items",
+      "why_rejected": "Slow, hits rate limits and reads more than needed; a sample is enough to prompt."
+     },
+     {
+      "name": "Ask the admin API for counts",
+      "why_rejected": "The admin grant cannot see personal items, which is the thing we want to count."
+     }
+    ],
+    "security": [
+     "Privacy leak through the report, where the admin infers who owns what from per-user gaps: the admin sees per-app aggregates over at least 5 users (design), never a per-user row",
+     "Probe abuse that exfiltrates ids: the probe returns ids only inside the service, stores a count and a hash, and logs nothing readable",
+     "Confused deputy, where the probe uses the admin token to read a user's list: it uses only the user's own grant and refuses an app-only credential"
+    ],
+    "performance": {
+     "slo": "Probe of 400 ids completes under 30 s per user and app (design target; depends on vendor rate limits)",
+     "complexity": "O(n) per probe",
+     "scaling": "At 10x users probe load grows linearly; run daily, jittered over 24 hours, and respect each app's rate limits (for example Jira points per hour in t_t06). (design)"
+    },
+    "edge_cases": [
+     "User has 0 objects: gap 0 and no prompt",
+     "User has 50 objects: sample is all 50, report exact counts",
+     "App has no random access listing: report unknown",
+     "Same user linked twice: one row",
+     "User removed an item mid-probe: counted as present or absent by the lookup at that moment, no error",
+     "Aggregate with fewer than 5 users: not shown to the admin"
+    ],
+    "tests": [
+     {
+      "name": "margin",
+      "given": "n 400 and m 68",
+      "expect": "p_hat 0.17 and margin 0.037"
+     },
+     {
+      "name": "small sample",
+      "given": "n 40",
+      "expect": "not enough data and no percentage"
+     },
+     {
+      "name": "admin view",
+      "given": "app probed for 3 users",
+      "expect": "no aggregate shown to the admin"
+     },
+     {
+      "name": "app-only refused",
+      "given": "probe called with an app-only token",
+      "expect": "refused and logged"
+     }
+    ],
+    "cost_levers": [
+     "Sampling cuts vendor calls 10 to 100 times against a full listing, which also keeps rate-limit cost low"
+    ],
+    "feedback_events": [
+     "Prompt acceptance rate per app shows where the link flow is hard"
+    ],
+    "analytics_events": [
+     {
+      "name": "gap.probed",
+      "fields": [
+       "tenant_id",
+       "app",
+       "n",
+       "missing",
+       "ms"
+      ],
+      "when": "after each probe, without user id in the admin stream"
+     },
+     {
+      "name": "gap.prompted",
+      "fields": [
+       "tenant_id",
+       "app",
+       "accepted"
+      ],
+      "when": "when a prompt is answered"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_seven-failures",
+      "key_idea": "Use the seven failure points as a test checklist for the retrieval layer.",
+      "how": "Missing content is one failure a retrieval layer can have; the gap report measures how much private content the admin crawl never reaches (our mapping, not the paper's)."
+     }
+    ],
+    "repos": [],
+    "industry": "Glean's page on authentication describes OAuth for per-user integrations (x_sec_glean-auth); Microsoft notes that Teams chat and connector data labels are not recognized by Copilot (x_sec_purview-copilot), another example of coverage gaps that a tenant should be told about.",
+    "refs": [
+     "p_seven-failures",
+     "x_sec_glean-auth",
+     "x_sec_purview-copilot",
+     "t_t06",
+     "t_t54"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "cr_link",
+   "b": "cr_mode",
+   "l": "link status",
+   "k": "d",
+   "d": "Link state {user_id, app, linked, at} so the policy knows which personal reads are possible."
+  },
+  {
+   "a": "cr_link",
+   "b": "cr_gap",
+   "l": "user grant ready",
+   "k": "n",
+   "d": "Linked {user_id, app} so the probe can list the user's own objects."
+  },
+  {
+   "a": "cr_link",
+   "b": "cr_union",
+   "l": "user view",
+   "k": "e",
+   "d": "Index built under the user's own grant: hits {uri, score, zone, user_can_open}."
+  },
+  {
+   "a": "cr_union",
+   "b": "ac_audit",
+   "l": "view conflicts",
+   "k": "d",
+   "d": "Record {query_id, uri_hash, admin_allows, user_allows} when the two views disagree."
+  }
+ ]
+}

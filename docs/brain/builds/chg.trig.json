@@ -1,0 +1,428 @@
+{
+ "ch_hook": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [
+   "so_oauth",
+   "ch_bus"
+  ],
+  "stack": [
+   {
+    "part": "server",
+    "pick": "FastAPI on uvicorn",
+    "why": "reads raw bytes before parsing; async is enough for the 200 ms budget"
+   },
+   {
+    "part": "dedupe cache",
+    "pick": "Redis 7 SET NX with 24 h expiry",
+    "why": "atomic add-if-absent for delivery ids"
+   },
+   {
+    "part": "hmac",
+    "pick": "Python hmac and hashlib (hmac.compare_digest)",
+    "why": "constant time compare; Do NOT use =="
+   },
+   {
+    "part": "queue client",
+    "pick": "the event log client from ch_bus",
+    "why": "the receiver does no work inline"
+   }
+  ],
+  "install": [
+   "pip install fastapi==0.115.* uvicorn redis==5.*",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/hook/app.py : the POST route",
+   "brain/hook/verify.py : signature and window check",
+   "brain/hook/dedupe.py : seen-set"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"WebhookEvent\",\n  \"type\": \"object\",\n  \"required\": [\"app\",\"tenant\",\"delivery_id\",\"received_at_ms\"],\n  \"properties\": {\n    \"app\": {\"type\":\"string\"}, \"tenant\": {\"type\":\"string\"},\n    \"object_id\": {\"type\":[\"string\",\"null\"]}, \"kind\": {\"type\":\"string\"},\n    \"delivery_id\": {\"type\":\"string\"}, \"received_at_ms\": {\"type\":\"integer\"},\n    \"unparsed\": {\"type\":\"boolean\"}, \"raw\": {\"type\":[\"string\",\"null\"]}\n  }\n}",
+  "interface": "POST /hook/{tenant}/{app}  headers {X-Signature, X-Timestamp, X-Delivery-Id}  body raw bytes  -> 202 (accepted or duplicate) | 401 (bad signature or stale timestamp)",
+  "code": "import hmac, hashlib, time\nfrom fastapi import FastAPI, Request, Response\n\napp = FastAPI()\nW = 300   # replay window seconds\n\n@app.post('/hook/{tenant}/{app_id}')\nasync def hook(tenant: str, app_id: str, req: Request):\n    raw = await req.body()                       # raw bytes BEFORE any JSON parsing\n    ts = req.headers.get('X-Timestamp', '0')\n    sig = req.headers.get('X-Signature', '')\n    did = req.headers.get('X-Delivery-Id', '')\n    secret = secrets.get(tenant, app_id)         # cached 60 s, from so_oauth by reference\n    want = hmac.new(secret, ts.encode() + b'.' + raw, hashlib.sha256).hexdigest()\n    if not hmac.compare_digest(want, sig) or abs(time.time() - int(ts)) > W:\n        metrics.inc('hook_rejected'); return Response(status_code=401)   # counter only, no body logged\n    # one atomic step: SET NX fails if the id was seen (vendors reuse the id on redelivery)\n    first = await redis.set(f'seen:{tenant}:{app_id}:{did}', 1, nx=True, ex=86400)\n    if first:\n        ev = parse_or_raw(app_id, raw, tenant, did)    # parse errors become an 'unparsed' event\n        await bus.publish(ev)\n    return Response(status_code=202)                   # always ack fast; the worker does the work",
+  "steps": [
+   {
+    "do": "Write the route and the HMAC check against a signed test payload",
+    "done_when": "valid payload gives 202, one bit flipped gives 401"
+   },
+   {
+    "do": "Add the timestamp window",
+    "done_when": "payload 301 s old gives 401"
+   },
+   {
+    "do": "Add the Redis seen-set with SET NX and 24 h expiry",
+    "done_when": "same delivery id sent twice publishes 1 event"
+   },
+   {
+    "do": "Handle the empty-body case (Drive push sends only headers)",
+    "done_when": "empty body with a valid channel token publishes an event with object_id null"
+   },
+   {
+    "do": "Make parse errors publish an unparsed event and still ack",
+    "done_when": "malformed JSON test gives 202 and 1 unparsed event"
+   },
+   {
+    "do": "Load test the ack time",
+    "done_when": "k6 or wrk shows p95 under 200 ms at 200 req/s"
+   }
+  ],
+  "config": {
+   "REPLAY_WINDOW_S": "300 // card default; tune down once clock skew is measured",
+   "ACK_BUDGET_MS": "200 // card pin",
+   "SEEN_TTL_S": "86400 // must exceed the app's redelivery horizon",
+   "SECRET_CACHE_S": "60 // card default"
+  },
+  "verify": [
+   "pytest tests/test_hook.py -q  # signature, window, dedupe, empty body, unparsed all pass",
+   "wrk -t2 -c20 -d10s -s post.lua http://localhost:8000/hook/t1/github  # p95 latency under 200 ms"
+  ],
+  "pitfalls": [
+   "Parsing JSON before checking the signature changes the bytes and the HMAC never matches",
+   "Using == for the signature compare leaks timing",
+   "Doing the fetch inside the handler blows the ack budget and the vendor retries, creating duplicates"
+  ]
+ },
+ "ch_delta": {
+  "milestone": "M1",
+  "effort_days": 6,
+  "depends_on": [
+   "ch_cursor",
+   "ch_bus",
+   "so_sdk",
+   "ch_sched"
+  ],
+  "stack": [
+   {
+    "part": "http",
+    "pick": "httpx with the connector manifest from so_sdk",
+    "why": "one change endpoint per stream"
+   },
+   {
+    "part": "cursor store",
+    "pick": "the ch_cursor table (Postgres 16)",
+    "why": "this card never writes the cursor itself"
+   },
+   {
+    "part": "worker",
+    "pick": "Temporal activity or a plain asyncio worker",
+    "why": "check current docs; the commit rule matters more than the engine"
+   },
+   {
+    "part": "start token",
+    "pick": "vendor start-token call (Drive getStartPageToken)",
+    "why": "research T04; Do NOT start from page 1 of a full listing"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/delta/poller.py : poll one stream",
+   "brain/delta/vendors/graph.py : @removed handling",
+   "brain/delta/vendors/gdrive.py : changes page token"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"DeltaPage\",\n  \"type\": \"object\",\n  \"required\": [\"stream\",\"items\",\"next_cursor\"],\n  \"properties\": {\n    \"stream\": {\"type\":\"string\"},\n    \"items\": {\"type\":\"array\",\"items\":{\"type\":\"object\",\n      \"required\":[\"object_id\",\"kind\",\"version\",\"removed\"],\n      \"properties\":{\"removed\":{\"type\":\"boolean\"},\"reason\":{\"type\":[\"string\",\"null\"]}}}},\n    \"next_cursor\": {\"type\":\"string\"}\n  }\n}",
+  "interface": "async def poll_stream(tenant_id: str, app_id: str, stream: str, max_pages: int = 50) -> PollResult  # {n_items, next_cursor_handed_to_wf, resync: bool}",
+  "code": "async def poll_stream(tenant, app, stream, cursors, client, bus, wf, max_pages=50):\n    cur = await cursors.get(tenant, app, stream)           # {cursor, epoch} or None\n    token = cur.cursor if cur else await client.start_token(stream)\n    emitted, pages = 0, 0\n    while pages < max_pages:\n        try:\n            page = await client.changes(stream, token, page_size=200)\n        except GoneError:                                  # 410 or sync-state-not-found\n            await cursors.mark_resync(tenant, app, stream) # discard the cursor, full resync\n            return PollResult(0, None, resync=True)\n        events = [Event(app=app, tenant=tenant, object_id=i.object_id, kind='delete' if i.removed else i.kind,\n                        version=i.version, reason=i.reason) for i in page.items]\n        # emit durably FIRST, hand the cursor to the workflow so it commits with the events\n        await bus.publish_many(events)\n        emitted += len(events); pages += 1\n        token = page.next_cursor\n        if page.is_last:\n            break\n    await wf.commit_cursor(tenant, app, stream, token, epoch=(cur.epoch if cur else 0))\n    return PollResult(emitted, token, resync=False)",
+  "steps": [
+   {
+    "do": "Call the change endpoint of one mock app with a start token",
+    "done_when": "first poll returns items and a next cursor"
+   },
+   {
+    "do": "Page until the final cursor with a 50 page cap",
+    "done_when": "300 mock changes finish in 2 pages of 200 and 100"
+   },
+   {
+    "do": "Emit removals as kind delete with the vendor's reason",
+    "done_when": "a mock @removed item becomes a delete event"
+   },
+   {
+    "do": "Commit the cursor only after events are durable",
+    "done_when": "kill after publish and before commit; rerun re-emits, no loss"
+   },
+   {
+    "do": "Handle 410 Gone by dropping the cursor and asking for a resync",
+    "done_when": "mock 410 sets resync true and ch_cursor row marked"
+   },
+   {
+    "do": "Alert when a stream has not polled within a quarter of the token lifetime",
+    "done_when": "for a 7 day token the alert fires at 42 h"
+   }
+  ],
+  "config": {
+   "PAGE_SIZE": "200 // card default; tune to the app maximum",
+   "MAX_PAGES_PER_POLL": "50 // one stream cannot hog the rate budget",
+   "CURSOR_MAX_GAP": "token lifetime / 4 // 42 h for a 7 day token (research T02)",
+   "POLL_TIMEOUT_S": "30 // matches the connector hook timeout"
+  },
+  "verify": [
+   "pytest tests/test_delta.py -q  # paging, removed, crash-after-emit, 410 resync pass",
+   "psql -c \"select stream,epoch from cursor where stream='mock'\"  # epoch unchanged after a normal poll, bumped after 410"
+  ],
+  "pitfalls": [
+   "Committing the cursor before the events are durable loses changes on a crash",
+   "Delta tokens expire (7 days in research T02): a stream idle too long hits 410 and needs a full resync",
+   "Delta can replay items: downstream apply must be idempotent by (object, version)"
+  ]
+ },
+ "ch_cdc": {
+  "milestone": "M5",
+  "effort_days": 10,
+  "depends_on": [
+   "ch_bus",
+   "ch_cursor",
+   "ch_wf",
+   "ch_fill"
+  ],
+  "stack": [
+   {
+    "part": "engine",
+    "pick": "Debezium (Kafka Connect or Debezium Server)",
+    "why": "research names it for company databases only; it does not read SaaS APIs"
+   },
+   {
+    "part": "source setting",
+    "pick": "Postgres logical replication slot with pgoutput, or the equivalent for MySQL and warehouses",
+    "why": "check current docs per database"
+   },
+   {
+    "part": "transport",
+    "pick": "Kafka or the ch_bus log, keyed by (tenant, table, pk)",
+    "why": "one row stays in one partition so order holds"
+   },
+   {
+    "part": "allowlist",
+    "pick": "per-connector table and column list in config",
+    "why": "empty by default; capture nothing until an admin lists tables"
+   }
+  ],
+  "install": [
+   "docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16 -c wal_level=logical",
+   "docker run -d --name dbz -p 8083:8083 quay.io/debezium/connect:latest  # pin a version tag in real use"
+  ],
+  "layout": [
+   "cdc/connector.json : Debezium connector config with table.include.list and column.include.list",
+   "brain/cdc/mapper.py : Debezium event to change record",
+   "brain/cdc/confirm.py : confirm lsn after commit"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"ChangeRecord\",\n  \"type\": \"object\",\n  \"required\": [\"table\",\"pk\",\"op\",\"lsn\"],\n  \"properties\": {\n    \"table\": {\"type\":\"string\"}, \"pk\": {\"type\":\"string\"},\n    \"op\": {\"enum\":[\"c\",\"u\",\"d\",\"r\"]},\n    \"lsn\": {\"type\":\"integer\"},\n    \"after\": {\"type\":[\"object\",\"null\"],\"description\":\"allowlisted columns only\"}\n  }\n}",
+  "interface": "def map_change(evt: dict, allow: Allowlist, tenant: str) -> ChangeRecord | None  # None when the table is not allowlisted",
+  "code": "def map_change(evt, allow, tenant):\n    src = evt['source']\n    table = f\"{src['schema']}.{src['table']}\"\n    cols = allow.columns(tenant, table)\n    if cols is None:                              # not allowlisted: capture nothing\n        return None\n    row = evt.get('after') or {}\n    after = {c: row[c] for c in cols if c in row}  # drop every other column here, not later\n    pk = '|'.join(str(evt['key'][k]) for k in sorted(evt['key']))\n    return ChangeRecord(table=table, pk=pk, op=evt['op'], lsn=int(src['lsn']), after=after or None)\n\nasync def run(stream, allow, bus, wf, tenant, confirm):\n    batch, last_lsn = [], None\n    async for evt in stream:                       # committed transactions in log order\n        rec = map_change(evt, allow, tenant)\n        if rec:\n            batch.append(rec); last_lsn = rec.lsn\n        if len(batch) >= 500 or stream.idle_ms() >= 200:\n            if batch:\n                await bus.publish_many(batch, key=lambda r: (tenant, r.table, r.pk))\n                await wf.commit_cursor(tenant, 'cdc', 'log', last_lsn)\n                await confirm(last_lsn)            # tell the database only AFTER the commit\n                batch = []",
+  "steps": [
+   {
+    "do": "Start a test Postgres with wal_level=logical and a Debezium connector",
+    "done_when": "connector status shows RUNNING"
+   },
+   {
+    "do": "Take the snapshot through ch_fill and record the log position at snapshot start",
+    "done_when": "snapshot rows count equals source table count"
+   },
+   {
+    "do": "Open the stream from that position",
+    "done_when": "an insert in the source appears as op c within seconds"
+   },
+   {
+    "do": "Apply the table and column allowlist in map_change",
+    "done_when": "an unlisted column never appears in the bus"
+   },
+   {
+    "do": "Key events by (tenant, table, pk)",
+    "done_when": "two updates to one row land in one partition in order"
+   },
+   {
+    "do": "Confirm the lsn only after the workflow commits",
+    "done_when": "kill before confirm; restart replays, no gap, no skip"
+   },
+   {
+    "do": "Alert on lag in bytes (500 MB warn, 2 GB page)",
+    "done_when": "pg_replication_slots shows retained WAL under the alert line"
+   }
+  ],
+  "config": {
+   "MAX_LAG_BYTES": "2147483648 // card default 2 GB; alert at 500 MB",
+   "BATCH": "500 changes or 200 ms // card default",
+   "ALLOWLIST": "empty // nothing captured until an admin lists tables",
+   "SLOT_NAME": "brain_cdc // one slot per source database"
+  },
+  "verify": [
+   "psql -c \"select slot_name,confirmed_flush_lsn from pg_replication_slots\"  # lsn advances after commits",
+   "pytest tests/test_cdc_mapper.py -q  # allowlist, key order, replay pass"
+  ],
+  "pitfalls": [
+   "An unconfirmed slot makes the database retain WAL until the disk fills: alert on lag and confirm promptly",
+   "Capturing all columns leaks sensitive data into the bus: allowlist columns, not only tables",
+   "Skipping the consistent snapshot loses rows that existed before the stream started"
+  ]
+ },
+ "ch_sweep": {
+  "milestone": "M1",
+  "effort_days": 7,
+  "depends_on": [
+   "ix_ptr",
+   "ch_bus",
+   "ch_sched",
+   "so_sdk"
+  ],
+  "stack": [
+   {
+    "part": "hash",
+    "pick": "xxHash 64-bit with a per-tenant secret seed (python-xxhash)",
+    "why": "research T44 uses 64-bit xxHash; the seed stops anyone crafting collisions"
+   },
+   {
+    "part": "listing",
+    "pick": "connector manifest listing stream, metadata only",
+    "why": "never read bodies in a sweep"
+   },
+   {
+    "part": "digest store",
+    "pick": "Postgres 16 table folder_digest",
+    "why": "small table, no text"
+   },
+   {
+    "part": "scheduler",
+    "pick": "runs in the off-peak window set by ch_sched",
+    "why": "yields to live traffic"
+   }
+  ],
+  "install": [
+   "pip install xxhash psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/sweep/digest.py : folder digest",
+   "brain/sweep/walk.py : recursive compare",
+   "migrations/015_folder_digest.sql : digest table"
+  ],
+  "schema": "CREATE TABLE folder_digest (\n  tenant_id text NOT NULL,\n  app_id text NOT NULL,\n  folder_uri text NOT NULL,\n  digest bigint NOT NULL,\n  listed_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, app_id, folder_uri)\n);",
+  "interface": "async def sweep_folder(tenant_id: str, app_id: str, folder: str) -> SweepStats  # {folders_read, objects_diffed, events_emitted}",
+  "code": "import xxhash\n\ndef digest(children, seed):\n    # children: [(child_id, version)]. Sorted so order never changes the digest.\n    h = xxhash.xxh64(seed=seed)\n    for cid, ver in sorted(children):\n        h.update(f'{cid}\\x00{ver}\\x01'.encode())\n    return h.intdigest() - (1 << 63)      # fit a signed bigint column\n\nasync def sweep_folder(tenant, app, folder, client, registry, bus, seed, stats):\n    app_kids = await client.list_children(folder)          # ids and versions only\n    reg_kids = await registry.children(tenant, app, folder)\n    stats.folders_read += 1\n    if digest(app_kids, seed) == digest(reg_kids, seed):\n        return                                            # equal: nothing below is read\n    a, r = dict(app_kids), dict(reg_kids)\n    for cid, ver in a.items():\n        if cid not in r or r[cid] != ver:\n            await bus.publish(Event(app=app, tenant=tenant, object_id=cid, kind='missed', version=ver, reason='sweep'))\n            stats.events_emitted += 1\n    for cid in r.keys() - a.keys():\n        await bus.publish(Event(app=app, tenant=tenant, object_id=cid, kind='delete', reason='sweep'))\n        stats.events_emitted += 1\n    for cid in a:\n        if is_folder(cid):                                # recurse only into differing subtrees\n            await sweep_folder(tenant, app, cid, client, registry, bus, seed, stats)",
+  "steps": [
+   {
+    "do": "Create folder_digest and write digest()",
+    "done_when": "two orderings of the same children give one digest"
+   },
+   {
+    "do": "List one mock folder tree with metadata only",
+    "done_when": "listing call count equals folder count, 0 body reads"
+   },
+   {
+    "do": "Implement the recursive compare that stops at equal digests",
+    "done_when": "unchanged tree of 100 folders reads 1 folder (the root)"
+   },
+   {
+    "do": "Emit missed, new and removed events for differing leaf folders",
+    "done_when": "one changed file gives exactly 1 event"
+   },
+   {
+    "do": "Store the new digest and listing time",
+    "done_when": "folder_digest row updates listed_at"
+   },
+   {
+    "do": "Run weekly in the off-peak window and report counts to op_cov",
+    "done_when": "a forced run writes a count row"
+   }
+  ],
+  "config": {
+   "CADENCE": "weekly per app // research T55, tune to the measured loss rate",
+   "WINDOW": "off-peak 6 h // yields to live traffic",
+   "DIGEST_WIDTH": "64 bit keyed // per-tenant seed",
+   "MAX_DEPTH": "20 // guards a cyclic or very deep tree"
+  },
+  "verify": [
+   "pytest tests/test_sweep.py -q  # equal tree reads 1 folder, one edit emits 1 event, delete emitted",
+   "psql -c \"select count(*) from folder_digest\"  # one row per folder listed"
+  ],
+  "pitfalls": [
+   "Digest that depends on listing order flags every folder as changed: sort first",
+   "Reading document bodies in a sweep burns the rate budget: metadata only",
+   "Shared or moved folders appear in two places: dedupe on object id before emitting"
+  ]
+ },
+ "ch_sched": {
+  "milestone": "M1",
+  "effort_days": 4,
+  "depends_on": [
+   "so_cap",
+   "so_rate"
+  ],
+  "stack": [
+   {
+    "part": "state",
+    "pick": "Postgres 16 table scheduler_state",
+    "why": "one row per stream"
+   },
+   {
+    "part": "loop",
+    "pick": "asyncio loop or Temporal timers",
+    "why": "check current docs; a simple loop is enough at M1"
+   },
+   {
+    "part": "math",
+    "pick": "plain Python floats",
+    "why": "EWMA is three lines; no library needed"
+   },
+   {
+    "part": "budget",
+    "pick": "so_rate peek call",
+    "why": "the interval must not exceed what the quota allows"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/sched/ewma.py : next_interval",
+   "brain/sched/loop.py : due streams to poll orders",
+   "migrations/016_scheduler.sql : state table"
+  ],
+  "schema": "CREATE TABLE scheduler_state (\n  tenant_id text NOT NULL,\n  app_id text NOT NULL,\n  stream text NOT NULL,\n  ewma_rate double precision NOT NULL DEFAULT 0.000278,\n  polls int NOT NULL DEFAULT 0,\n  last_poll timestamptz,\n  next_poll timestamptz NOT NULL,\n  PRIMARY KEY (tenant_id, app_id, stream)\n);",
+  "interface": "def next_interval(state: StreamState, changes: int, elapsed_s: float, cost: float, n_streams: int, budget_per_s: float) -> float  # seconds until the next poll",
+  "code": "import random\n\nA, K = 0.3, 5.0                 # EWMA weight, expected changes per poll\nLO, HI = 30.0, 6 * 3600.0       # clamp: 30 s to 6 h\nINITIAL_RATE = 1 / 3600         # 1 change per hour until 3 polls exist\n\ndef next_interval(state, changes, elapsed_s, cost, n_streams, budget_per_s):\n    x = changes / max(elapsed_s, 1.0)                    # observed changes per second\n    old = state.ewma_rate if state.polls >= 3 else INITIAL_RATE\n    rate = A * x + (1 - A) * old                         # EWMA\n    state.ewma_rate, state.polls = rate, state.polls + 1\n    want = K / rate if rate > 0 else HI                  # idle streams go to the ceiling, no divide by zero\n    interval = min(max(want, LO), HI)\n    floor = cost * n_streams / budget_per_s              # never poll faster than the quota allows\n    interval = max(interval, floor)\n    jitter = random.uniform(-0.1, 0.1)                   # streams must not poll in lockstep\n    return interval * (1 + jitter)",
+  "steps": [
+   {
+    "do": "Create scheduler_state and write next_interval",
+    "done_when": "unit tests pass for busy, idle and burst streams"
+   },
+   {
+    "do": "Check the clamp: a stream with 0 changes",
+    "done_when": "interval equals 6 h within 10 percent jitter"
+   },
+   {
+    "do": "Check the clamp: a stream with 10 changes per second",
+    "done_when": "interval equals 30 s within jitter"
+   },
+   {
+    "do": "Add the budget floor from so_rate",
+    "done_when": "with 100 streams and 1 request per second, interval is at least 100 s"
+   },
+   {
+    "do": "Loop: select due streams, send poll orders to ch_delta, sweep orders to ch_sweep",
+    "done_when": "a mock stream is polled at the computed times"
+   },
+   {
+    "do": "Replay 30 days of change history to tune a and k",
+    "done_when": "report shows polls per day versus staleness for 3 settings"
+   }
+  ],
+  "config": {
+   "EWMA_A": "0.3 // card default; tune on a replay",
+   "K_CHANGES_PER_POLL": "5 // card default; tune per app",
+   "INTERVAL_MIN_S": "30 // card pin",
+   "INTERVAL_MAX_S": "21600 // card pin, 6 h matches Graph worst latency (research T01)",
+   "JITTER": "0.1 // plus or minus 10 percent"
+  },
+  "verify": [
+   "pytest tests/test_ewma.py -q  # clamp, floor, jitter bounds, zero-rate cases pass",
+   "python -m brain.sched.replay data/changes_30d.csv  # prints polls per day and p95 staleness per setting"
+  ],
+  "pitfalls": [
+   "A zero change rate divides by zero and crashes the loop: guard it and send idle streams to the ceiling",
+   "No jitter makes every stream poll at the same second and spikes the rate limit",
+   "Ignoring the budget floor lets a hot tenant eat the shared quota"
+  ]
+ }
+}

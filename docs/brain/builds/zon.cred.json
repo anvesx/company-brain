@@ -1,0 +1,312 @@
+{
+ "cr_mode": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "so_svc",
+   "zn_tag"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "decision",
+    "pick": "a plain lookup function over the policy table; OPA if rules grow",
+    "why": "the decision is a keyed lookup plus two overrides; OPA is in the research as the policy engine to add later (r_opa)"
+   },
+   {
+    "part": "do not pick",
+    "pick": "domain-wide delegation or a tenant-wide admin grant as the only mode",
+    "why": "such grants reach all users' data (x_sec_google-dwd, x_sec_entra-consent); keep them to company-zone targets or use strict mode"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/cred/mode.py : decide(connector, zone, credential_kind)",
+   "migrations/020_cred_mode.sql : policy table and strict flag",
+   "tests/test_mode.py : personal-needs-user-grant and strict tests"
+  ],
+  "schema": "CREATE TABLE cred_policy (\n  tenant_id text NOT NULL,\n  connector text NOT NULL,\n  zone text NOT NULL CHECK (zone IN ('company','team','personal')),\n  mode text NOT NULL CHECK (mode IN ('app_only','user_grant','both','none')),\n  changed_by text NOT NULL,\n  changed_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, connector, zone),\n  CHECK (zone <> 'personal' OR mode IN ('user_grant','none'))\n);\nCREATE TABLE tenant_cred (tenant_id text PRIMARY KEY, strict boolean NOT NULL DEFAULT false);",
+  "interface": "def decide(tenant: str, connector: str, zone: str, credential_kind: str, user_id: str | None) -> Decision  # Decision(allow, reason); credential_kind is app_only or user_grant",
+  "code": "def decide(policy, strict: bool, connector, zone, credential_kind, user_id=None):\n    if zone not in ('company', 'team', 'personal'):\n        return Decision(False, 'unknown_zone')\n    if zone == 'personal':\n        # the pin: personal data is read only with the owner's own grant\n        if credential_kind != 'user_grant' or not user_id:\n            return Decision(False, 'personal_requires_user_grant')\n    if strict:\n        mode = 'user_grant'                              # strict mode forces user grants for all zones\n    else:\n        mode = policy.get((connector, zone))             # missing row means deny\n        if mode is None:\n            return Decision(False, 'no_policy')\n    if mode == 'none':\n        return Decision(False, 'disabled')\n    allowed = {'app_only': {'app_only'}, 'user_grant': {'user_grant'}, 'both': {'app_only', 'user_grant'}}[mode]\n    if credential_kind not in allowed:\n        return Decision(False, f'mode_{mode}_forbids_{credential_kind}')\n    if credential_kind == 'user_grant' and not user_id:\n        return Decision(False, 'user_grant_needs_user')\n    return Decision(True, f'mode_{mode}')\n\nDEFAULTS = {'company': 'app_only', 'team': 'app_only', 'personal': 'user_grant'}   # seeded per connector, then editable\n\ndef seed_defaults(policy_rows, connector):\n    return [(connector, z, m) for z, m in DEFAULTS.items() if (connector, z) not in policy_rows]",
+  "steps": [
+   {
+    "do": "Create the policy table with the personal CHECK and the strict flag table",
+    "done_when": "inserting personal with mode app_only fails with a constraint error"
+   },
+   {
+    "do": "Write decide and seed defaults for each installed connector",
+    "done_when": "pytest tests/test_mode.py -q passes personal_requires_user_grant"
+   },
+   {
+    "do": "Call decide before every crawl page and every live fetch",
+    "done_when": "an app-only job aimed at a personal zone is denied and logged"
+   },
+   {
+    "do": "Add the strict flag and a 60 s stop for in-flight jobs after a flip",
+    "done_when": "after flipping strict on, 0 app_only reads occur after 60 s in the job log"
+   },
+   {
+    "do": "Write each change to the history and to ac_audit with actor",
+    "done_when": "changing one row adds 1 audit row naming the admin"
+   }
+  ],
+  "config": {
+   "STRICT": "false // true forces user grants for all zones",
+   "POLICY_CACHE_SECONDS": "300 // last good table if the store is down, then deny",
+   "DEFAULT_PERSONAL": "user_grant // cannot be set to app_only (database CHECK)"
+  },
+  "verify": [
+   "pytest tests/test_mode.py -q  # all pass: personal denied for app_only, strict forces user grant, missing row denies",
+   "psql -c \"select connector, zone, mode from cred_policy where zone='personal' and mode='app_only'\"  # 0 rows"
+  ],
+  "pitfalls": [
+   "Assuming the vendor grant is as narrow as our policy: a domain-wide or tenant-wide grant technically reaches more, so say so to the customer and offer strict mode",
+   "A missing row that defaults to allow: the default must be deny",
+   "Policy cached forever when the store is down: cap it at 5 minutes"
+  ]
+ },
+ "cr_link": {
+  "milestone": "M2",
+  "effort_days": 10,
+  "depends_on": [
+   "cr_mode",
+   "so_oauth",
+   "zn_key"
+  ],
+  "stack": [
+   {
+    "part": "identity provider",
+    "pick": "Keycloak or Ory as the company OpenID Connect (OIDC) provider, or the customer's own",
+    "why": "the brain must be standalone; the user signs in once here and the session is reused"
+   },
+   {
+    "part": "token vault",
+    "pick": "so_oauth backed by Postgres, each token encrypted under the user's data key",
+    "why": "refresh tokens stay server side and unreadable from a database dump (x_sec_mcp-auth)"
+   },
+   {
+    "part": "exchange",
+    "pick": "RFC 8693 token exchange where the app supports it, else the app's standard consent page",
+    "why": "which apps federate is unverified per app: check current docs"
+   },
+   {
+    "part": "do not pick",
+    "pick": "passing the user's SSO token on to the app unchanged",
+    "why": "token passthrough is forbidden (x_sec_mcp-sec)"
+   }
+  ],
+  "install": [
+   "docker run -d -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev",
+   "pip install authlib httpx 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/cred/link.py : link_app with exchange and consent fallback",
+   "brain/cred/vault_client.py : store and rotate through so_oauth",
+   "migrations/021_link_state.sql : link state table",
+   "tests/test_link.py : federating, non-federating and rotation tests"
+  ],
+  "schema": "CREATE TABLE link_state (\n  tenant_id text NOT NULL,\n  user_id text NOT NULL,\n  app text NOT NULL,\n  state text NOT NULL CHECK (state IN ('linked','expired','failed','needs_consent')),\n  method text CHECK (method IN ('exchange','consent')),\n  last_ok_at timestamptz,\n  refresh_failures smallint NOT NULL DEFAULT 0,\n  PRIMARY KEY (tenant_id, user_id, app)\n);",
+  "interface": "def link_app(user: VerifiedUser, app: str) -> LinkResult  # LinkResult(state, redirect_url | None); tokens go to the vault, never into the result",
+  "code": "import httpx\n\nEXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange'   # RFC 8693\n\ndef link_app(db, vault, manifest, user, app):\n    if not user.session_valid:\n        return LinkResult('needs_sso', None)\n    m = manifest[app]\n    if m.get('federates'):                                   # apps that accept the company identity\n        r = httpx.post(m['token_endpoint'], data={\n            'grant_type': EXCHANGE_GRANT,\n            'subject_token': user.sso_access_token,\n            'subject_token_type': 'urn:ietf:params:oauth:token-type:access_token',\n            'resource': m['brain_resource'],                  # RFC 8707 audience\n        }, timeout=5)\n        if r.status_code == 200:\n            tok = r.json()\n            vault.put(user.tenant, user.id, app, tok['refresh_token'], tok.get('scope'))   # encrypted under the user's key\n            set_state(db, user, app, 'linked', 'exchange')\n            return LinkResult('linked', None)\n        # exchange refused: fall through to consent, once per 10 minutes\n        if recently_tried(db, user, app, minutes=10):\n            set_state(db, user, app, 'failed', None)\n            return LinkResult('failed', None)\n    url = consent_url(m, state=bind_state(user.id, app))     # tricky part: state bound to the verified user\n    set_state(db, user, app, 'needs_consent', 'consent')\n    return LinkResult('needs_consent', url)\n\ndef refresh(db, vault, user, app, attempt):\n    delays = [60, 300, 1800]                                 # 1 min, 5 min, 30 min\n    ok = vault.rotate(user.tenant, user.id, app)             # store the new refresh token before dropping the old\n    if ok:\n        return set_state(db, user, app, 'linked', None)\n    if attempt + 1 >= len(delays):\n        return set_state(db, user, app, 'expired', None)\n    schedule_retry(user, app, delays[attempt])",
+  "steps": [
+   {
+    "do": "Stand up the OIDC provider and sign in a test user once",
+    "done_when": "the brain page shows the user signed in with 1 login"
+   },
+   {
+    "do": "Create the link state table and the manifest field federates per app",
+    "done_when": "psql -c '\\d link_state' lists 7 columns; each manifest entry has federates true or false"
+   },
+   {
+    "do": "Implement the exchange path against one app you can test",
+    "done_when": "a signed-in test user links the app with 0 password prompts and 1 token in the vault"
+   },
+   {
+    "do": "Implement the consent fallback with state bound to the user",
+    "done_when": "a state value made for user A is rejected when user B completes the flow"
+   },
+   {
+    "do": "Implement rotation and the 3 retry expiry",
+    "done_when": "3 forced refresh failures set state expired and queue a user prompt"
+   },
+   {
+    "do": "Make the vault encrypt tokens under the user's data key from zn_key",
+    "done_when": "after a key shred, the vault returns an error for that user's tokens"
+   }
+  ],
+  "config": {
+   "TOKEN_AUDIENCE": "the brain resource id // RFC 8707 resource, tokens are for the brain only",
+   "REFRESH_RETRY_SECONDS": "60,300,1800 // three tries, then expired",
+   "CONSENT_FALLBACK_MINUTES": "10 // do not loop users through consent"
+  },
+  "verify": [
+   "pytest tests/test_link.py -q  # all pass: federating link, consent fallback, rotation order, state binding",
+   "psql -c \"select state, count(*) from link_state group by state\"  # linked and needs_consent only appear for tested apps"
+  ],
+  "pitfalls": [
+   "Assuming SSO removes every consent click: an app may still show its own page; the research has no per-app proof, check current docs",
+   "Dropping the old refresh token before saving the new one: a crash then locks the user out",
+   "OAuth state not bound to the verified user lets one user complete another's link"
+  ]
+ },
+ "cr_union": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [
+   "so_svc",
+   "cr_link"
+  ],
+  "stack": [
+   {
+    "part": "merge",
+    "pick": "plain Python over dicts keyed by normalised uri",
+    "why": "set intersection over at most 400 candidates; no library needed"
+   },
+   {
+    "part": "uri normaliser",
+    "pick": "one shared function used by every connector",
+    "why": "two normalisations of the same uri would fail to merge and show duplicates"
+   },
+   {
+    "part": "do not pick",
+    "pick": "union of allow lists",
+    "why": "a stale admin ACL could expose what the user's own app has closed"
+   }
+  ],
+  "install": [
+   "pip install pytest hypothesis",
+   "python3 -m venv .venv && . .venv/bin/activate"
+  ],
+  "layout": [
+   "brain/cred/union.py : merge_views",
+   "brain/cred/uri.py : normalise_uri",
+   "tests/test_union.py : stricter-wins and dedupe tests",
+   "tests/test_union_prop.py : property test that the merge never adds access"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"MergedCandidate\",\n  \"type\": \"object\",\n  \"required\": [\"uri\", \"best_score\", \"zone\", \"effective_allow\", \"source_views\"],\n  \"properties\": {\n    \"uri\": {\"type\": \"string\"},\n    \"best_score\": {\"type\": \"number\"},\n    \"zone\": {\"enum\": [\"company\", \"team\", \"personal\"]},\n    \"effective_allow\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"source_views\": {\"type\": \"array\", \"items\": {\"enum\": [\"admin\", \"user\"]}}\n  }\n}",
+  "interface": "def merge_views(admin: list[Hit], user: list[Hit], asker_principals: set[str]) -> tuple[list[Merged], int]  # (candidates capped at 200, conflict count)",
+  "code": "RANK = {'company': 0, 'team': 1, 'personal': 2}\nCAP = 200\n\ndef merge_views(admin, user, principals):\n    by_uri, conflicts = {}, 0\n    for view, hits in (('admin', admin), ('user', user)):\n        for h in hits:\n            u = normalise_uri(h.uri)\n            cur = by_uri.setdefault(u, {'admin': None, 'user': None})\n            prev = cur[view]\n            if prev is None or h.score > prev.score:\n                cur[view] = h                      # same uri twice in one view: best score\n    out = []\n    for u, v in by_uri.items():\n        a, b = v['admin'], v['user']\n        if a and b:\n            allow = set(a.allow) & set(b.allow)    # stricter wins: intersection\n            if a.allow and not set(a.allow) <= set(b.allow):\n                conflicts += 1\n            zone = a.zone if RANK[a.zone] >= RANK[b.zone] else b.zone\n            score, views = max(a.score, b.score), ['admin', 'user']\n        else:\n            h = a or b\n            allow, zone, score = set(h.allow), h.zone, h.score\n            views = ['admin'] if a else ['user']\n        if allow & principals:                     # visible only if the asker holds a surviving principal\n            out.append(Merged(u, score, zone, sorted(allow), views))\n    out.sort(key=lambda m: (-m.best_score, m.uri))\n    return out[:CAP], conflicts",
+  "steps": [
+   {
+    "do": "Write normalise_uri and test it on 20 uri variants from two connectors",
+    "done_when": "all variants of the same document map to one string"
+   },
+   {
+    "do": "Write merge_views with the intersection rule",
+    "done_when": "pytest tests/test_union.py -q passes the stricter-wins case"
+   },
+   {
+    "do": "Add the property test that effective allow is a subset of both inputs",
+    "done_when": "hypothesis runs 500 cases with 0 failures"
+   },
+   {
+    "do": "Wire the two view timeouts of 800 ms and the degraded rule",
+    "done_when": "with the user view down, only company-zone hits are returned and degraded is true"
+   },
+   {
+    "do": "Emit the conflict event to ac_audit",
+    "done_when": "a forced disagreement writes 1 audit row with hashed uri"
+   }
+  ],
+  "config": {
+   "MERGE_CAP": "200 // matches the reranker input",
+   "VIEW_TIMEOUT_MS": "800 // per view; tune on measured p95",
+   "CONFLICT_ALERT_RATE": "0.02 // alert above 2 percent of queries (default, tune)"
+  },
+  "verify": [
+   "pytest tests/test_union.py tests/test_union_prop.py -q  # all pass, merge never adds access",
+   "python3 -c \"from brain.cred.union import merge_views; print(merge_views([],[],set()))\"  # ([], 0)"
+  ],
+  "pitfalls": [
+   "Normalising uris differently in two connectors shows one document twice",
+   "Comparing versions by time: use a counter; clock skew reverses them",
+   "Caching the merged list across users: key it by the asker's principals and owner id"
+  ]
+ },
+ "cr_gap": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "cr_link",
+   "ix_ptr",
+   "op_cov"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 with pgvector",
+    "why": "pointers, zone columns and row-level security sit in one database; the research repos list pgvector as the simple start (r_pgvector)"
+   },
+   {
+    "part": "sampling",
+    "pick": "Python random sampling over hashed ids",
+    "why": "a hashed sample avoids bias from newest-first listings"
+   },
+   {
+    "part": "listing call",
+    "pick": "the app's own list endpoint through the user's grant",
+    "why": "per-app count and listing calls are not in our research: check current docs"
+   },
+   {
+    "part": "do not pick",
+    "pick": "the admin token for the probe",
+    "why": "it cannot see personal items, which is the point, and would blur the privacy line"
+   }
+  ],
+  "install": [
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev pgvector/pgvector:pg16",
+   "pip install 'psycopg[binary]' pytest"
+  ],
+  "layout": [
+   "brain/cred/gap.py : probe and estimate",
+   "migrations/022_gap.sql : per-user and aggregate tables",
+   "tests/test_gap.py : margin and small-sample tests"
+  ],
+  "schema": "CREATE TABLE gap_user (\n  tenant_id text NOT NULL,\n  user_id text NOT NULL,\n  app text NOT NULL,\n  sampled int NOT NULL,\n  missing int NOT NULL,\n  total_estimate bigint,\n  at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, user_id, app)\n);\nCREATE VIEW gap_admin AS\n  SELECT tenant_id, app, count(*) AS users, sum(missing) AS missing, sum(sampled) AS sampled\n  FROM gap_user GROUP BY tenant_id, app HAVING count(*) >= 5;",
+  "interface": "def probe(user: LinkedUser, app: str, n: int = 400) -> GapEstimate  # GapEstimate(p_hat, margin, gap_total | None, enough_data)",
+  "code": "import math, random\n\nMIN_N = 100\nZ = 1.96   # 95 percent\n\ndef estimate(n: int, missing: int, total: int | None):\n    if n < MIN_N:\n        return GapEstimate(None, None, None, False)        # not enough data, no percentage\n    p = missing / n\n    margin = Z * math.sqrt(p * (1 - p) / n)\n    gap = round(p * total) if total is not None else None  # some apps give no cheap total: unknown\n    return GapEstimate(p, margin, gap, True)\n\ndef probe(db, grant, app, tenant, user, n=400):\n    if grant.kind != 'user_grant':\n        raise PermissionError('probe needs the user own grant')   # never the admin token\n    ids = grant.list_ids(app)                                  # ids only, no content\n    ids = [i for i in ids if not too_new(i, minutes=15)]       # skip items younger than the sync window\n    if not ids:\n        return GapEstimate(0.0, 0.0, 0, True)\n    sample = ids if len(ids) <= n else random.Random(hash_seed(user)).sample(ids, n)\n    held = {r[0] for r in db.execute(\n        'SELECT native_id FROM pointer WHERE tenant_id=%s AND source=%s AND native_id = ANY(%s)',\n        (tenant, app, sample))}\n    missing = sum(1 for i in sample if i not in held)\n    est = estimate(len(sample), missing, grant.total_count(app))\n    db.execute('INSERT INTO gap_user VALUES (%s,%s,%s,%s,%s,%s,now()) ON CONFLICT (tenant_id,user_id,app) DO UPDATE SET sampled=EXCLUDED.sampled, missing=EXCLUDED.missing, total_estimate=EXCLUDED.total_estimate, at=now()',\n               (tenant, user, app, len(sample), missing, est.gap_total))\n    return est   # the admin view reads only gap_admin: per app, at least 5 users",
+  "steps": [
+   {
+    "do": "Create gap_user and the gap_admin view with the 5-user minimum",
+    "done_when": "select * from gap_admin returns 0 rows when only 3 users have rows"
+   },
+   {
+    "do": "Write estimate with the margin and the 100-id floor",
+    "done_when": "estimate(400, 68, 12000) gives p 0.17 and margin about 0.037; estimate(40, 5, None) says not enough data"
+   },
+   {
+    "do": "Write probe using only the user's own grant",
+    "done_when": "calling probe with an app-only grant raises PermissionError"
+   },
+   {
+    "do": "Handle 429 with the Retry-After wait, one retry, then skip to the next day",
+    "done_when": "a mocked 429 produces 1 retry and then a skipped run, no crash"
+   },
+   {
+    "do": "Send a link prompt to cr_link and the aggregate to op_cov",
+    "done_when": "a user with p_hat above 5 percent gets 1 prompt; op_cov receives only the aggregate"
+   }
+  ],
+  "config": {
+   "SAMPLE_SIZE": "400 // about plus or minus 5 points at 95 percent",
+   "PROMPT_THRESHOLD": "0.05 // prompt when over 5 percent missing (tune)",
+   "ADMIN_MIN_USERS": "5 // aggregate shown to the admin only above this"
+  },
+  "verify": [
+   "pytest tests/test_gap.py -q  # all pass: margin 0.037 for 400 and 68, not enough data for 40",
+   "psql -c \"select * from gap_admin\"  # only apps with 5 or more users appear"
+  ],
+  "pitfalls": [
+   "Newest-first listings give a biased sample: sample by hashed id or random offsets",
+   "Counting new items as missing before the sync catches up: skip items younger than 15 minutes (design)",
+   "Showing per-user rows to the admin reveals who owns what: expose only the aggregate view"
+  ]
+ }
+}

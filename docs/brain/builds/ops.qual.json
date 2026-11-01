@@ -1,0 +1,466 @@
+{
+ "op_eval": {
+  "milestone": "M3",
+  "effort_days": 6,
+  "depends_on": [
+   "qr_hyb",
+   "qr_rerank",
+   "op_trace"
+  ],
+  "stack": [
+   {
+    "part": "metrics",
+    "pick": "ranx or plain NumPy",
+    "why": "ranx implements recall, nDCG, MRR and significance tests; check current docs. NumPy keeps it dependency-free"
+   },
+   {
+    "part": "RAG metrics",
+    "pick": "Ragas for answer-level checks",
+    "why": "per the research index, cheap automatic metrics; not a substitute for the golden set"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16 for runs and baselines",
+    "why": "simple diffs between runs"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a public benchmark as the gate",
+    "why": "gains there are not gains on your corpus; use a per-tenant golden set"
+   }
+  ],
+  "install": [
+   "pip install numpy ranx psycopg[binary] pytest",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/eval/metrics.py : recall, nDCG, MRR",
+   "brain/eval/bootstrap.py : paired bootstrap",
+   "brain/eval/runner.py : run golden set as a persona",
+   "migrations/060_eval.sql : golden and run tables",
+   "tests/test_metrics.py : known-answer tests"
+  ],
+  "schema": "CREATE TABLE golden (\n  tenant_id text NOT NULL,\n  qid text NOT NULL,\n  query text NOT NULL,\n  persona_id text NOT NULL,\n  relevant jsonb NOT NULL,  -- [{\"doc_id\": \"...\", \"grade\": 0..3}]\n  PRIMARY KEY (tenant_id, qid)\n);\nCREATE TABLE eval_run (\n  run_id uuid PRIMARY KEY,\n  tenant_id text NOT NULL,\n  index_version text NOT NULL,\n  n int NOT NULL,\n  recall5 real, recall20 real, ndcg10 real, mrr real,\n  delta_ndcg10 real, ci95_low real, ci95_high real,\n  verdict text NOT NULL CHECK (verdict IN ('pass','block')),\n  at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def run_eval(tenant_id: str, candidate: str, baseline: str) -> EvalReport  # verdict pass|block, per_query_failures[]",
+  "code": "import math, random\n\ndef dcg(rels):\n    return sum(r / math.log2(i + 2) for i, r in enumerate(rels[:10]))\n\ndef ndcg10(ranked, grades):\n    ideal = sorted(grades.values(), reverse=True)\n    got = [grades.get(d, 0) for d in ranked]\n    return dcg(got) / dcg(ideal) if dcg(ideal) else 0.0\n\ndef recall_at(ranked, grades, k):\n    rel = {d for d, g in grades.items() if g > 0}\n    return len(rel & set(ranked[:k])) / len(rel) if rel else 0.0\n\ndef rr(ranked, grades):\n    for i, d in enumerate(ranked, 1):\n        if grades.get(d, 0) > 0:\n            return 1 / i\n    return 0.0\n\ndef paired_bootstrap(diffs, iters=2000, seed=1):\n    rng = random.Random(seed)\n    means = sorted(sum(rng.choices(diffs, k=len(diffs))) / len(diffs) for _ in range(iters))\n    return means[int(0.025 * iters)], means[int(0.975 * iters)]\n\ndef verdict(diffs, tol=0.01):\n    lo, hi = paired_bootstrap(diffs)\n    # Tricky part: block only when the whole interval is below -tol; a noisy dip is not a regression.\n    return \"block\" if hi < -tol else \"pass\", lo, hi",
+  "steps": [
+   {
+    "do": "Create golden and eval_run tables",
+    "done_when": "\\dt lists both"
+   },
+   {
+    "do": "Implement the four metrics with known answers",
+    "done_when": "pytest: a hand-computed 3-doc case matches to 4 decimals"
+   },
+   {
+    "do": "Run each golden query as its persona through the full path",
+    "done_when": "a persona without access gets zero hits for a forbidden doc"
+   },
+   {
+    "do": "Run candidate and baseline on the same queries",
+    "done_when": "per-query diffs exist for every qid"
+   },
+   {
+    "do": "Add the paired bootstrap interval",
+    "done_when": "interval printed with 2000 resamples and a fixed seed"
+   },
+   {
+    "do": "Return pass or block to the re-index controller",
+    "done_when": "a candidate that drops nDCG@10 by 0.05 on 50 queries returns block"
+   }
+  ],
+  "config": {
+   "GOLDEN_MIN_QUERIES": "20 // below this the interval is too wide to trust",
+   "BOOTSTRAP_ITERS": "2000 // standard",
+   "BLOCK_TOLERANCE": "0.01 // nDCG@10 points",
+   "K_LIST": "5,20 // recall cutoffs"
+  },
+  "verify": [
+   "pytest tests/test_metrics.py -q  # all passed",
+   "python -m brain.eval.runner --tenant t1 --candidate g2 --baseline g1  # prints verdict and interval"
+  ],
+  "pitfalls": [
+   "Writing golden queries from the same docs the index was built on inflates recall. Have a person write them from real questions",
+   "Running the eval as an admin hides permission failures; always run as the persona",
+   "With under 20 queries the bootstrap is nearly meaningless; do not gate on it until you have more"
+  ]
+ },
+ "op_leak": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ac_filter",
+   "ll_mcp",
+   "gv_tenant"
+  ],
+  "stack": [
+   {
+    "part": "fixtures",
+    "pick": "pytest with a seeded Postgres and planted canary documents",
+    "why": "plain code, reviewable by security"
+   },
+   {
+    "part": "canaries",
+    "pick": "real documents in test workspaces of each connected app",
+    "why": "the research says plant real forbidden documents, not mocks"
+   },
+   {
+    "part": "scheduler",
+    "pick": "CI on every release plus a nightly cron",
+    "why": "a leak must block the release"
+   },
+   {
+    "part": "do not pick",
+    "pick": "unit tests with a mocked filter",
+    "why": "a mock cannot find a leak in the real query path"
+   }
+  ],
+  "install": [
+   "pip install pytest httpx psycopg[binary]",
+   "docker compose up -d  # brain, postgres, test workspaces"
+  ],
+  "layout": [
+   "tests/leak/fixture.yaml : users, groups and canary docs with allowed lists",
+   "tests/leak/plan.py : build (user, query) probe pairs",
+   "tests/leak/run_leak.py : probe both doors and compare",
+   "tests/leak/test_leak.py : pytest entry that fails the release"
+  ],
+  "schema": "# tests/leak/fixture.yaml\ntenant: t_leak\nusers:\n  - {id: alice, groups: [eng]}\n  - {id: bob, groups: [sales]}\ncanary_docs:\n  - {id: c1, source: drive, allowed_users: [alice], marker: CANARY-7F3A-ENG}\n  - {id: c2, source: jira, allowed_users: [bob], marker: CANARY-91B2-SALES}\nrevocations:\n  - {at_s: 60, user: alice, group: eng}",
+  "interface": "def run_leak_suite(fixture_path: str) -> LeakReport  # LeakReport(n_probes, n_leaks, leaks[], n_overblock, revoke_latency_s, bound95)",
+  "code": "def run_leak_suite(fx, doors, queries):\n    leaks, over, n = [], 0, 0\n    allowed = {d[\"id\"]: set(d[\"allowed_users\"]) for d in fx[\"canary_docs\"]}\n    marks = {d[\"marker\"]: d[\"id\"] for d in fx[\"canary_docs\"]}\n    for u in fx[\"users\"]:\n        tok = login(u[\"id\"])\n        for q in queries:\n            for door in doors:                           # MCP and REST, both\n                out = door.search(tok, q)                # full text of every output path\n                n += 1\n                text = out.raw_text()\n                for m, did in marks.items():\n                    seen = m in text or did in out.ids()\n                    if seen and u[\"id\"] not in allowed[did]:\n                        leaks.append({\"user\": u[\"id\"], \"doc\": did, \"path\": door.name, \"trace\": out.trace_id})\n                    if (not seen) and u[\"id\"] in allowed[did] and q.targets(did):\n                        over += 1                        # overblock: allowed user cannot find it\n    # Rule of three: zero leaks in n probes bounds the rate below about 3/n with 95% confidence.\n    bound = 1 - 0.05 ** (1 / n) if not leaks else None\n    return dict(n_probes=n, n_leaks=len(leaks), leaks=leaks, n_overblock=over, bound95=bound)\n\ndef test_no_leaks():\n    r = run_leak_suite(load_fixture(), [mcp_door, rest_door], build_plan())\n    assert r[\"n_leaks\"] == 0, r[\"leaks\"]   # any leak blocks the release",
+  "steps": [
+   {
+    "do": "Write the fixture with 6 users and canaries in every connected source type",
+    "done_when": "fixture.yaml parses; every source type has a canary"
+   },
+   {
+    "do": "Plant canaries in test workspaces with the fixture ACLs",
+    "done_when": "each canary is visible to its allowed users in the source app"
+   },
+   {
+    "do": "Build the probe plan: every user by every query that targets a canary",
+    "done_when": "plan size equals users times queries"
+   },
+   {
+    "do": "Probe both the MCP and REST doors and scan the raw output",
+    "done_when": "a deliberately broken filter (test only) makes the suite fail"
+   },
+   {
+    "do": "Add the revocation step and time how long access takes to drop",
+    "done_when": "revoke_latency_s printed and under the stated target"
+   },
+   {
+    "do": "Wire the test into CI as a release blocker",
+    "done_when": "a failing run stops the pipeline job"
+   }
+  ],
+  "config": {
+   "LEAK_PROBE_USERS": "6 // mix of groups, one with no groups",
+   "LEAK_QUERIES": "all canary-targeting queries // plus 20 random ones",
+   "REVOKE_TARGET_S": "300 // stated revoke latency",
+   "NIGHTLY_CRON": "0 2 * * * // canary even without a release"
+  },
+  "verify": [
+   "pytest tests/leak -q  # all passed, n_leaks 0",
+   "pytest tests/leak -q -k broken_filter  # fails with a named leak (negative control)"
+  ],
+  "pitfalls": [
+   "Testing only the REST door misses leaks through MCP tool output or error text. Probe every output path",
+   "Mock canaries pass forever; plant real documents in the real apps",
+   "Zero leaks in few probes is weak evidence; print the 95% bound so nobody reads it as proof"
+  ]
+ },
+ "op_cost": {
+  "milestone": "M3",
+  "effort_days": 3,
+  "depends_on": [
+   "pl_gw",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "metering",
+    "pick": "OpenTelemetry attributes on spans plus LiteLLM spend logs",
+    "why": "LiteLLM records spend per call; check current docs for the log fields"
+   },
+   {
+    "part": "price table",
+    "pick": "a versioned YAML file",
+    "why": "price at the time of the call, not today"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "cost rows and daily rollup view"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a monthly invoice divided by documents",
+    "why": "you cannot see which source or agent is expensive"
+   }
+  ],
+  "install": [
+   "pip install litellm psycopg[binary] pyyaml",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/cost/prices.yaml : price per unit with effective dates",
+   "brain/cost/meter.py : price and sum the parts",
+   "migrations/061_cost.sql : cost table and rollup view",
+   "tests/test_cost.py : pricing tests"
+  ],
+  "schema": "CREATE TABLE cost_record (\n  tenant_id text NOT NULL,\n  subject_kind text NOT NULL CHECK (subject_kind IN ('doc','query')),\n  subject_id text NOT NULL,\n  usd numeric(14,6) NOT NULL,\n  parts jsonb NOT NULL,\n  at timestamptz NOT NULL DEFAULT now()\n);\nCREATE VIEW cost_daily AS\n  SELECT tenant_id, date_trunc('day', at) AS day, subject_kind, sum(usd) AS usd\n  FROM cost_record GROUP BY 1,2,3;",
+  "interface": "def price_doc(m: DocMeter) -> CostRecord\ndef price_query(m: QueryMeter) -> CostRecord  # parts: embed, rerank, live, model",
+  "code": "def price_at(prices, key, at):\n    rows = [p for p in prices[key] if p[\"from\"] <= at]\n    return max(rows, key=lambda p: p[\"from\"])[\"usd\"]      # price in force when the call happened\n\ndef price_doc(prices, m, at, months=1):\n    parts = {\n        \"context\": m.ctx_tokens * price_at(prices, \"ctx_token\", at),\n        \"embed\":   m.embed_tokens * price_at(prices, \"embed_token\", at),\n        \"store\":   m.bytes_stored * price_at(prices, \"byte_month\", at) * months,\n        \"app\":     m.app_calls * price_at(prices, \"app_call\", at),\n    }\n    return CostRecord(subject=\"doc\", usd=sum(parts.values()), parts=parts)\n\ndef price_query(prices, m, at):\n    parts = {\n        \"embed\":  m.embed_tokens * price_at(prices, \"embed_token\", at),\n        \"rerank\": m.rerank_docs * price_at(prices, \"rerank_doc\", at),\n        \"live\":   m.live_calls * price_at(prices, \"app_call\", at),\n        \"model\":  m.model_in * price_at(prices, \"model_in_token\", at)\n                  + m.model_out * price_at(prices, \"model_out_token\", at),\n    }\n    # Tricky part: keep the parts. A total alone cannot tell you which part grew.\n    return CostRecord(subject=\"query\", usd=sum(parts.values()), parts=parts)",
+  "steps": [
+   {
+    "do": "Create cost_record and the daily view",
+    "done_when": "\\d cost_record and SELECT * FROM cost_daily run"
+   },
+   {
+    "do": "Write prices.yaml with effective dates",
+    "done_when": "file has at least one dated row per unit"
+   },
+   {
+    "do": "Implement price_doc and price_query with price_at",
+    "done_when": "test: a call before a price change uses the old price"
+   },
+   {
+    "do": "Attach a meter record at each model call, storage write and app call",
+    "done_when": "one cost row per fixture document"
+   },
+   {
+    "do": "Add budget alerts per tenant and per agent",
+    "done_when": "test: crossing the daily budget sends one alert"
+   },
+   {
+    "do": "Compare the sum with the gateway bill for one day",
+    "done_when": "difference under 5 percent"
+   }
+  ],
+  "config": {
+   "PRICE_FILE": "brain/cost/prices.yaml // version in git",
+   "DAILY_BUDGET_USD": "50 // per tenant, tune per contract",
+   "ALERT_AT_PCT": "80 // warn before the stop",
+   "ROLLUP_CRON": "5 0 * * * // daily"
+  },
+  "verify": [
+   "pytest tests/test_cost.py -q  # all passed",
+   "psql -c 'select * from cost_daily order by day desc limit 3'  # rows with usd and parts"
+  ],
+  "pitfalls": [
+   "Using today's price for old calls rewrites history. Keep dated prices",
+   "Dropping the parts and keeping a total: you cannot see that live calls, not embeddings, grew the bill",
+   "Forgetting app API calls: the source's own rate and plan limits are a real cost"
+  ]
+ },
+ "op_trace": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "qr_pack",
+   "qr_stamp",
+   "pl_obs"
+  ],
+  "stack": [
+   {
+    "part": "span collection",
+    "pick": "OpenTelemetry SDK with an OTLP collector",
+    "why": "one trace id through plan, retrieve, live and rerank"
+   },
+   {
+    "part": "trace store",
+    "pick": "Postgres 16, partitioned by tenant and day, append-only",
+    "why": "simple, queryable, easy to purge by partition"
+   },
+   {
+    "part": "encryption",
+    "pick": "AES-GCM through the tenant data key from gv_kms for the query text",
+    "why": "queries can contain secrets"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a vendor trace tool that stores full prompts and documents",
+    "why": "traces must hold hashes and ids, never document text"
+   }
+  ],
+  "install": [
+   "pip install opentelemetry-sdk opentelemetry-exporter-otlp cryptography psycopg[binary]",
+   "docker run -d --name otel -p 4317:4317 otel/opentelemetry-collector"
+  ],
+  "layout": [
+   "brain/trace/spans.py : span helpers and stamping",
+   "brain/trace/store.py : append and read",
+   "brain/trace/replay.py : replay against a past generation",
+   "migrations/062_trace.sql : partitioned table",
+   "tests/test_replay.py : replay tests"
+  ],
+  "schema": "CREATE TABLE trace (\n  query_id uuid NOT NULL,\n  tenant_id text NOT NULL,\n  day date NOT NULL,\n  principal_id text NOT NULL,\n  query_enc bytea NOT NULL,\n  plan jsonb NOT NULL,\n  candidates jsonb NOT NULL,   -- [{doc_id, source_rank, score}]\n  live_calls jsonb NOT NULL,   -- [{source, status, ms, version, content_hash}]\n  rerank_order text[] NOT NULL,\n  index_generation text NOT NULL,\n  acl_snapshot_version bigint NOT NULL,\n  tool_schema_version text NOT NULL,\n  model_id text NOT NULL,\n  PRIMARY KEY (tenant_id, day, query_id)\n) PARTITION BY LIST (tenant_id);",
+  "interface": "def record(trace: Trace) -> None\ndef replay(query_id: str, generation: str | None = None) -> ReplayResult  # same_ranking, diffs[], drift[]",
+  "code": "def replay(store, retriever, live, query_id, generation=None):\n    t = store.get(query_id)\n    q = decrypt(t.tenant_id, t.query_enc)\n    gen = generation or t.index_generation\n    # Replay against the stored ACL snapshot so permissions do not change the ranking under test.\n    res = retriever.retrieve(q, tenant=t.tenant_id, principal=t.principal_id,\n                             index_generation=gen, acl_snapshot=t.acl_snapshot_version)\n    old, new = t.rerank_order, res.ranked_ids\n    diffs = [{\"doc_id\": d, \"old_rank\": old.index(d) if d in old else None,\n              \"new_rank\": new.index(d) if d in new else None}\n             for d in dict.fromkeys(old + new)\n             if (old.index(d) if d in old else None) != (new.index(d) if d in new else None)]\n    drift = []\n    for c in t.live_calls:\n        # Tricky part: compare hashes, never text. A changed hash means the source moved, not the index.\n        now_hash = live.content_hash(c[\"source\"], c[\"doc_id\"], principal=t.principal_id)\n        if now_hash != c[\"content_hash\"]:\n            drift.append({\"doc_id\": c[\"doc_id\"], \"old_hash\": c[\"content_hash\"], \"new_hash\": now_hash})\n    return {\"query_id\": query_id, \"same_ranking\": old == new, \"diffs\": diffs, \"drift\": drift}",
+  "steps": [
+   {
+    "do": "Create the partitioned trace table",
+    "done_when": "\\d+ trace shows partition key tenant_id"
+   },
+   {
+    "do": "Attach one query_id to every span in the path",
+    "done_when": "a fixture query produces spans for plan, retrieve, live and rerank under one id"
+   },
+   {
+    "do": "Hash live content and store only hash and version",
+    "done_when": "SELECT confirms no text column holds document content"
+   },
+   {
+    "do": "Stamp generation, ACL snapshot, schema version and model id",
+    "done_when": "all 4 stamps non-null on every row"
+   },
+   {
+    "do": "Encrypt the query text with the tenant key",
+    "done_when": "raw bytes in query_enc do not contain the query string"
+   },
+   {
+    "do": "Implement replay with diff and drift",
+    "done_when": "replaying a fresh trace on its own generation gives same_ranking true"
+   }
+  ],
+  "config": {
+   "TRACE_RETENTION_DAYS": "30 // drop partitions after this",
+   "SPAN_SAMPLE_RATE": "1.0 // keep all at first; sampling hides the rare leak",
+   "QUERY_KEY_REF": "kms://tenant/{tenant} // from gv_kms",
+   "OTLP_ENDPOINT": "http://otel:4317 // collector"
+  },
+  "verify": [
+   "pytest tests/test_replay.py -q  # all passed",
+   "psql -c \"select count(*) from trace where query_enc is null\"  # 0"
+  ],
+  "pitfalls": [
+   "Storing document text or snippets in a trace makes the trace store a second copy and an erasure target. Store hashes and ids",
+   "Replaying against today's ACLs changes results and hides regressions; pin the snapshot",
+   "Sampling traces at 1 percent loses the one leak you needed"
+  ]
+ },
+ "op_attr": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "op_trace"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "small model through the gateway with JSON schema",
+    "why": "Closed label list"
+   },
+   {
+    "part": "do not pick",
+    "pick": "free-form root-cause essays",
+    "why": "Labels can be counted and routed; essays cannot"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/ops/attribute.py",
+   "tests/test_attribute.py"
+  ],
+  "schema": "{\"stage\":\"plan|scope|retrieve|rerank|evidence|generate|permission|unclear\",\"confidence\":\"float\",\"evidence_lines\":[\"int\"]}",
+  "interface": "def attribute(trace: Trace, flag: Flag) -> Failure",
+  "code": "def attribute(gw, trace, flag):\n    out = gw.json(model=SMALL, schema=Attr, prompt=render(trace, flag))\n    if any(i >= len(trace.lines) for i in out.evidence_lines):\n        raise BadEvidence()\n    if flag.kind == \"leak\":\n        page_security(trace)\n    stage = out.stage if out.confidence >= 0.5 else \"unclear\"\n    return Failure(trace.query_id, stage, out.confidence, out.evidence_lines)",
+  "steps": [
+   {
+    "do": "Write schema and prompt",
+    "done_when": "validates"
+   },
+   {
+    "do": "Reject evidence not in the trace",
+    "done_when": "made-up line is rejected"
+   },
+   {
+    "do": "Route leaks to security",
+    "done_when": "leak flag pages at once"
+   },
+   {
+    "do": "Compare with 100 hand labels",
+    "done_when": "agreement measured and logged"
+   }
+  ],
+  "config": {
+   "MIN_CONFIDENCE": "0.5 // below this the label is unclear",
+   "TIMEOUT_S": "20 // model call timeout",
+   "SAMPLE_RATE": "1.0 for flagged, 0.05 for unflagged"
+  },
+  "verify": [
+   "pytest tests/test_attribute.py -q  # all passed",
+   "python -m brain.ops.attribute --trace samples/scope_miss.json  # label scope"
+  ],
+  "pitfalls": [
+   "Reading traces without the reviewer's permission",
+   "Counting 'unclear' as a stage"
+  ]
+ },
+ "op_ver": {
+  "milestone": "M5",
+  "effort_days": 6,
+  "depends_on": [
+   "op_attr",
+   "op_eval"
+  ],
+  "stack": [
+   {
+    "part": "release",
+    "pick": "versioned manifest files in git plus a release table",
+    "why": "Reviewable and reversible"
+   },
+   {
+    "part": "do not pick",
+    "pick": "editing live config in place",
+    "why": "No history, no rollback"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/ops/release.py",
+   "tests/test_release.py"
+  ],
+  "schema": "{\"version\":\"str\",\"manifest\":\"object\",\"quality\":\"float\",\"leak\":\"int\",\"p95_ms\":\"int\",\"decision\":\"promote|hold|roll_back\"}",
+  "interface": "def decide(new: Report, old: Report) -> str",
+  "code": "def decide(new, old, margin=0.02, lat=1.1):\n    if new.leak > 0 or new.perm_fail > 0:\n        return \"hold\"                                          # hard block, no waiver\n    if new.quality < old.quality - margin:\n        return \"roll_back\"\n    if new.p95_ms > lat * old.p95_ms:\n        return \"hold\"\n    return \"promote\"",
+  "steps": [
+   {
+    "do": "Write the manifest format",
+    "done_when": "one file per version"
+   },
+   {
+    "do": "Replay the golden set on both versions",
+    "done_when": "report has two columns"
+   },
+   {
+    "do": "Add decide with hard blocks",
+    "done_when": "leak test failure holds"
+   },
+   {
+    "do": "Add canary and one-step rollback",
+    "done_when": "previous manifest live in one step"
+   }
+  ],
+  "config": {
+   "QUALITY_MARGIN": "0.02",
+   "CANARY_PERCENT": "5",
+   "LATENCY_MARGIN": "1.1"
+  },
+  "verify": [
+   "pytest tests/test_release.py -q  # all passed",
+   "python -m brain.ops.release --candidate v12 --baseline v11  # prints decision and score table"
+  ],
+  "pitfalls": [
+   "Letting the judge decide leak tests",
+   "Overwriting a manifest instead of adding a version"
+  ]
+ }
+}

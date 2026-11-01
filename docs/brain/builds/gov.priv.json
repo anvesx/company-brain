@@ -1,0 +1,583 @@
+{
+ "gv_erase": {
+  "milestone": "M5",
+  "effort_days": 8,
+  "depends_on": [
+   "ch_tomb",
+   "ix_ptr",
+   "ix_gc",
+   "op_trace",
+   "gv_kill"
+  ],
+  "stack": [
+   {
+    "part": "workflow engine",
+    "pick": "Temporal (MIT)",
+    "why": "durable fan-out with per-step retries and a verified close; named in the research as the job engine"
+   },
+   {
+    "part": "ledger",
+    "pick": "Postgres 16, insert-only table",
+    "why": "one row per order, never deleted"
+   },
+   {
+    "part": "signing",
+    "pick": "Ed25519 via cryptography",
+    "why": "receipt signature a customer can verify"
+   },
+   {
+    "part": "backstop",
+    "pick": "per-tenant key destruction through gv_kms",
+    "why": "crypto-shredding covers stores that keep soft-deleted vectors; the research flags this as a real risk"
+   },
+   {
+    "part": "do not pick",
+    "pick": "soft delete flags on vectors",
+    "why": "the research notes soft-deleted entries can linger in raw index files"
+   }
+  ],
+  "install": [
+   "pip install temporalio psycopg[binary] cryptography",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/erase/workflow.py : the erasure workflow",
+   "brain/erase/stores.py : one purge adapter per store",
+   "brain/erase/receipt.py : build and sign the receipt",
+   "migrations/070_erasure.sql : ledger",
+   "tests/test_erase.py : fan-out and probe tests"
+  ],
+  "schema": "CREATE TABLE erasure_ledger (\n  erasure_id uuid PRIMARY KEY,\n  tenant_id text NOT NULL,\n  uri_hash text NOT NULL,\n  reason text NOT NULL CHECK (reason IN ('source_delete','user_request','kill')),\n  steps jsonb NOT NULL,       -- [{store, state, at}]\n  opened_at timestamptz NOT NULL DEFAULT now(),\n  closed_at timestamptz,\n  receipt_sig bytea\n);\nREVOKE UPDATE (uri_hash, tenant_id, reason, opened_at) ON erasure_ledger FROM PUBLIC;",
+  "interface": "async def erase(tenant: str, uri: str, reason: str) -> Receipt  # closes only after every store acknowledges and a probe finds nothing",
+  "code": "STORES = [\"vector\", \"lexical\", \"excerpt\", \"graph\", \"cache\", \"trace\"]\n\n@workflow.defn\nclass EraseWorkflow:\n    @workflow.run\n    async def run(self, tenant, uri, reason):\n        eid = await workflow.execute_activity(open_row, args=[tenant, uri, reason], start_to_close_timeout=SHORT)\n        lineage = await workflow.execute_activity(read_lineage, args=[tenant, uri], start_to_close_timeout=SHORT)\n        results = await asyncio.gather(*[\n            workflow.execute_activity(purge, args=[s, tenant, lineage.get(s, [])],\n                                      start_to_close_timeout=LONG,\n                                      retry_policy=RetryPolicy(maximum_attempts=0))   # retry until acknowledged\n            for s in STORES])\n        # Tricky part: an ack is not proof. Probe every store for the uri and its derived ids before closing.\n        left = await workflow.execute_activity(probe_all, args=[tenant, uri, lineage], start_to_close_timeout=LONG)\n        if left:\n            await workflow.execute_activity(escalate, args=[eid, left], start_to_close_timeout=SHORT)\n            raise ApplicationError(\"probe found residue\", non_retryable=False)\n        steps = [{\"store\": s, \"state\": \"purged\", \"at\": r} for s, r in zip(STORES, results)]\n        return await workflow.execute_activity(close_with_receipt, args=[eid, steps], start_to_close_timeout=SHORT)",
+  "steps": [
+   {
+    "do": "Create the insert-only ledger",
+    "done_when": "an UPDATE on uri_hash fails for the app role"
+   },
+   {
+    "do": "Read lineage from the pointer store",
+    "done_when": "fixture uri returns derived ids for all 6 stores"
+   },
+   {
+    "do": "Write one purge adapter per store with a hard delete",
+    "done_when": "each adapter test: row gone, count 0"
+   },
+   {
+    "do": "Run the 6 purges in parallel with retry until ack",
+    "done_when": "kill one store mid-run; workflow finishes after it returns"
+   },
+   {
+    "do": "Probe every store after the acks",
+    "done_when": "a planted leftover vector makes the probe fail and escalate"
+   },
+   {
+    "do": "Sign and store the receipt",
+    "done_when": "verify(receipt, public_key) is true; ledger row has closed_at"
+   }
+  ],
+  "config": {
+   "ERASE_SLA_S": "86400 // stated time; counsel decides the real figure",
+   "PROBE_DELAY_S": "60 // let async deletes settle before probing",
+   "RECEIPT_KEY_REF": "kms://brain/receipt // signs receipts",
+   "TEMPORAL_ADDR": "temporal:7233 // workflow engine"
+  },
+  "verify": [
+   "pytest tests/test_erase.py -q  # all passed",
+   "psql -c \"select count(*) from erasure_ledger where closed_at is null and opened_at < now() - interval '1 day'\"  # 0"
+  ],
+  "pitfalls": [
+   "Purging the vector but not the trace or cache leaves the content findable. Symptom: a probe query returns the deleted title from a cache",
+   "Counting an acknowledgement as done: some stores delete lazily. Probe before close",
+   "Promising an erasure time before legal review: the research says GDPR guidance on vectors is secondary; get counsel to set the SLA"
+  ]
+ },
+ "gv_kms": {
+  "milestone": "M5",
+  "effort_days": 8,
+  "depends_on": [
+   "gv_tenant",
+   "ix_vec",
+   "ix_snip"
+  ],
+  "stack": [
+   {
+    "part": "key service",
+    "pick": "AWS KMS, GCP KMS or HashiCorp Vault Transit",
+    "why": "keeps KEKs out of our stores; pick the one in your cloud"
+   },
+   {
+    "part": "customer key",
+    "pick": "the customer's own KMS through a cross-account grant",
+    "why": "check each cloud's current docs for the grant model"
+   },
+   {
+    "part": "cipher",
+    "pick": "AES-256-GCM via the cryptography package",
+    "why": "authenticated encryption; bind tenant and store as associated data"
+   },
+   {
+    "part": "do not pick",
+    "pick": "one shared key for all tenants",
+    "why": "one leak or one deleted key hits everybody; per-tenant keys give crypto-shredding"
+   }
+  ],
+  "install": [
+   "pip install cryptography boto3 psycopg[binary]",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/kms/envelope.py : wrap, unwrap, encrypt, decrypt",
+   "brain/kms/cache.py : in-memory DEK cache with TTL",
+   "brain/kms/region.py : region route check",
+   "migrations/071_dek.sql : wrapped DEK table",
+   "tests/test_envelope.py : round trip and tamper tests"
+  ],
+  "schema": "CREATE TABLE tenant_dek (\n  tenant_id text NOT NULL,\n  store text NOT NULL,\n  dek_id uuid NOT NULL,\n  wrapped_dek bytea NOT NULL,\n  kek_ref text NOT NULL,\n  region text NOT NULL,\n  state text NOT NULL CHECK (state IN ('active','rotating','retired','destroyed')),\n  created_at timestamptz NOT NULL DEFAULT now(),\n  rotated_at timestamptz,\n  PRIMARY KEY (tenant_id, store, dek_id)\n);",
+  "interface": "def encrypt(tenant: str, store: str, plaintext: bytes) -> tuple[bytes, str]  # (ciphertext, dek_id)\ndef decrypt(tenant: str, store: str, dek_id: str, blob: bytes) -> bytes",
+  "code": "import os, time\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\n\n_cache = {}   # (tenant, store, dek_id) -> (dek, expires)\n\ndef _dek(kms, db, tenant, store, dek_id):\n    k = (tenant, store, dek_id)\n    hit = _cache.get(k)\n    if hit and hit[1] > time.time():\n        return hit[0]\n    row = db.get_dek(tenant, store, dek_id)\n    if row.state == \"destroyed\":\n        raise KeyDestroyed(tenant)                   # crypto-shredded: reads must fail\n    dek = kms.decrypt(row.kek_ref, row.wrapped_dek)  # unwrap in the key service, never store it\n    _cache[k] = (dek, time.time() + 300)\n    return dek\n\ndef encrypt(kms, db, tenant, store, plaintext, region):\n    if region != db.tenant_region(tenant):\n        raise RegionViolation(region)                # region pinning is checked on every write\n    row = db.active_dek(tenant, store)\n    dek = _dek(kms, db, tenant, store, row.dek_id)\n    nonce = os.urandom(12)\n    # Tricky part: bind tenant and store as associated data so a blob copied across tenants fails to decrypt.\n    ct = AESGCM(dek).encrypt(nonce, plaintext, f\"{tenant}:{store}\".encode())\n    return nonce + ct, row.dek_id\n\ndef decrypt(kms, db, tenant, store, dek_id, blob):\n    dek = _dek(kms, db, tenant, store, dek_id)\n    return AESGCM(dek).decrypt(blob[:12], blob[12:], f\"{tenant}:{store}\".encode())",
+  "steps": [
+   {
+    "do": "Create the wrapped DEK table",
+    "done_when": "\\d tenant_dek lists 9 columns"
+   },
+   {
+    "do": "Create a DEK per tenant and store, wrapped with the tenant KEK",
+    "done_when": "one row per (tenant, store) with state active"
+   },
+   {
+    "do": "Implement encrypt and decrypt with associated data",
+    "done_when": "round trip passes; a blob moved to another tenant raises InvalidTag"
+   },
+   {
+    "do": "Cache unwrapped DEKs in memory for 5 minutes only",
+    "done_when": "process dump test: no DEK on disk; cache entry expires"
+   },
+   {
+    "do": "Add region pinning on writes",
+    "done_when": "a write tagged with another region raises RegionViolation"
+   },
+   {
+    "do": "Add customer-held KEK and destroy path",
+    "done_when": "after state destroyed, decrypt raises KeyDestroyed"
+   }
+  ],
+  "config": {
+   "DEK_CACHE_TTL_S": "300 // fewer KMS calls, bounded exposure",
+   "KEK_REF": "arn:... or vault path // per tenant, customer's if BYOK",
+   "ROTATE_DAYS": "365 // DEK rotation",
+   "REGION_ALLOWED": "eu-west-1 // per tenant, from settings"
+  },
+  "verify": [
+   "pytest tests/test_envelope.py -q  # all passed, including the tamper test",
+   "psql -c \"select count(*) from tenant_dek where state='active' group by tenant_id,store having count(*)>1\"  # 0 rows"
+  ],
+  "pitfalls": [
+   "Calling the key service on every read makes it the latency bottleneck and a quota risk; cache briefly",
+   "A customer revokes their KEK and every read fails with a vague error: return a clear key_unavailable status and alert",
+   "Logging an unwrapped DEK in debug output; scrub logs and test for it"
+  ]
+ },
+ "gv_inv": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "gv_kms",
+   "ix_vec"
+  ],
+  "stack": [
+   {
+    "part": "policy engine",
+    "pick": "OPA (Rego) or Cedar",
+    "why": "one place to say deny export; swap-able; check current docs for the embedding mode"
+   },
+   {
+    "part": "enforcement",
+    "pick": "a thin check in the index service client",
+    "why": "policy must sit at the service boundary, not in each caller"
+   },
+   {
+    "part": "rotation",
+    "pick": "a Temporal workflow that rebuilds with a new model generation and DEK",
+    "why": "re-embedding is the only true rotation"
+   },
+   {
+    "part": "do not pick",
+    "pick": "encrypting vectors and then exposing a raw nearest-neighbour API",
+    "why": "the research cites inversion of 32-token inputs in 92 percent of tests; access is the real defence"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary] temporalio",
+   "docker run -d --name opa -p 8181:8181 openpolicyagent/opa run --server"
+  ],
+  "layout": [
+   "policy/vector.rego : deny-by-default rules",
+   "brain/vec/guard.py : call OPA, enforce the result",
+   "brain/vec/rotate.py : rotation workflow",
+   "migrations/072_vec_policy.sql : policy table",
+   "tests/test_vec_guard.py : allow and deny tests"
+  ],
+  "schema": "CREATE TABLE vec_policy (\n  tenant_id text PRIMARY KEY,\n  export text NOT NULL DEFAULT 'deny' CHECK (export = 'deny'),\n  rotate_days int NOT NULL DEFAULT 180,\n  model_gen text NOT NULL,\n  last_rotated timestamptz NOT NULL DEFAULT now()\n);\n-- policy/vector.rego\n-- package brain.vector\n-- default allow := false\n-- allow if { input.op == \"search\"; input.caller == \"index-service\" }",
+  "interface": "def check_vector_op(tenant: str, op: str, caller: str) -> None  # raises Denied for anything but search from the index service\ndef rotation_due(tenant: str, now: float) -> bool",
+  "code": "ALLOWED = {(\"search\", \"index-service\")}\n\ndef check_vector_op(opa, audit, tenant, op, caller):\n    # Tricky part: ask the policy engine, but also hold a local default deny. If OPA is down, deny, never allow.\n    try:\n        ok = opa.query(\"brain/vector/allow\", {\"tenant\": tenant, \"op\": op, \"caller\": caller})\n    except Exception:\n        ok = False\n    if not ok or (op, caller) not in ALLOWED:\n        audit.write({\"event\": \"vector_denied\", \"tenant\": tenant, \"op\": op, \"caller\": caller})\n        raise Denied(op)\n\ndef rotation_due(policy, now):\n    return (now - policy.last_rotated) / 86400 >= policy.rotate_days\n\nasync def rotate(tenant, db, kms, embed_model_new):\n    new_dek = kms.create_dek(tenant, \"vector\")\n    gen = db.next_generation(tenant)\n    async for chunk in db.iter_chunks(tenant):                     # text re-read from the source, not stored\n        vec = await embed_model_new(chunk.text_from_source())\n        db.write_vector(tenant, chunk.id, vec, dek=new_dek, generation=gen)\n    db.flip_generation(tenant, gen)                                # swap only after all chunks are written\n    kms.retire_old_deks(tenant, \"vector\")",
+  "steps": [
+   {
+    "do": "Write the Rego policy with default deny",
+    "done_when": "opa eval allow for export returns false"
+   },
+   {
+    "do": "Enforce at the index service boundary",
+    "done_when": "a user token calling a bulk read gets Denied"
+   },
+   {
+    "do": "Block admin export and snapshots too",
+    "done_when": "admin export request returns Denied and an audit row appears"
+   },
+   {
+    "do": "Fail closed when OPA is unreachable",
+    "done_when": "stop OPA; a search call returns Denied"
+   },
+   {
+    "do": "Add the rotation workflow with a generation flip",
+    "done_when": "after rotate, old generation has no active DEK"
+   },
+   {
+    "do": "Alert when rotation is overdue",
+    "done_when": "fixture with last_rotated 200 days ago raises one alert"
+   }
+  ],
+  "config": {
+   "ROTATE_DAYS": "180 // default from the policy table",
+   "EXPORT": "deny // no override flag exists",
+   "OPA_URL": "http://opa:8181 // policy server",
+   "FAIL_MODE": "closed // deny on error"
+  },
+  "verify": [
+   "pytest tests/test_vec_guard.py -q  # all passed",
+   "curl -s localhost:8181/v1/data/brain/vector/allow -d '{\"input\":{\"op\":\"export\",\"caller\":\"admin\"}}'  # {\"result\":false}"
+  ],
+  "pitfalls": [
+   "Allowing an admin export 'just this once' creates the copy the policy exists to prevent",
+   "Rotating the DEK but not re-embedding does not rotate the model generation; do both and flip together",
+   "Treating vectors as harmless metadata: they are derived data and in scope for deletion and privacy"
+  ]
+ },
+ "gv_tenant": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ac_id",
+   "ix_ptr",
+   "ix_vec"
+  ],
+  "stack": [
+   {
+    "part": "row policy",
+    "pick": "Postgres 16 row-level security",
+    "why": "a second check inside the store, independent of app code"
+   },
+   {
+    "part": "key builder",
+    "pick": "one Python function used by every store client",
+    "why": "prevents ad hoc keys that forget the tenant"
+   },
+   {
+    "part": "session setup",
+    "pick": "SET LOCAL app.tenant per transaction",
+    "why": "LOCAL scopes it to the transaction so a pooled connection does not carry it over"
+   },
+   {
+    "part": "do not pick",
+    "pick": "tenant filter only in application WHERE clauses",
+    "why": "one missing clause leaks across tenants; the policy catches it"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/tenant/keys.py : the only key builder",
+   "brain/tenant/session.py : set tenant on the connection",
+   "migrations/080_rls.sql : policies for every table",
+   "tests/test_isolation.py : cross-tenant read tests"
+  ],
+  "schema": "ALTER TABLE pointer ENABLE ROW LEVEL SECURITY;\nALTER TABLE pointer FORCE ROW LEVEL SECURITY;\nCREATE POLICY tenant_isolation ON pointer\n  USING (tenant_id = current_setting('app.tenant', true))\n  WITH CHECK (tenant_id = current_setting('app.tenant', true));\n-- repeat for every table that has tenant_id; the app role must not be a superuser or table owner\nCREATE TABLE shard_map (\n  tenant_id text PRIMARY KEY,\n  shard text NOT NULL,\n  generation int NOT NULL DEFAULT 1\n);",
+  "interface": "def tkey(tenant_id: str, object_id: str) -> str  # returns 'tenant:object'; the only way to build a key\ndef with_tenant(conn, tenant_id: str)  # context manager: BEGIN; SET LOCAL app.tenant",
+  "code": "import contextlib, re\n\n_ID = re.compile(r\"^[A-Za-z0-9_-]{1,64}$\")\n\ndef tkey(tenant, obj):\n    # Reject separators so tenant 'a:b' plus object 'c' cannot collide with tenant 'a' plus object 'b:c'.\n    if not _ID.match(tenant) or \":\" in obj:\n        raise ValueError(\"bad tenant or object id\")\n    return f\"{tenant}:{obj}\"\n\n@contextlib.contextmanager\ndef with_tenant(conn, tenant):\n    if not _ID.match(tenant):\n        raise ValueError(\"bad tenant id\")\n    with conn.transaction():\n        # Tricky part: SET LOCAL ends with the transaction, so a pooled connection never keeps the last tenant.\n        conn.execute(\"SELECT set_config('app.tenant', %s, true)\", (tenant,))\n        yield conn\n\ndef tenant_from_session(session):\n    return session.claims[\"tenant\"]       # from the verified token, never from the request body or query string\n\ndef route(shards, tenant):\n    return shards[tenant].shard",
+  "steps": [
+   {
+    "do": "Add row policies to every table with tenant_id",
+    "done_when": "SELECT relname FROM pg_class WHERE relrowsecurity lists them all"
+   },
+   {
+    "do": "Make the app role a non-owner, non-superuser",
+    "done_when": "\\du shows no Superuser attribute; FORCE RLS is on"
+   },
+   {
+    "do": "Route all keys through tkey()",
+    "done_when": "grep finds no f-string key built outside keys.py"
+   },
+   {
+    "do": "Use with_tenant on every connection checkout",
+    "done_when": "a query with no tenant set returns zero rows"
+   },
+   {
+    "do": "Write the cross-tenant test",
+    "done_when": "tenant A session reading a tenant B id returns nothing"
+   },
+   {
+    "do": "Make the leak suite fail on a missing policy",
+    "done_when": "drop one policy in a test DB; op_leak or the isolation test goes red"
+   }
+  ],
+  "config": {
+   "APP_DB_ROLE": "brain_app // non-owner, no BYPASSRLS",
+   "TENANT_ID_PATTERN": "^[A-Za-z0-9_-]{1,64}$ // blocks separator tricks",
+   "SHARD_MAP_TABLE": "shard_map // route by tenant and generation",
+   "FORCE_RLS": "on // applies to table owners too"
+  },
+  "verify": [
+   "pytest tests/test_isolation.py -q  # all passed",
+   "psql -c \"select relname from pg_class where relkind='r' and relrowsecurity=false and oid in (select attrelid from pg_attribute where attname='tenant_id')\"  # 0 rows"
+  ],
+  "pitfalls": [
+   "Connecting as the table owner or a superuser bypasses RLS silently. Symptom: the cross-tenant test passes in dev and fails nowhere, because it never ran under the app role",
+   "Session-level SET with a connection pool leaks the previous tenant to the next request; use SET LOCAL",
+   "Taking the tenant from a request field lets one caller pick another tenant"
+  ]
+ },
+ "gv_tos": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "so_sdk",
+   "so_rate"
+  ],
+  "stack": [
+   {
+    "part": "registry",
+    "pick": "Postgres 16, append-only versions table",
+    "why": "every change is a new version for audit"
+   },
+   {
+    "part": "source of truth",
+    "pick": "a reviewed YAML file per app in git, loaded into the table",
+    "why": "legal edits go through code review"
+   },
+   {
+    "part": "enforcement",
+    "pick": "a check in the connector SDK and the excerpt writer",
+    "why": "configuration, not a wiki page"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a policy document nobody reads",
+    "why": "the research shows Slack's terms bar persistent copies; only code enforces that"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary] pyyaml",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "policy/terms/slack.yaml : example app rules (live only)",
+   "brain/tos/registry.py : load, version and look up",
+   "brain/tos/enforce.py : effective policy and write checks",
+   "migrations/090_tos.sql : versions table",
+   "tests/test_tos.py : strictest-wins tests"
+  ],
+  "schema": "CREATE TABLE app_terms (\n  app text NOT NULL,\n  version int NOT NULL,\n  store_allowed text NOT NULL CHECK (store_allowed IN ('none','metadata','excerpt')),\n  max_ttl_s int NOT NULL,\n  training_allowed boolean NOT NULL DEFAULT false,\n  rate_ceiling_per_min int NOT NULL,\n  reviewed_at date NOT NULL,\n  reviewer text NOT NULL,\n  source_doc_ref text NOT NULL,\n  PRIMARY KEY (app, version)\n);",
+  "interface": "def effective_policy(app: str, tenant: str) -> Policy  # Policy(store, ttl_s, training=False, rate_per_min)\ndef check_write(app: str, tenant: str, level: str, age_s: int) -> None  # raises TermsViolation",
+  "code": "LEVEL = {\"none\": 0, \"metadata\": 1, \"excerpt\": 2}\n\ndef effective_policy(reg, app, tenant):\n    row = reg.latest(app)\n    if row is None:\n        # No reviewed row means live only. Default deny, not default allow.\n        return Policy(store=\"none\", ttl_s=0, training=False, rate_per_min=1)\n    ov = reg.tenant_override(tenant, app)\n    ttl = min(row.max_ttl_s, ov.ttl_s) if ov and ov.ttl_s is not None else row.max_ttl_s\n    store = row.store_allowed\n    if ov and ov.store and LEVEL[ov.store] < LEVEL[store]:\n        store = ov.store                                  # tenant can only be stricter\n    share = ov.rate_share if ov and ov.rate_share else row.rate_ceiling_per_min\n    return Policy(store=store, ttl_s=ttl, training=False,   # training is never allowed from this path\n                  rate_per_min=min(row.rate_ceiling_per_min, share))\n\ndef check_write(reg, app, tenant, level, age_s):\n    p = effective_policy(reg, app, tenant)\n    if LEVEL[level] > LEVEL[p.store] or age_s > p.ttl_s:\n        reg.audit(\"tos_blocked\", app=app, tenant=tenant, level=level)\n        raise TermsViolation(f\"{app}: {level} write not allowed (policy {p.store}, ttl {p.ttl_s}s)\")",
+  "steps": [
+   {
+    "do": "Create the versions table",
+    "done_when": "\\d app_terms lists 9 columns"
+   },
+   {
+    "do": "Load per-app YAML files with a reviewer and a source reference",
+    "done_when": "load fails if reviewer or source_doc_ref is empty"
+   },
+   {
+    "do": "Implement effective_policy as the stricter of app and tenant",
+    "done_when": "test: tenant ttl 60 under app ttl 3600 gives 60"
+   },
+   {
+    "do": "Default deny for apps with no row",
+    "done_when": "test: unknown app returns store none"
+   },
+   {
+    "do": "Call check_write from the excerpt writer and connector SDK",
+    "done_when": "test: writing an excerpt for a none-store app raises TermsViolation"
+   },
+   {
+    "do": "Send the rate ceiling to the rate limiter",
+    "done_when": "so_rate bucket for slack is at most its ceiling in the test"
+   }
+  ],
+  "config": {
+   "TERMS_DIR": "policy/terms // one YAML per app, reviewed in git",
+   "DEFAULT_STORE": "none // unknown apps are live only",
+   "TRAINING_ALLOWED": "false // hard-coded off, no override",
+   "REVIEW_MAX_AGE_DAYS": "180 // alert when a row is older"
+  },
+  "verify": [
+   "pytest tests/test_tos.py -q  # all passed",
+   "python -m brain.tos.registry --app slack  # prints store none, training false"
+  ],
+  "pitfalls": [
+   "Treating a missing row as allowed lets a new connector store text before legal has looked at it",
+   "Editing a row in place erases what was in force on a past date; add a version instead",
+   "Terms change: a row older than the review window should alert, since the vendor may have tightened its terms"
+  ]
+ },
+ "gv_kill": {
+  "milestone": "M5",
+  "effort_days": 5,
+  "depends_on": [
+   "ch_wf",
+   "so_oauth",
+   "ac_audit"
+  ],
+  "stack": [
+   {
+    "part": "flag store",
+    "pick": "Redis 7 key plus a Postgres row",
+    "why": "fast read for workers, durable state for audit"
+   },
+   {
+    "part": "worker stop",
+    "pick": "Temporal signal or schedule pause and a flag check at each step start",
+    "why": "check current docs for the pause API"
+   },
+   {
+    "part": "approvals",
+    "pick": "two distinct named approvers stored in the kill row",
+    "why": "required for tenant purge"
+   },
+   {
+    "part": "do not pick",
+    "pick": "killing worker processes by hand",
+    "why": "tokens stay valid and in-flight steps may write after the stop"
+   }
+  ],
+  "install": [
+   "pip install redis psycopg[binary] temporalio",
+   "docker run -d --name brain-pg -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "docker run -d --name brain-redis -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/kill/switch.py : set, check, lift",
+   "brain/kill/purge.py : approval gate and purge order",
+   "migrations/091_kill.sql : kill state table",
+   "tests/test_kill.py : stop, revoke and approval tests"
+  ],
+  "schema": "CREATE TABLE kill_state (\n  scope text NOT NULL CHECK (scope IN ('connector','tenant')),\n  id text NOT NULL,\n  state text NOT NULL CHECK (state IN ('paused','purging','purged')),\n  reason text NOT NULL,\n  actor text NOT NULL,\n  approver text,\n  started_at timestamptz NOT NULL DEFAULT now(),\n  lifted_by text,\n  lifted_at timestamptz,\n  PRIMARY KEY (scope, id, started_at)\n);",
+  "interface": "def kill(scope: str, id: str, reason: str, actor: str) -> None  # flag, drain, revoke\ndef request_purge(scope: str, id: str, actor: str, approver: str | None) -> None  # tenant scope needs a second person\ndef is_killed(scope: str, id: str) -> bool  # called at the start of every worker step",
+  "code": "def kill(r, db, oauth, wf, audit, scope, id_, reason, actor):\n    # Order matters: flag first so no new step starts, then drain, then revoke tokens.\n    r.set(f\"kill:{scope}:{id_}\", \"1\")                       # sticky: no TTL\n    db.insert_kill(scope, id_, \"paused\", reason, actor)\n    wf.pause(scope, id_)\n    deadline = time.time() + 60\n    while time.time() < deadline and wf.in_flight(scope, id_):\n        time.sleep(1)\n    oauth.revoke_tokens(scope, id_)\n    audit.write({\"event\": \"kill\", \"scope\": scope, \"id\": id_, \"actor\": actor, \"reason\": reason})\n\ndef is_killed(r, scope, id_):\n    # Tricky part: fail closed. If the flag store is down, treat the scope as killed.\n    try:\n        return r.get(f\"kill:{scope}:{id_}\") is not None or r.get(f\"kill:tenant:{tenant_of(scope, id_)}\") is not None\n    except Exception:\n        return True\n\ndef request_purge(db, erase, audit, scope, id_, actor, approver):\n    if scope == \"tenant\" and (approver is None or approver == actor):\n        raise ApprovalRequired(\"tenant purge needs a second, different approver\")\n    db.set_state(scope, id_, \"purging\", approver=approver)\n    erase.start(scope, id_)                                  # gv_erase does the deleting and the receipt\n    audit.write({\"event\": \"purge_requested\", \"scope\": scope, \"id\": id_, \"actor\": actor, \"approver\": approver})\n\ndef lift(db, r, scope, id_, person):\n    if not person:\n        raise ValueError(\"a named person must lift a kill\")\n    r.delete(f\"kill:{scope}:{id_}\"); db.mark_lifted(scope, id_, person)",
+  "steps": [
+   {
+    "do": "Create the kill state table",
+    "done_when": "\\d kill_state lists 10 columns"
+   },
+   {
+    "do": "Set the sticky flag and record the state",
+    "done_when": "redis-cli GET kill:connector:drive returns 1; row state paused"
+   },
+   {
+    "do": "Check the flag at the start of every worker step",
+    "done_when": "test: a worker started after kill exits without writing"
+   },
+   {
+    "do": "Drain in-flight steps for up to 60 s then revoke tokens",
+    "done_when": "test: revoke call happens after in_flight reaches 0 or 60 s"
+   },
+   {
+    "do": "Add the two-person gate for tenant purge",
+    "done_when": "test: same person as actor and approver raises ApprovalRequired"
+   },
+   {
+    "do": "Hand the purge order to gv_erase and keep the flag until a person lifts it",
+    "done_when": "kill remains after a restart; only lift() clears it"
+   }
+  ],
+  "config": {
+   "DRAIN_S": "60 // as in the card",
+   "FLAG_TTL": "none // sticky until lifted",
+   "FAIL_MODE": "closed // flag store down means killed",
+   "PURGE_APPROVERS": "2 // tenant scope only"
+  },
+  "verify": [
+   "pytest tests/test_kill.py -q  # all passed",
+   "redis-cli GET kill:connector:drive  # 1 after kill, nil after lift"
+  ],
+  "pitfalls": [
+   "Revoking tokens before the flag lets workers retry in a loop and fill the dead letter queue. Flag first",
+   "A flag with a TTL quietly un-kills after the TTL; keep it sticky",
+   "One person approving their own tenant purge defeats the control; compare actor and approver"
+  ]
+ },
+ "gv_line": {
+  "milestone": "M5",
+  "effort_days": 2,
+  "depends_on": [
+   "gv_tos"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "policy table per tenant"
+   },
+   {
+    "part": "check",
+    "pick": "a schema test",
+    "why": "fails the build on an unruled class"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/gov/store_rule.py",
+   "tests/test_store_rule.py"
+  ],
+  "schema": "CREATE TABLE store_rule (tenant_id text, class text, may_store text NOT NULL DEFAULT 'pointer', excerpt_chars int DEFAULT 300, PRIMARY KEY (tenant_id, class));",
+  "interface": "def allowed(tenant, cls, terms) -> StoreRule",
+  "code": "def allowed(tenant, cls, terms):\n    rule = lookup(tenant, cls) or StoreRule(may_store='pointer', excerpt_chars=0)\n    capped = rule.cap_by(terms)            # vendor terms are the ceiling\n    if capped.may_store == 'note' and not (rule.requires_sources and rule.requires_owner):\n        raise ValueError('derived note needs a source list and an owner')\n    return capped",
+  "steps": [
+   {
+    "do": "Create the table",
+    "done_when": "\\d store_rule lists it"
+   },
+   {
+    "do": "Default to pointer only",
+    "done_when": "unruled class stores a pointer"
+   },
+   {
+    "do": "Cap by vendor terms",
+    "done_when": "rule above terms is cut"
+   },
+   {
+    "do": "Block a build with an unruled class",
+    "done_when": "build fails and names the class"
+   }
+  ],
+  "config": {
+   "EXCERPT_CHARS": "300 // default cap",
+   "DEFAULT": "pointer // when no rule",
+   "NOTE_NEEDS": "sources and owner // for any derived note"
+  },
+  "verify": [
+   "pytest tests/test_store_rule.py -q  # all passed",
+   "psql -c \"select count(*) from store_rule where may_store <> 'pointer' and excerpt_chars > 300\"  # 0"
+  ],
+  "pitfalls": [
+   "Widening storage past vendor terms",
+   "Storing full text by default"
+  ]
+ }
+}

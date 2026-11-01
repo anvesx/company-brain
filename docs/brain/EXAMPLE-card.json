@@ -1,0 +1,91 @@
+{
+  "_note": "Reference for authors. Copy the SHAPE, not the words. Ref keys must exist in docs/lld/research/*.jsonl. The `line`/`dumb` strings follow the writing rules in AUTHORING.md.",
+  "group": {
+    "line": "RRF fuses dense, keyword and graph rankings, a cross-encoder reorders the top 100, and every answer sentence carries a checked citation.",
+    "dumb": "Three searchers each hand back their own ranked list. We merge the lists by rank, so a result that several searchers like rises to the top. A stricter reader then re-orders the best hundred, and the answer is written only from what it kept, with a link to the exact passage."
+  },
+  "comps": {
+    "kn_fuse": {
+      "line": "RRF merges three ranked lists:\nscore = sum 1 / (60 + rank)",
+      "dumb": "Each searcher gives its own ranking. For every passage we add up 1 divided by (60 plus its position in each list). A passage ranked well by two searchers beats one ranked first by only one. No score scaling is needed because only positions are used.",
+      "inn": "Three ranked lists per query: dense top 100 (kn_vec), keyword top 100 (kn_bm25), graph top 50 (kn_graph). Each item is (chunk_id, rank).",
+      "out": "One fused list of up to 100 chunk ids with fused score, plus each chunk's per-source ranks kept for the trace.",
+      "store": "Reads nothing (stateless function). Writes one retrieval-trace row per query to the observability store.",
+      "fail": "A source that times out is dropped and the trace is marked degraded. If all three fail it returns an empty list and kn_abst abstains.",
+      "req": "company-os-v2.md section 2, block B3: 'answer with citations; respect source permissions'",
+      "hard": "k=60 is the published default; re-tune per tenant only after 500 labelled queries exist.",
+      "deep": {
+        "purpose": "Combine rankings whose scores are not comparable (cosine, BM25, graph walk) into one order without learning weights.",
+        "expected": [
+          "A passage found by dense and keyword search outranks one found by a single source",
+          "Output is deterministic for identical input lists"
+        ],
+        "not_expected": [
+          "It does not look at passage text or score values, only ranks",
+          "It does not apply permissions; kn_perm already filtered the inputs"
+        ],
+        "algorithm": {
+          "name": "Reciprocal Rank Fusion (RRF)",
+          "formula": "RRF(d) = sum over sources s of 1 / (k + rank_s(d)),  k = 60",
+          "steps": [
+            "For each source list, assign rank 1..n by position",
+            "For every distinct chunk id, sum 1/(k+rank) over the sources that returned it",
+            "Break ties by the best single-source rank, then by chunk id for determinism",
+            "Sort descending and keep the top 100"
+          ],
+          "params": { "k": "60 (Cormack et al. 2009)", "per_source_cutoff": "100 dense, 100 keyword, 50 graph", "output_cutoff": "100" }
+        },
+        "math": {
+          "definitions": ["d: a chunk", "s: a ranked source list", "rank_s(d): 1-based position of d in s, absent if d not returned", "k: damping constant"],
+          "formula_full": "RRF(d) = sum_{s in S, d in s} 1 / (k + rank_s(d))",
+          "derivation": "A reciprocal of rank gives steep reward at the top and a long flat tail. Adding k flattens the head so one first place cannot dominate two second places. Summing across sources rewards agreement.",
+          "worked_example": "k=60. Chunk A: dense rank 1, keyword rank 3 -> 1/61 + 1/63 = 0.01639 + 0.01587 = 0.03226. Chunk B: dense rank 2 only -> 1/62 = 0.01613. A beats B.",
+          "complexity": "O(N log N) in the number of distinct chunks N <= 250; under 1 ms.",
+          "failure_modes": [
+            "One source returns near-duplicates and floods the top: dedupe by chunk fingerprint before fusion",
+            "A source with systematically bad rank 1: keep a per-source weight of 1.0 and only change it behind an eval"
+          ],
+          "calibration": "Keep k=60 until a tenant has 500 labelled queries; then sweep k in {20,40,60,100} offline on recall@20 and ship only a gain above 2 points."
+        },
+        "alternatives": [
+          { "name": "Weighted score sum (min-max normalised)", "why_rejected": "Needs score normalisation that drifts with corpus and query; RRF has no scale to tune." },
+          { "name": "Learned fusion (LambdaMART)", "why_rejected": "Needs labelled data per tenant; kept as a later upgrade behind the eval gate." }
+        ],
+        "security": [
+          "Inputs are already permission-filtered; fusion adds no new document ids, so it cannot widen access",
+          "Trace stores chunk ids only, never text, so the trace store holds no tenant content"
+        ],
+        "performance": {
+          "slo": "p95 under 5 ms for 250 candidates",
+          "complexity": "O(N log N), N <= 250",
+          "scaling": "Stateless; scales horizontally. The cost at 10x load is the three upstream searches, not the merge."
+        },
+        "edge_cases": [
+          "Empty list from one source: skipped, trace marked degraded",
+          "Same chunk appears twice in one list: only the best rank counts",
+          "All lists empty: returns empty, kn_abst abstains",
+          "Duplicate content under two chunk ids: fingerprint dedupe keeps the one with the higher best rank"
+        ],
+        "tests": [
+          { "name": "agreement wins", "given": "A: ranks 1 and 3; B: rank 1 in one list only", "expect": "A ranked above B with score 0.03226" },
+          { "name": "deterministic ties", "given": "two chunks with equal fused score", "expect": "order by best single-source rank then chunk id, identical across 100 runs" },
+          { "name": "source outage", "given": "graph source times out", "expect": "fused list from two sources, trace.degraded = true" }
+        ],
+        "cost_levers": ["Pure arithmetic, no model call; the fusion cutoff of 100 caps the cross-encoder bill downstream"],
+        "feedback_events": ["Click and 'was this useful' on cited passages feed the per-tenant recall@k eval set"],
+        "analytics_events": [
+          { "name": "retrieval.fused", "fields": ["tenant_id", "query_id", "n_dense", "n_bm25", "n_graph", "degraded", "ms"], "when": "after every fusion" }
+        ],
+        "papers": [
+          { "ref": "REPLACE-with-a-key-from-research-jsonl", "key_idea": "Rank-only fusion with k=60 beats most single rankers and learned fusion on TREC and similar sets.", "how": "Adopted unchanged as the default; k becomes a per-tenant parameter only behind an offline eval." }
+        ],
+        "repos": [],
+        "industry": "Elasticsearch, OpenSearch and Qdrant ship RRF as a built-in hybrid fusion mode.",
+        "refs": ["REPLACE-with-a-key-from-research-jsonl"]
+      }
+    }
+  },
+  "edges": [
+    { "a": "kn_fuse", "b": "kn_rr", "l": "fused top 100", "k": "n", "d": "Ordered chunk ids with fused score and per-source ranks. Sent to the cross-encoder which reduces to top 8." }
+  ]
+}

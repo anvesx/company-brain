@@ -1,0 +1,70 @@
+{
+ "layers": [
+  {
+   "id": "L0",
+   "n": 0,
+   "title": "Connect and point",
+   "ceiling": "Two apps, one admin, under 10,000 documents. Storage cost is rounding error (design).",
+   "built": "Admin sign-in and per-app service accounts, the connector runtime, and the pointer registry: one row per document with its address, version, content hash and access-list version. No body text is stored.",
+   "why_first": "Everything else hangs off the pointer row. If a document has no pointer, nothing can find it, refresh it or check who may see it.",
+   "exit_test": "Connect two apps. Every document has exactly one pointer row. A scan of the registry finds no body text.",
+   "stubs": "Change feeds (a manual re-scan stands in), permissions (admin only), search (list by title).",
+   "groups": "src.ident src.rt idx.reg plt.own"
+  },
+  {
+   "id": "L1",
+   "n": 1,
+   "title": "Stay fresh",
+   "ceiling": "Ten apps, 100,000 documents, one change worker pool (design).",
+   "built": "Webhook doorbells, delta cursors, scheduled polling, the reconciliation sweep, the event bus, de-duplication, durable workflows, tombstones for deletes, and the freshness dashboard.",
+   "why_first": "A brain that goes stale is worse than none. Freshness is cheap to test with only pointers and comes before the expensive vector work.",
+   "exit_test": "Edit 100 documents and delete 100. Every pointer matches within the target lag (design: p95 under 5 minutes). Drop 10 webhook events on purpose: the sweep must find all 10.",
+   "stubs": "Search over content, permissions beyond admin.",
+   "groups": "chg.trig chg.flow ops.fresh"
+  },
+  {
+   "id": "L2",
+   "n": 2,
+   "title": "Derive and search",
+   "ceiling": "1M chunks on one managed vector store, about the cost of a small database (design, tune).",
+   "built": "Live fetch, text extraction, chunking, contextual notes, PII masking, embeddings, the keyword and vector indexes, the planner, hybrid retrieval, reranking and live hydration.",
+   "why_first": "Search quality decides whether anyone uses the brain. It is built behind the admin-only switch so permissions can be added without rework.",
+   "exit_test": "A 100-question set built from real documents reaches the agreed recall at 20 (design, set with the first customer). Hydration returns live text for the top results.",
+   "stubs": "Per-user permissions: only the admin may query until L3 passes.",
+   "groups": "idx.derive idx.stores qry.plan qry.ret"
+  },
+  {
+   "id": "L3",
+   "n": 3,
+   "title": "Permissions",
+   "ceiling": "Same as L2. Permission data is small next to vectors (design).",
+   "built": "Access lists and groups synced as data, the filter inside the search query, the live recheck of the top results with the asking user's own token, the revocation fast path and the audit log.",
+   "why_first": "No second person may query before this passes. A leak is the one failure that ends the product.",
+   "exit_test": "Plant 20 users with known access. Zero leaks across 1,000 queries. Revoke access to a document: it disappears from results within seconds (design: 60 seconds or less).",
+   "stubs": "None. This layer closes the admin-only switch.",
+   "groups": "acl.sync acl.enf cli.auth zon.zone zon.cred sec.vault"
+  },
+  {
+   "id": "L4",
+   "n": 4,
+   "title": "Answer and interfaces",
+   "ceiling": "Model cost per answer is metered and capped per user (design).",
+   "built": "Context packing, injection defence, grounded answers with citations, freshness stamps, the MCP server, the REST API, tool schemas, output formats and the agent-facing controls.",
+   "why_first": "Only now is it safe to let other people and other agents ask. This is the layer the user sees.",
+   "exit_test": "A client connects over MCP and over REST. Every answer carries citations that open the live source. A planted instruction inside a document does not change the answer.",
+   "stubs": "Quality dashboards and erasure workflows.",
+   "groups": "qry.ans llm.mcp llm.agent cli.ship cap.local cap.feeds"
+  },
+  {
+   "id": "L5",
+   "n": 5,
+   "title": "Quality, scale and governance",
+   "ceiling": "Budgets set per tenant from L4 metering (design).",
+   "built": "The evaluation set, the leak probe, cost and trace dashboards, erasure and key management, per-tenant isolation, the app-terms register and the kill switch. Proactive change notes and reviewed experience cards.",
+   "why_first": "These make the brain safe to run for many tenants. They need real traffic from L4 to tune.",
+   "exit_test": "Erase one user's data: pointers, vectors and caches show zero hits within the agreed window. The kill switch stops all connectors within 60 seconds (design).",
+   "stubs": "None.",
+   "groups": "ops.qual gov.priv act.write llm.proactive cap.experience"
+  }
+ ]
+}

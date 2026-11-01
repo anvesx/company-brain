@@ -1,0 +1,372 @@
+{
+  "clients": [
+    {
+      "name": "Claude Code",
+      "mechanism": "Remote MCP over HTTP (recommended), SSE (deprecated; v2.1.265+ tries HTTP then falls back), stdio, WebSocket, in-process SDK. Also plugins, skills, CLAUDE.md context files.",
+      "auth": "OAuth 2.0 via /mcp or `claude mcp login`; dynamic client registration; pre-registered client id/secret and callback port; oauth.authServerMetadataUrl and oauth.scopes overrides; static headers (Authorization: Bearer). Per-user.",
+      "org_distribution": "managed-mcp.json for exclusive control, managedMcpServers to provide servers to every user, allowedMcpServers/deniedMcpServers filtering by serverName or serverUrl, managed plugin marketplaces.",
+      "limits": "MAX_MCP_OUTPUT_TOKENS default 25,000 tokens (warning above 10,000). Results over 50,000 chars are saved to a file unless the tool sets _meta anthropic/maxResultSizeChars (hard ceiling 500,000 chars). Tool search defers tool definitions; tool _meta anthropic/alwaysLoad exempts a tool; server instructions capped at 4,096 characters.",
+      "mcp_features": "Tools, prompts, resources, elicitation, list_changed refresh; deferred loading via tool search.",
+      "caveats": "A JSON entry with url but no type is read as stdio and rejected. Tool search can hide tools, so write precise names and descriptions.",
+      "url": "https://code.claude.com/docs/en/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Claude Code managed MCP",
+      "mechanism": "Admin-delivered config file plus allow/deny policy.",
+      "auth": "Same as Claude Code; allow/deny matched on serverName or serverUrl.",
+      "org_distribution": "managed-mcp.json, managedMcpServers, allowedMcpServers, deniedMcpServers. Page text was only partly read, so details beyond these names are not captured.",
+      "limits": "Not stated in the part read.",
+      "mcp_features": "n/a",
+      "caveats": "Only the names of the controls were confirmed from the MCP page; the managed-mcp page itself was not read in full.",
+      "url": "https://code.claude.com/docs/en/managed-mcp",
+      "status": "snippet"
+    },
+    {
+      "name": "Claude.ai, Claude Desktop and Cowork (custom connectors)",
+      "mechanism": "Remote MCP server added as a custom connector under Customize > Connectors. Local servers in claude_desktop_config.json are a separate mechanism, not available in Cowork or claude.ai.",
+      "auth": "Sign in now / when needed / no sign in. OAuth client options: Claude's published identity (recommended), automatic registration, or the user's own client. Fixed headers (API key, bearer) stored encrypted. Each member connects individually after an admin adds it; a shared credential gives everyone that credential's access.",
+      "org_distribution": "Team: Owners and Primary Owners add org connectors. Enterprise: Owners, Primary Owners and custom roles with Manage access to Libraries. Free plan limited to one custom connector.",
+      "limits": "Not stated on the page.",
+      "mcp_features": "Tools; interactive connectors can render inline cards or fullscreen apps; Team and Enterprise owners can disable specific tool calls that render them. Resources and prompts not described.",
+      "caveats": "Connections come from Anthropic's cloud, so private or VPN servers need Anthropic IP ranges allowlisted. Connectors are not verified by Anthropic. Advanced research cannot invoke tools from local servers.",
+      "url": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Claude API MCP connector",
+      "mechanism": "`mcp_servers` parameter in the Messages API; server must be publicly exposed over HTTP (Streamable HTTP or SSE). Local stdio servers cannot be connected directly.",
+      "auth": "Caller supplies an OAuth access token in `authorization_token`; the caller runs the OAuth flow.",
+      "org_distribution": "Not applicable; the application owner configures it per request.",
+      "limits": "Beta header mcp-client-2025-11-20. Not ZDR-eligible (from saved page text).",
+      "mcp_features": "Tools only (per the page text read).",
+      "caveats": "Public URL required; token handling is the caller's job.",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector",
+      "status": "fetched"
+    },
+    {
+      "name": "Claude Agent Skills",
+      "mechanism": "A directory with SKILL.md (YAML frontmatter plus Markdown). Description stays in context; body and supporting files load on demand (progressive disclosure). Open Agent Skills standard.",
+      "auth": "Not applicable (files, not a network service). A skill can instruct Claude to call the brain's MCP tools.",
+      "org_distribution": "Enterprise skills directory inside managed settings; skills inside plugins from marketplaces; claude.ai skills sync to ~/.claude/skills/synced/. Managed controls include strictPluginOnlyCustomization and skillOverrides.",
+      "limits": "description plus when_to_use truncated at 1,536 chars in the listing; keep SKILL.md under 500 lines; compatibility up to 500 chars; after compaction each skill re-attaches first 5,000 tokens, 25,000 combined.",
+      "mcp_features": "Not an MCP feature; complements an MCP server by teaching when and how to use it.",
+      "caveats": "claude.ai and the Skills API accept only name, description, license, compatibility, metadata and allowed-tools; other frontmatter fields hard-error on upload.",
+      "url": "https://code.claude.com/docs/en/skills",
+      "status": "fetched"
+    },
+    {
+      "name": "OpenAI Codex (CLI, IDE, app)",
+      "mechanism": "config.toml (~/.codex/config.toml or .codex/config.toml in trusted projects) shared by the ChatGPT desktop app, CLI and IDE extension. STDIO and Streamable HTTP servers.",
+      "auth": "OAuth by default (`codex mcp login`); supports Client ID Metadata Documents and Dynamic Client Registration; pre-registered client via --oauth-client-id; bearer_token_env_var, http_headers, http_headers_helper; auth=chatgpt for trusted first-party servers only.",
+      "org_distribution": "Enterprise `mcp_servers` requirement in Agent Security applies to local executors; admins control plugins and tools per workspace; MCP hooks on the cloud coordinator.",
+      "limits": "startup_timeout_sec default 10, tool_timeout_sec default 60, output_token_limit per tool, enabled_tools/disabled_tools, default_tools_approval_mode (auto, prompt, writes, approve).",
+      "mcp_features": "Tools (approval modes); other primitives not stated in the summary read.",
+      "caveats": "ChatGPT web does not read local Codex config. Local servers and transports may not be reachable from cloud containers, which follow Work Cloud policies; check connectivity and auth separately.",
+      "url": "https://learn.chatgpt.com/docs/extend/mcp?surface=cli",
+      "status": "fetched"
+    },
+    {
+      "name": "ChatGPT apps and MCP (deep research, company knowledge)",
+      "mechanism": "Remote MCP server added as a custom MCP server and created as a plugin; or Responses API tool of type `mcp`. Compatibility needs read-only `search` (query -> results with id, title, url) and `fetch` (id -> id, title, text, url, optional metadata) tools, returned as structuredContent and repeated as JSON text in content.",
+      "auth": "OAuth. Client ID Metadata Documents recommended where supported (public client or private_key_jwt); dynamic client registration still supported. Workspace users go through OAuth to your service.",
+      "org_distribution": "Admin enables developer mode and apps at workspace level (admin detail comes from search snippets and a third-party guide; the OpenAI help pages returned 403).",
+      "limits": "Declare an output schema per tool. Citations are created only when url is a non-empty string.",
+      "mcp_features": "Tools; apps UI via Apps SDK (not covered on the page read).",
+      "caveats": "The API docs page example used SSE and did not cover streamable HTTP. Admin and company-knowledge details are snippet-level only.",
+      "url": "https://developers.openai.com/api/docs/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "ChatGPT company knowledge and developer mode (admin side)",
+      "mechanism": "Admin-gated custom MCP connectors; company knowledge uses connected sources.",
+      "auth": "Per search snippets: apps and connectors off by default on Enterprise and Edu, owner or admin enables at org level; developer mode toggle in workspace permissions.",
+      "org_distribution": "Workspace owner or admin; RBAC.",
+      "limits": "Not read.",
+      "mcp_features": "Not read.",
+      "caveats": "Not fetched: help.openai.com returned 403, so only search snippets (and a third-party guide) back this entry.",
+      "url": "https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt",
+      "status": "snippet"
+    },
+    {
+      "name": "Cursor",
+      "mechanism": "mcp.json: project .cursor/mcp.json and global ~/.cursor/mcp.json. stdio, SSE and Streamable HTTP; variable interpolation in url and headers.",
+      "auth": "OAuth authorization code with PKCE; discovers the auth server through RFC 9728 protected resource metadata; dynamic client registration as a public client; static OAuth via auth.CLIENT_ID/CLIENT_SECRET/scopes with fixed redirect URLs; static headers.",
+      "org_distribution": "Not covered on the page read (no org distribution content found there).",
+      "limits": "Asks approval before running tools by default; no tool-count limit stated in the part read.",
+      "mcp_features": "Tools, prompts, resources, roots, elicitation, and the Apps extension (UI), with graceful fallback when UI cannot render.",
+      "caveats": "Cursor team distribution and allowlist were in earlier research but not confirmed from a fetched page, so they are not claimed here.",
+      "url": "https://cursor.com/docs/context/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "GitHub Copilot",
+      "mechanism": "VS Code 1.99+ (.vscode/mcp.json or settings), Visual Studio 17.14+, JetBrains, Xcode, Eclipse. Remote URL servers and local command servers.",
+      "auth": "OAuth for remote servers in Visual Studio (scopes approved in browser); PAT headers or env variables in other IDEs.",
+      "org_distribution": "Org and enterprise policy 'MCP servers in Copilot', disabled by default, applies to Copilot Business and Enterprise only. GitHub MCP Registry (public preview) is the only source for in-IDE registry installs; other servers are configured manually.",
+      "limits": "Not stated.",
+      "mcp_features": "Tools in every IDE; prompts (slash commands) and resources documented for VS Code only.",
+      "caveats": "Policy does not govern Free, Pro, Pro+ and Max plans. Registry is public-only.",
+      "url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/extend-copilot-chat-with-mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Gemini CLI",
+      "mechanism": "settings.json mcpServers: stdio, SSE (`url`) and Streamable HTTP (`httpUrl`).",
+      "auth": "OAuth 2.0 for remote servers with auto-discovery after a 401, tokens in ~/.gemini/mcp-oauth-tokens.json, RFC 9207 iss validation, Google credential types; static headers (-H). Needs a local browser.",
+      "org_distribution": "Only per-user mcp.allowed and mcp.excluded lists in settings.json; no admin allowlist covered.",
+      "limits": "No tool-count or output limits stated; default request timeout 600,000 ms; tool names over 63 chars are truncated.",
+      "mcp_features": "Tools, prompts (as slash commands), resources (@server://path).",
+      "caveats": "trust:true bypasses all confirmations. Avoid underscores in server names (policy parser splits on them). Headless or SSH sessions cannot complete OAuth.",
+      "url": "https://geminicli.com/docs/tools/mcp-server/",
+      "status": "fetched"
+    },
+    {
+      "name": "Gemini Enterprise",
+      "mechanism": "Page for connecting MCP servers returned 404.",
+      "auth": "Not fetched.",
+      "org_distribution": "Not fetched.",
+      "limits": "Not fetched.",
+      "mcp_features": "Not fetched.",
+      "caveats": "GAP: no primary page was read; do not rely on this entry.",
+      "url": "https://docs.cloud.google.com/gemini/enterprise/docs/connect-mcp-server",
+      "status": "snippet"
+    },
+    {
+      "name": "Windsurf / Devin Desktop (Cascade)",
+      "mechanism": "~/.config/devin/mcp_config.json (mcpServers); stdio, Streamable HTTP, SSE; env and file interpolation.",
+      "auth": "OAuth supported for each transport type; headers.",
+      "org_distribution": "Team and Enterprise admins toggle MCP and allowlist servers (server ID, exact config, or full-string regex). Allowlisting one server blocks all others. Enterprise can set custom registry URLs (no effect on Cascade).",
+      "limits": "Cascade accesses at most 100 tools at any time; individual tools disabled via disabledTools.",
+      "mcp_features": "Tools, resources, prompts.",
+      "caveats": "Page covers the legacy Cascade agent; Devin Local uses other config. Enterprise users must turn MCP on manually. Allowlist matching is case-sensitive.",
+      "url": "https://docs.devin.ai/desktop/cascade/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Goose",
+      "mechanism": "Extensions are MCP servers: stdio command extensions and `streamable_http` remote extensions; config in ~/.config/goose/config.yaml.",
+      "auth": "OAuth with Client ID Metadata Documents or Dynamic Client Registration, or manual client_id/client_secret_key and scopes; callback on 127.0.0.1 ephemeral port (GOOSE_OAUTH_CALLBACK_PORT to fix it). Custom headers not documented.",
+      "org_distribution": "No managed rollout documented; central extensions directory and goose:// deeplinks.",
+      "limits": "Not stated.",
+      "mcp_features": "Tools; supports MCP Apps per the MCP Apps client list.",
+      "caveats": "Operates autonomously by default; configure permission modes. Extensions are scanned for known malware before activation.",
+      "url": "https://goose-docs.ai/docs/getting-started/using-extensions",
+      "status": "fetched"
+    },
+    {
+      "name": "Other MCP Apps hosts (VS Code Copilot, Microsoft 365 Copilot, Postman, MCPJam, Archestra)",
+      "mechanism": "MCP Apps extension: tool declares _meta.ui.resourceUri pointing at a ui:// HTML resource rendered in a sandboxed iframe.",
+      "auth": "Per host.",
+      "org_distribution": "Per host.",
+      "limits": "Not stated.",
+      "mcp_features": "MCP Apps (UI) over postMessage.",
+      "caveats": "Host support varies; tools must still work as plain text.",
+      "url": "https://modelcontextprotocol.io/extensions/apps/overview",
+      "status": "fetched"
+    }
+  ],
+  "brain_products": [
+    {
+      "name": "Glean",
+      "integrates_via": "Remote MCP server per tenant (endpoint copied from the MCP Configurator, /mcp/{server}); Streamable HTTP; hosts include Claude Code, Codex, Cursor, Gemini CLI, Goose, VS Code, Windsurf. OAuth via Glean authorization server with DCR, static clients, IdP OAuth, or API token fallback.",
+      "copies_or_points": "Copies: Glean indexes content inside the customer tenant; tool calls return snippets or full documents to the host.",
+      "permissions": "Runs as the user through existing APIs; per-document ACLs from the Knowledge Graph; admins pick tools per server, toggle DCR, revoke clients, IP allowlists, audit logs. Community post says scopes are not per data source (user feedback, not official).",
+      "url": "https://docs.glean.com/administration/platform/mcp/security",
+      "status": "fetched"
+    },
+    {
+      "name": "Glean (setup page)",
+      "integrates_via": "Same server; one URL works for any MCP host.",
+      "copies_or_points": "See above.",
+      "permissions": "Tenant-specific and permission-aware.",
+      "url": "https://developers.glean.com/guides/mcp/",
+      "status": "fetched"
+    },
+    {
+      "name": "Notion MCP",
+      "integrates_via": "Remote MCP hosted by Notion; OAuth; Claude Code, Cursor, Codex.",
+      "copies_or_points": "Points: live read and write against the workspace through tools.",
+      "permissions": "Client acts only on content the user can access; Enterprise plan can restrict which clients connect; admin API lists and revokes connections.",
+      "url": "https://developers.notion.com/guides/mcp/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Atlassian Rovo MCP",
+      "integrates_via": "https://mcp.atlassian.com/v2/mcp; OAuth 2.1; optional API token; default discovery and execute methods, ?tools=all for flat paginated list.",
+      "copies_or_points": "Points: calls Jira, Confluence, Bitbucket and others live; usage metered in Rovo credits.",
+      "permissions": "Runs with the user's existing permissions; audit logs advised.",
+      "url": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
+      "status": "fetched"
+    },
+    {
+      "name": "Slack MCP",
+      "integrates_via": "https://mcp.slack.com/mcp, Streamable HTTP; no SSE and no DCR; confidential OAuth with fixed app ID; PKCE for desktop clients.",
+      "copies_or_points": "Points: live API calls; Real Time Search API gives query-time access without copying.",
+      "permissions": "Per-tool user token scopes; admins approve MCP clients; only directory or internal apps; IP allowlist applies; audit logs.",
+      "url": "https://docs.slack.dev/ai/mcp-server",
+      "status": "fetched"
+    },
+    {
+      "name": "Linear MCP",
+      "integrates_via": "https://mcp.linear.app/mcp Streamable HTTP; OAuth 2.1 with DCR; bearer token or API key; /mcp/readonly endpoint; Okta enterprise managed auth.",
+      "copies_or_points": "Points: live reads and writes.",
+      "permissions": "Read-only endpoint or read scope; API key can be restricted.",
+      "url": "https://linear.app/docs/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Sourcegraph MCP (Enterprise)",
+      "integrates_via": "/.api/mcp, /.api/mcp/all, /.api/mcp/deepsearch; OAuth with DCR or pre-registered clients, or access tokens with mcp scope.",
+      "copies_or_points": "Not stated on the page.",
+      "permissions": "Needs MCP#ACCESS RBAC permission (default User role); users read only repositories they can already access; admins can disable tools.",
+      "url": "https://sourcegraph.com/docs/api/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Context7",
+      "integrates_via": "https://mcp.context7.com/mcp with Bearer API key; tools resolve-library-id and query-docs.",
+      "copies_or_points": "Points: fetches version-specific docs at query time; crawling and parsing engines are private.",
+      "permissions": "API key rate limits; public docs, no per-user ACL.",
+      "url": "https://github.com/upstash/context7",
+      "status": "fetched"
+    },
+    {
+      "name": "Mem0 MCP",
+      "integrates_via": "https://mcp.mem0.ai/mcp; browser sign-in or API key as bearer; 11 tools; Claude Desktop, Claude Code, Codex, Cursor, Windsurf, VS Code, OpenCode.",
+      "copies_or_points": "Copies: memories live in the Mem0 account.",
+      "permissions": "Account-level; no source ACLs.",
+      "url": "https://docs.mem0.ai/platform/mem0-mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Supermemory MCP",
+      "integrates_via": "https://mcp.supermemory.ai/mcp; OAuth with space selection; tools, resources (supermemory://profile) and a prompt; MCP Apps widgets.",
+      "copies_or_points": "Copies: documents and extracted memories stored in spaces.",
+      "permissions": "User picks which spaces the client may access.",
+      "url": "https://supermemory.ai/docs/supermemory-mcp/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Dust",
+      "integrates_via": "Acts as an MCP client: admins add remote servers by URL under Spaces > Tools; auto OAuth, bearer, or static OAuth. Exposing Dust as an MCP server was not covered.",
+      "copies_or_points": "Not stated for MCP tools.",
+      "permissions": "Tools managed per space; restrict-to-skills option; bearer tokens often tie all calls to one account.",
+      "url": "https://docs.dust.tt/docs/mcp",
+      "status": "fetched"
+    },
+    {
+      "name": "Onyx",
+      "integrates_via": "Connectors only on the page read; MCP exposure not mentioned.",
+      "copies_or_points": "Copies: indexes ahead of time and stores documents and metadata in Onyx.",
+      "permissions": "Permission sync only in Enterprise Edition; method not described.",
+      "url": "https://docs.onyx.app/overview/core_features/connectors",
+      "status": "fetched"
+    },
+    {
+      "name": "Zep",
+      "integrates_via": "MCP page returned 404; related pages named but not read.",
+      "copies_or_points": "Not fetched.",
+      "permissions": "Not fetched.",
+      "url": "https://help.getzep.com/mcp",
+      "status": "snippet"
+    },
+    {
+      "name": "Guru, Moveworks, Claude enterprise search and Google Drive connectors",
+      "integrates_via": "Not researched (no primary page fetched).",
+      "copies_or_points": "GAP",
+      "permissions": "GAP",
+      "url": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+      "status": "snippet"
+    }
+  ],
+  "mcp_spec": [
+    {
+      "item": "Authorization basis",
+      "fact": "Optional; HTTP transports follow it, stdio should not. Built on OAuth 2.1 draft, RFC 8414, RFC 7591 (DCR), RFC 9728 (protected resource metadata) and OAuth Client ID Metadata Documents.",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+      "status": "fetched"
+    },
+    {
+      "item": "Transports",
+      "fact": "Streamable HTTP and stdio are the standard transports; legacy HTTP+SSE is deprecated.",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
+      "status": "fetched"
+    },
+    {
+      "item": "Tasks (2025-11-25)",
+      "fact": "Experimental task utility for long-running requests.",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks",
+      "status": "fetched"
+    },
+    {
+      "item": "Elicitation",
+      "fact": "Two modes: form (flat primitive schema, never for secrets) and url (out-of-band, for credentials and third-party OAuth). Three actions: accept, decline, cancel. In the 2026-07-28 spec it is delivered through multi round-trip requests (InputRequiredResult).",
+      "url": "https://modelcontextprotocol.io/docs/concepts/elicitation",
+      "status": "fetched"
+    },
+    {
+      "item": "2026-07-28: stateless core",
+      "fact": "No initialize handshake and no Mcp-Session-Id; each request carries version and capabilities in _meta; Mcp-Method and Mcp-Name headers required on Streamable HTTP; optional server/discover; sampling, elicitation and roots move to multi round-trip requests; legacy SSE deprecated with a one-year offramp.",
+      "url": "https://blog.modelcontextprotocol.io/posts/2026-07-28/",
+      "status": "fetched"
+    },
+    {
+      "item": "2026-07-28: authorization",
+      "fact": "Servers should return RFC 9207 iss and clients must validate it; clients set application_type in DCR; credentials bound to issuer; DCR formally deprecated in favor of CIMD.",
+      "url": "https://blog.modelcontextprotocol.io/posts/2026-07-28/",
+      "status": "fetched"
+    },
+    {
+      "item": "2026-07-28: tasks and extensions",
+      "fact": "Tasks move to the io.modelcontextprotocol/tasks extension with poll-based tasks/get and tasks/update; subscriptions/listen replaces the GET stream; extensions framework names Tasks, MCP Apps and Enterprise Managed Authorization.",
+      "url": "https://blog.modelcontextprotocol.io/posts/2026-07-28/",
+      "status": "fetched"
+    },
+    {
+      "item": "2026-07-28 changelog",
+      "fact": "Spec changelog page was fetched; the blog post above is the source for the summary facts.",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/changelog",
+      "status": "fetched"
+    },
+    {
+      "item": "Roadmap (Aug 2026)",
+      "fact": "Priorities: HTTP-native transport, tasks and agentic messaging, enterprise auth and agent identity (EMA stable), improved primitives and progressive discovery, SDK experience. Server Card working group on .well-known metadata.",
+      "url": "https://blog.modelcontextprotocol.io/posts/mcp-roadmap/",
+      "status": "fetched"
+    },
+    {
+      "item": "MCP Registry",
+      "fact": "Public servers only; does not support private servers (private network hosts or private package registries). In preview, with possible breaking changes or data resets.",
+      "url": "https://modelcontextprotocol.io/registry/about",
+      "status": "fetched"
+    },
+    {
+      "item": "MCP Apps",
+      "fact": "Extension: tool declares _meta.ui.resourceUri to a ui:// resource rendered in a sandboxed iframe; supported by Claude, Claude Desktop, VS Code Copilot, Microsoft 365 Copilot, Goose, Postman and others.",
+      "url": "https://modelcontextprotocol.io/extensions/apps/overview",
+      "status": "fetched"
+    },
+    {
+      "item": "RFC 8707 resource parameter and PKCE",
+      "fact": "Covered in the fetched 2025-11-25 authorization page (resource indicators and PKCE S256); exact quotes not extracted in this pass.",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+      "status": "snippet"
+    }
+  ],
+  "design_implications": [
+    "Expose one remote Streamable HTTP MCP server, stateless-friendly for the 2026-07-28 spec; keep an SSE-free design.",
+    "Implement RFC 9728 protected resource metadata, accept CIMD client ids with DCR as fallback, validate audience (RFC 8707), require PKCE, return RFC 9207 iss, and support a static pre-registered client for Slack-style and Cursor static OAuth hosts.",
+    "Ship `search` and `fetch` tools returning {id,title,text,url} so ChatGPT deep research and company knowledge work; add richer tools for others.",
+    "Keep the tool count small (Windsurf caps at 100; Claude Code defers tools via tool search) with precise names and descriptions; keep server instructions under 4,096 characters.",
+    "Set anthropic/maxResultSizeChars on large tools, keep default results under 25,000 tokens, paginate, and set alwaysLoad only on the one entry tool.",
+    "Point, do not copy: run each tool call as the signed-in user and enforce source ACLs at query time, as Notion, Atlassian, Slack and Sourcegraph do. Index-and-copy products (Glean, Onyx, Mem0) carry their own permission-sync burden.",
+    "Per-user OAuth is the norm; shared credentials give everyone the same access (Claude connectors, Dust bearer tokens), so avoid them for permissioned data.",
+    "Org rollout: managed-mcp.json and managedMcpServers (Claude Code), Owners add org connectors (Claude.ai Team and Enterprise), Copilot 'MCP servers in Copilot' policy, Windsurf allowlist, Codex enterprise mcp_servers requirement, ChatGPT admin-enabled apps.",
+    "Ship a Claude plugin with a skill and CLAUDE.md or AGENTS.md snippets that tell agents when to query the brain.",
+    "Claude.ai connectors call from Anthropic's cloud, so private deployments must allowlist Anthropic IP ranges and expose a public HTTPS URL.",
+    "Do not rely on the public MCP Registry for a private brain; use a private registry or direct config distribution.",
+    "Use URL-mode elicitation (not form mode) when the brain needs a user to connect a source app, and plan for the Tasks extension for slow multi-source queries.",
+    "Gaps to close before relying on this: Gemini Enterprise, ChatGPT admin pages (403), Guru, Moveworks, Zep, Claude Drive connectors, Cursor team distribution."
+  ]
+}

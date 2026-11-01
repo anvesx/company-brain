@@ -1,0 +1,490 @@
+{
+ "so_sdk": {
+  "milestone": "M0",
+  "effort_days": 12,
+  "depends_on": [
+   "so_oauth",
+   "so_svc"
+  ],
+  "stack": [
+   {
+    "part": "manifest engine",
+    "pick": "Airbyte low-code connector framework (declarative YAML, Python CDK)",
+    "why": "research names it; check its licence before shipping. Do NOT write a custom connector per app first"
+   },
+   {
+    "part": "alt for OAuth plumbing",
+    "pick": "Nango (self-host) as an option",
+    "why": "research flags it as not plain open source; read the licence"
+   },
+   {
+    "part": "schema validation",
+    "pick": "pydantic 2 for the manifest model",
+    "why": "fails fast on a bad manifest"
+   },
+   {
+    "part": "sandbox for hooks",
+    "pick": "subprocess with seccomp or a container with no network except the app host",
+    "why": "hook code is the escape hatch and the risk"
+   }
+  ],
+  "install": [
+   "pip install airbyte-cdk pydantic==2.* httpx pyyaml",
+   "airbyte-cdk --help  # confirm the CLI installed"
+  ],
+  "layout": [
+   "brain/sdk/manifest.py : pydantic manifest model",
+   "brain/sdk/runner.py : interpreter loop",
+   "brain/sdk/hooks.py : sandboxed hook runner",
+   "connectors/<app>/manifest.yaml : one per app",
+   "connectors/REGISTRY.json : signed version index"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"ConnectorManifest\",\n  \"type\": \"object\",\n  \"required\": [\"app\",\"version\",\"auth\",\"streams\"],\n  \"properties\": {\n    \"app\": {\"type\":\"string\"}, \"version\": {\"type\":\"string\"},\n    \"auth\": {\"type\":\"object\",\"required\":[\"type\",\"scopes\"]},\n    \"streams\": {\"type\":\"array\",\"minItems\":1,\"items\":{\"type\":\"object\",\n      \"required\":[\"name\",\"path\",\"paginator\",\"cursor_field\",\"record_selector\"],\n      \"properties\":{\"paginator\":{\"enum\":[\"cursor\",\"offset\",\"link\"]},\"acl_mapping\":{\"type\":\"object\"}}}},\n    \"hooks\": {\"type\":\"object\"}\n  }\n}",
+  "interface": "async def read_stream(manifest: Manifest, stream: str, tenant_id: str, cursor: str | None, budget: Budget) -> Page  # Page = {records[], next_cursor, acl_raw}",
+  "code": "async def read_stream(m, stream, tenant, cursor, rate, vault, http, hooks):\n    s = m.stream(stream)\n    host = urlparse(s.base_url).hostname\n    if host not in m.host_allowlist:            # manifest cannot point at arbitrary hosts\n        raise HostNotAllowed(host)\n    token = await vault.token_for(tenant, m.app)\n    page_size = s.page_size or 100\n    grant = await rate.acquire(tenant, m.app, s.path, cost=1, priority='backfill' if cursor is None else 'live')\n    resp = await http.get(s.base_url + s.path, headers={'Authorization': f'Bearer {token}'},\n                          params=s.paginator.params(cursor, page_size), timeout=30)\n    if resp.status_code == 429:\n        rate.penalise(tenant, m.app, s.path, retry_after=int(resp.headers.get('Retry-After', 1)))\n        raise Throttled()\n    body = resp.json()\n    records = s.record_selector(body)\n    acl = [s.acl_mapping.apply(r) for r in records] if s.acl_mapping else []\n    if m.hooks.get(stream):                     # only when the manifest names one\n        records = hooks.run(m.hooks[stream], records, timeout=30)\n    nxt = s.paginator.next_cursor(body, resp)\n    # the cursor is NOT saved here; the caller saves it after the batch is committed downstream\n    return Page(records=records, next_cursor=nxt, acl_raw=acl)",
+  "steps": [
+   {
+    "do": "Write the manifest model and validate 1 real manifest (Drive or Jira)",
+    "done_when": "pytest tests/test_manifest.py shows valid and invalid cases"
+   },
+   {
+    "do": "Implement read_stream for cursor paging against a mock server",
+    "done_when": "mock with 250 records returns 3 pages and then next_cursor None"
+   },
+   {
+    "do": "Add the host allowlist check",
+    "done_when": "test with a foreign host raises HostNotAllowed"
+   },
+   {
+    "do": "Wire to so_rate and honour 429 Retry-After",
+    "done_when": "429 test shows the bucket paused for the header value"
+   },
+   {
+    "do": "Add acl_mapping and the hook runner in a sandbox",
+    "done_when": "a hook that opens a socket to another host is blocked"
+   },
+   {
+    "do": "Prove the cursor is saved only after the downstream commit",
+    "done_when": "kill the worker mid-batch; restart re-reads that page, no gap"
+   }
+  ],
+  "config": {
+   "DEFAULT_PAGE_SIZE": "100 // card default when the vendor gives no maximum",
+   "HOOK_TIMEOUT_S": "30 // card default",
+   "RETRIES": "3 at 1 s, 4 s, 16 s // card default",
+   "MANIFEST_SIGNING_KEY": "path to public key // only signed manifests load"
+  },
+  "verify": [
+   "pytest tests/test_runner.py -q  # paging, allowlist, throttle, hook sandbox pass",
+   "python -m brain.sdk.validate connectors/drive/manifest.yaml  # OK"
+  ],
+  "pitfalls": [
+   "Saving the cursor before the commit loses a page after a crash: save after, accept re-reads, rely on idempotent apply",
+   "A hook with network access can exfiltrate tokens: no network except the app host",
+   "Offset paging while the source changes skips or repeats rows: prefer cursor or delta where the app offers it"
+  ]
+ },
+ "so_cap": {
+  "milestone": "M1",
+  "effort_days": 5,
+  "depends_on": [
+   "so_sdk",
+   "so_apps"
+  ],
+  "stack": [
+   {
+    "part": "probe client",
+    "pick": "httpx",
+    "why": "one function per probe, each with a 5 s timeout"
+   },
+   {
+    "part": "registry store",
+    "pick": "Postgres 16 jsonb column",
+    "why": "one descriptor per (tenant, app)"
+   },
+   {
+    "part": "scheduler",
+    "pick": "Temporal workflow or plain cron for the weekly re-probe",
+    "why": "check current docs; cron is enough at M1"
+   },
+   {
+    "part": "terms flag",
+    "pick": "boolean from the governance terms table",
+    "why": "apps that ban copies must be marked store_allowed=false"
+   }
+  ],
+  "install": [
+   "pip install httpx psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/cap/probe.py : the six probes",
+   "brain/cap/choose.py : path selection",
+   "migrations/013_capability.sql : descriptor table"
+  ],
+  "schema": "CREATE TABLE capability (\n  tenant_id text NOT NULL,\n  app_id text NOT NULL,\n  descriptor jsonb NOT NULL,\n  chosen jsonb NOT NULL,\n  probed_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, app_id)\n);\n-- descriptor: {webhook,delta,list,search,acl_api: bool, rate:{limit,window_s}, store_allowed: bool, max_webhook_latency_s: int}",
+  "interface": "def choose_path(d: Descriptor, target_lag_s: int, streams: int) -> Choice  # {primary, backstop, sweep_every_s, calls_per_hour}",
+  "code": "def choose_path(d, target_lag_s, streams, fetch_p99_s=2.0):\n    paths = []\n    # unknown fields are False until a probe proves them\n    if d.webhook and d.delta:\n        # bounded by the worst delivery latency; add a backstop poll if that is too slow\n        lag = d.max_webhook_latency_s or 6 * 3600\n        paths.append(('webhook+delta', lag, 1.0 * streams, None))\n    if d.delta:\n        for interval in (60, 300, 900, 3600):\n            paths.append(('delta_poll', interval + fetch_p99_s, 3600 / interval * streams, interval))\n    if d.list:\n        for interval in (300, 900, 3600):\n            paths.append(('list_poll', interval + fetch_p99_s, 3600 / interval * streams * 5, interval))\n    ok = [p for p in paths if p[1] <= target_lag_s]\n    budget = d.rate.limit * 3600 / d.rate.window_s\n    ok = [p for p in ok if p[2] <= budget]            # must also fit the quota\n    if not ok:\n        return Choice(primary='live_only', backstop=None, sweep_every_s=604800, calls_per_hour=0)\n    name, lag, calls, interval = min(ok, key=lambda p: p[2])   # cheapest that meets the lag\n    backstop = interval or 900\n    return Choice(primary=name, backstop=backstop, sweep_every_s=604800, calls_per_hour=calls)",
+  "steps": [
+   {
+    "do": "Write the six probes (list, webhook, delta start, search, ACL, rate headers)",
+    "done_when": "probe against a mock returns a full descriptor"
+   },
+   {
+    "do": "Default every unproven field to false",
+    "done_when": "test with all probes failing gives an all-false descriptor"
+   },
+   {
+    "do": "Write choose_path with the lag constraint and quota check",
+    "done_when": "unit test: target 15 min picks webhook+delta for a webhook app"
+   },
+   {
+    "do": "Handle store_allowed=false by forcing live_only",
+    "done_when": "test returns primary live_only regardless of lag"
+   },
+   {
+    "do": "Persist and re-probe weekly",
+    "done_when": "descriptor row probed_at updates after a forced run"
+   }
+  ],
+  "config": {
+   "TARGET_LAG_S": "900 // card default 15 minutes; ask the tenant what staleness hurts",
+   "REPROBE_EVERY_DAYS": "7 // card default",
+   "SWEEP_EVERY_DAYS": "7 // card default",
+   "PROBE_TIMEOUT_S": "5 // a hung probe must not block the run"
+  },
+  "verify": [
+   "pytest tests/test_choose.py -q  # webhook, poll, live_only, quota cases pass",
+   "python -m brain.cap.probe --app mockdrive  # prints a descriptor with 5 booleans and a rate"
+  ],
+  "pitfalls": [
+   "Trusting the vendor docs over a probe: a webhook that is registered but never fires looks fine until the sweep runs",
+   "Choosing the cheapest path without the quota check starves other tenants",
+   "Probing with a write call to test webhooks creates real subscriptions: clean them up or reuse one"
+  ]
+ },
+ "so_rate": {
+  "milestone": "M1",
+  "effort_days": 6,
+  "depends_on": [
+   "so_cap"
+  ],
+  "stack": [
+   {
+    "part": "bucket state",
+    "pick": "Redis 7 with a Lua script for atomic refill and take",
+    "why": "one atomic round trip; Do NOT do read-modify-write from Python"
+   },
+   {
+    "part": "fair queue",
+    "pick": "deficit round robin in the worker, in-process",
+    "why": "small and testable"
+   },
+   {
+    "part": "clock",
+    "pick": "time.monotonic for local math, Redis TIME for shared state",
+    "why": "wall clock jumps break refill"
+   },
+   {
+    "part": "client",
+    "pick": "redis-py 5",
+    "why": "check current docs for the async API"
+   }
+  ],
+  "install": [
+   "pip install redis==5.*",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/rate/bucket.lua : refill and take script",
+   "brain/rate/budgeter.py : acquire, penalise",
+   "brain/rate/drr.py : fair queue between tenants"
+  ],
+  "schema": "-- Redis hash per bucket, key: rl:{tenant}:{app}:{endpoint}\n-- fields: tokens (float), ts_ms (int), paused_until_ms (int), rate (float/s), burst (float)\n-- parent key: rl:{tenant}:{app} with the same fields\nCREATE TABLE rate_quota (\n  tenant_id text, app_id text, endpoint text,\n  rate_per_s double precision NOT NULL, burst double precision NOT NULL,\n  backfill_share double precision NOT NULL DEFAULT 0.5,\n  PRIMARY KEY (tenant_id, app_id, endpoint)\n);",
+  "interface": "async def acquire(tenant_id: str, app_id: str, endpoint: str, cost: float = 1, priority: str = 'live') -> Grant  # {tokens, wait_ms} or raises Denied{reason, retry_after_ms}",
+  "code": "-- bucket.lua  KEYS[1]=child KEYS[2]=parent  ARGV: now_ms cost rate burst prate pburst share is_backfill\nlocal function refill(key, now, rate, burst)\n  local t = tonumber(redis.call('HGET', key, 'tokens') or burst)\n  local ts = tonumber(redis.call('HGET', key, 'ts_ms') or now)\n  return math.min(burst, t + rate * (now - ts) / 1000.0)\nend\nlocal now, cost = tonumber(ARGV[1]), tonumber(ARGV[2])\nlocal paused = tonumber(redis.call('HGET', KEYS[1], 'paused_until_ms') or 0)\nif paused > now then return {0, paused - now} end            -- honour Retry-After\nlocal c = refill(KEYS[1], now, tonumber(ARGV[3]), tonumber(ARGV[4]))\nlocal p = refill(KEYS[2], now, tonumber(ARGV[5]), tonumber(ARGV[6]))\nlocal reserve = 0\nif ARGV[8] == '1' then reserve = tonumber(ARGV[6]) * (1 - tonumber(ARGV[7])) end -- backfill leaves the live share untouched\nif c >= cost and p - cost >= reserve then\n  redis.call('HSET', KEYS[1], 'tokens', c - cost, 'ts_ms', now)\n  redis.call('HSET', KEYS[2], 'tokens', p - cost, 'ts_ms', now)\n  return {1, 0}\nend\nredis.call('HSET', KEYS[1], 'tokens', c, 'ts_ms', now)\nredis.call('HSET', KEYS[2], 'tokens', p, 'ts_ms', now)\nlocal need = math.max(cost - c, cost - p)\nreturn {0, math.ceil(need / tonumber(ARGV[3]) * 1000)}",
+  "steps": [
+   {
+    "do": "Load the Lua script and write rate_quota rows from the capability descriptor",
+    "done_when": "redis-cli EVALSHA returns {1,0} on an empty bucket"
+   },
+   {
+    "do": "Drain a bucket in a loop",
+    "done_when": "after burst B calls the next returns {0, wait_ms} with wait_ms > 0"
+   },
+   {
+    "do": "Implement penalise: on 429 set paused_until = now + Retry-After and tokens 0",
+    "done_when": "next acquire returns the remaining pause"
+   },
+   {
+    "do": "Enforce the backfill share of the parent bucket",
+    "done_when": "with backfill saturating, live acquire still succeeds"
+   },
+   {
+    "do": "Add deficit round robin so one tenant cannot starve others",
+    "done_when": "two tenants with weights 1 and 3 get a 1:3 grant ratio over 1000 calls"
+   },
+   {
+    "do": "Checkpoint bucket state every 10 s (Redis persistence or a table)",
+    "done_when": "restart keeps paused_until within 10 s"
+   }
+  ],
+  "config": {
+   "BACKFILL_SHARE": "0.5 // research estimate, tune per tenant",
+   "BURST": "vendor per-second cap // example in research: Jira GET 100 per second",
+   "CHECKPOINT_S": "10 // card default",
+   "DRR_QUANTUM": "1 cost unit per weight point // card default"
+  },
+  "verify": [
+   "pytest tests/test_budgeter.py -q  # drain, pause, backfill share, fairness pass",
+   "redis-cli HGETALL rl:t1:jira:search  # tokens, ts_ms, paused_until_ms present"
+  ],
+  "pitfalls": [
+   "Python read-modify-write on Redis races across workers and over-grants: do it in one Lua call",
+   "Wall clock refill jumps after NTP sync: use Redis TIME",
+   "Ignoring the shared parent bucket lets many endpoints together exceed the app quota"
+  ]
+ },
+ "so_mcp": {
+  "milestone": "M4",
+  "effort_days": 8,
+  "depends_on": [
+   "so_obo",
+   "so_rate",
+   "so_norm"
+  ],
+  "stack": [
+   {
+    "part": "client",
+    "pick": "official MCP Python SDK (package 'mcp')",
+    "why": "speaks the protocol; check current docs for the client API and transport options"
+   },
+   {
+    "part": "tool pinning",
+    "pick": "SHA-256 hash of the server's tool list stored per (app, server version)",
+    "why": "a changed list is treated as untrusted until reviewed"
+   },
+   {
+    "part": "gateway option",
+    "pick": "ContextForge or agentgateway in front of vendor servers",
+    "why": "research lists both; install, build only the policy"
+   },
+   {
+    "part": "timeouts",
+    "pick": "asyncio.wait_for with a per-source deadline",
+    "why": "one slow app must not block the answer"
+   }
+  ],
+  "install": [
+   "pip install mcp httpx",
+   "npx -y @modelcontextprotocol/inspector  # manual check of a vendor server"
+  ],
+  "layout": [
+   "brain/mcpbridge/client.py : call_tool with pin and deadline",
+   "brain/mcpbridge/pins.py : tool list hash store",
+   "migrations/014_mcp_pin.sql : pin table"
+  ],
+  "schema": "CREATE TABLE mcp_pin (\n  app_id text NOT NULL,\n  server_version text NOT NULL,\n  tools_hash text NOT NULL,\n  allowed_tools text[] NOT NULL,\n  reviewed_by text,\n  reviewed_at timestamptz,\n  PRIMARY KEY (app_id, server_version)\n);",
+  "interface": "async def call_tool(tenant_id: str, user_id: str, app_id: str, tool: str, arguments: dict, deadline_ms: int) -> ToolResult  # {items[{native_id,title,snippet,url,modified_at}], truncated, ms} | error {timeout|denied|upstream_down}",
+  "code": "import asyncio, hashlib, json, time\n\nasync def call_tool(req, obo, rate, pins, session_factory, audit):\n    t0 = time.monotonic()\n    budget = min(3.0, req.deadline_ms / 1000)                  # per-source deadline\n    pin = pins.get(req.app_id)\n    token = await obo.exchange(user=req.user_id, app=req.app_id, resource=pin.server_url)\n    await rate.acquire(req.tenant_id, req.app_id, 'mcp:' + req.tool, 1, 'live')\n    try:\n        async with session_factory(pin.server_url, token) as s:\n            live = await asyncio.wait_for(s.list_tools(), timeout=budget)\n            names = sorted(t.name for t in live.tools)\n            if hashlib.sha256(json.dumps(names).encode()).hexdigest() != pin.tools_hash:\n                audit(req, 'pin_mismatch'); return Err('denied')   # tool list changed: do not call\n            if req.tool not in pin.allowed_tools:\n                return Err('denied')\n            left = budget - (time.monotonic() - t0)\n            res = await asyncio.wait_for(s.call_tool(req.tool, req.arguments), timeout=max(left, 0.1))\n    except asyncio.TimeoutError:\n        audit(req, 'timeout'); return Err('timeout')          # never partial text as success\n    items = parse_items(res)[:10]\n    audit(req, 'ok', n=len(items))\n    return ToolResult(items=items, truncated=len(items) == 10, ms=int((time.monotonic() - t0) * 1000))",
+  "steps": [
+   {
+    "do": "Run the bridge against one vendor MCP server with a test token",
+    "done_when": "list_tools returns tool names"
+   },
+   {
+    "do": "Store the pin (hash plus read-only allow list) after a human review",
+    "done_when": "mcp_pin row exists for the app"
+   },
+   {
+    "do": "Add the pin mismatch check",
+    "done_when": "adding a tool to a mock server makes the call return denied"
+   },
+   {
+    "do": "Add the per-source deadline and typed errors",
+    "done_when": "a mock that sleeps 5 s yields timeout within 3.1 s"
+   },
+   {
+    "do": "Truncate to 10 items and hand to so_norm",
+    "done_when": "11 mock results come back as 10 with truncated true"
+   },
+   {
+    "do": "Confirm the user token is audience bound to the server",
+    "done_when": "token for server A is rejected by server B in a test"
+   }
+  ],
+  "config": {
+   "SOURCE_DEADLINE_S": "3 // card default",
+   "MAX_ITEMS": "10 // card default",
+   "READ_RETRY": "1 at 200 ms // card default, read tools only",
+   "TOOL_ALLOWLIST": "read and search tools only // no write tools ever"
+  },
+  "verify": [
+   "pytest tests/test_mcp_bridge.py -q  # pin, deadline, truncate, deny pass",
+   "python -m brain.mcpbridge.demo --app mockdocs --tool search --q onboarding  # up to 10 items with url and snippet"
+  ],
+  "pitfalls": [
+   "Trusting a vendor tool list that changes under you lets a poisoned tool description steer the model: pin and compare",
+   "Returning partial text on timeout looks like a real answer: return a typed error",
+   "A few slow sources multiply failure: P(any times out) = 1 - (1 - p)^n, so keep the deadline short and independent"
+  ]
+ },
+ "so_norm": {
+  "milestone": "M0",
+  "effort_days": 5,
+  "depends_on": [
+   "so_sdk"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "pydantic 2 models: Document, Message, Principal, Event",
+    "why": "one envelope type per kind, validated at the edge"
+   },
+   {
+    "part": "hash",
+    "pick": "hashlib.sha256 over canonical JSON",
+    "why": "SHA-256 as in the card; do NOT use Python's hash() or md5"
+   },
+   {
+    "part": "unicode",
+    "pick": "unicodedata.normalize('NFC')",
+    "why": "same text must hash the same on every machine"
+   },
+   {
+    "part": "transport",
+    "pick": "envelope published to the change event log",
+    "why": "the next card, ch_bus, owns the log"
+   }
+  ],
+  "install": [
+   "pip install pydantic==2.*",
+   "python -c \"import hashlib,unicodedata;print('ok')\""
+  ],
+  "layout": [
+   "brain/norm/envelope.py : pydantic models",
+   "brain/norm/canon.py : canonical form and hash",
+   "brain/norm/mappings/<app>.yaml : fields to keep per kind"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"Envelope\",\n  \"type\": \"object\",\n  \"required\": [\"uri\",\"app\",\"tenant\",\"kind\",\"version\",\"content_hash\",\"modified_at\"],\n  \"properties\": {\n    \"uri\": {\"type\":\"string\",\"pattern\":\"^devx://[^/]+/[^/]+/(Document|Message|Principal|Event)/.+\"},\n    \"kind\": {\"enum\":[\"Document\",\"Message\",\"Principal\",\"Event\"]},\n    \"version\": {\"type\":\"string\"}, \"content_hash\": {\"type\":\"string\",\"pattern\":\"^[0-9a-f]{64}$\"},\n    \"modified_at\": {\"type\":\"string\",\"format\":\"date-time\"},\n    \"acl_ref\": {\"type\":\"string\"}, \"title\": {\"type\":\"string\"}, \"container\": {\"type\":\"string\"}, \"author\": {\"type\":\"string\"}\n  }\n}",
+  "interface": "def normalise(raw: dict, kind: str, mapping: Mapping, tenant: str, app: str) -> Envelope",
+  "code": "import hashlib, json, unicodedata\nfrom urllib.parse import quote\n\ndef canon(o):\n    # sorted keys, NFC text, trimmed whitespace, fixed number form\n    if isinstance(o, str):\n        return unicodedata.normalize('NFC', o).strip()\n    if isinstance(o, float):\n        return format(o, '.10g')\n    if isinstance(o, dict):\n        return {k: canon(o[k]) for k in sorted(o)}\n    if isinstance(o, list):\n        return [canon(x) for x in o]\n    return o\n\ndef normalise(raw, kind, mapping, tenant, app):\n    fields = {f: raw.get(f) for f in mapping.fields[kind] if f not in mapping.volatile}\n    body = json.dumps(canon(fields), sort_keys=True, separators=(',', ':'), ensure_ascii=False)\n    digest = hashlib.sha256(body.encode('utf-8')).hexdigest()\n    native = quote(str(raw[mapping.id_field]), safe='')          # reserved characters escaped\n    version = raw.get(mapping.revision_field) or raw['modified_at']\n    return Envelope(uri=f'devx://{tenant}/{app}/{kind}/{native}', app=app, tenant=tenant,\n                    kind=kind, version=str(version), content_hash=digest,\n                    modified_at=raw['modified_at'], acl_ref=raw.get('acl_ref'),\n                    title=raw.get('title'), container=raw.get('container'), author=raw.get('author'))",
+  "steps": [
+   {
+    "do": "Define the four envelope models and the JSON schema",
+    "done_when": "jsonschema validates a sample of each kind"
+   },
+   {
+    "do": "Write canon() and the hash",
+    "done_when": "same record with reordered keys and NFD text gives the same hash"
+   },
+   {
+    "do": "Write per-app mappings with volatile fields dropped (view counts, last viewed)",
+    "done_when": "changing a view count leaves content_hash unchanged"
+   },
+   {
+    "do": "Build the uri with escaping",
+    "done_when": "native id 'a/b c' becomes a%2Fb%20c in the uri"
+   },
+   {
+    "do": "Set version from the vendor revision, else modified_at",
+    "done_when": "a record without a revision uses modified_at and ties are broken by hash"
+   },
+   {
+    "do": "Emit to the event log in memory, no durable text",
+    "done_when": "no table or file under brain/ stores a body"
+   }
+  ],
+  "config": {
+   "UNICODE_FORM": "NFC // same text hashes the same everywhere",
+   "VOLATILE_FIELDS": "per app mapping, default none // avoids false changes",
+   "URI_SCHEME": "devx:// // stable address across rewrites",
+   "HASH": "sha256 // card choice for collision safety"
+  },
+  "verify": [
+   "pytest tests/test_norm.py -q  # key order, unicode form, volatile field, uri escaping pass",
+   "python -c \"from brain.norm.canon import canon;print(canon({'b':'e\\u0301','a':1}))\"  # {'a': 1, 'b': 'é'}"
+  ],
+  "pitfalls": [
+   "Hashing volatile fields (view counts) makes every record look changed and triggers re-embedding all day",
+   "Unicode NFD versus NFC makes the same title hash differently across sources",
+   "Using modified_at alone as the version fails when two edits share a second: add the hash as a tie breaker"
+  ]
+ },
+ "so_apps": {
+  "milestone": "M0",
+  "effort_days": 3,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "contract table",
+    "pick": "one YAML file per vendor in git (vendors/<app>.yaml)",
+    "why": "reviewable record of limits and signals"
+   },
+   {
+    "part": "ground truth",
+    "pick": "vendor docs plus the capability probe",
+    "why": "the table says what to expect, the probe says what is true"
+   },
+   {
+    "part": "terms check",
+    "pick": "governance terms flag per app",
+    "why": "apps that ban copies are live only"
+   },
+   {
+    "part": "alerts",
+    "pick": "a CI job that diffs the table against fresh probe output",
+    "why": "catches silent vendor changes"
+   }
+  ],
+  "install": [
+   "pip install pyyaml jsonschema",
+   "mkdir -p vendors && ls vendors"
+  ],
+  "layout": [
+   "vendors/<app>.yaml : change signal, expiry, limits, copy rule",
+   "vendors/schema.json : schema for the table rows",
+   "brain/apps/staleness.py : staleness_bound function"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"VendorContract\",\n  \"type\": \"object\",\n  \"required\": [\"app\",\"change_signal\",\"max_delivery_latency_s\",\"rate\",\"store_allowed\"],\n  \"properties\": {\n    \"app\": {\"type\":\"string\"},\n    \"change_signal\": {\"enum\":[\"webhook\",\"delta\",\"webhook+delta\",\"none\"]},\n    \"subscription_max_s\": {\"type\":[\"integer\",\"null\"]},\n    \"max_delivery_latency_s\": {\"type\":\"integer\"},\n    \"rate\": {\"type\":\"object\"},\n    \"store_allowed\": {\"type\":\"boolean\"},\n    \"source\": {\"type\":\"string\"}\n  }\n}",
+  "interface": "def staleness_bound(c: VendorContract, poll_interval_s: int, fetch_p99_s: float) -> float  # min(L_max, I + F) in seconds",
+  "code": "import yaml, jsonschema, json, pathlib\n\nSCHEMA = json.loads(pathlib.Path('vendors/schema.json').read_text())\n\ndef load_vendors(dir='vendors'):\n    out = {}\n    for p in pathlib.Path(dir).glob('*.yaml'):\n        row = yaml.safe_load(p.read_text())\n        jsonschema.validate(row, SCHEMA)       # a bad row fails the build\n        out[row['app']] = row\n    return out\n\ndef staleness_bound(c, poll_interval_s, fetch_p99_s):\n    # plan from the WORST delivery latency, not the average\n    push = c['max_delivery_latency_s'] if c['change_signal'] in ('webhook', 'webhook+delta') else float('inf')\n    poll = poll_interval_s + fetch_p99_s\n    return min(push, poll)\n\ndef must_be_live_only(c):\n    return not c['store_allowed']",
+  "steps": [
+   {
+    "do": "Write the schema and one row each for Graph drive items, Drive, GitHub, Jira, Notion, Slack from the research",
+    "done_when": "jsonschema validates 6 rows"
+   },
+   {
+    "do": "Fill the numbers from research only (Graph 42,300 min and 6 h; Drive 604,800 s and 86,400 s; GitHub 10 s ack; Slack 1 request per minute)",
+    "done_when": "each row has a source field pointing to the research id"
+   },
+   {
+    "do": "Mark apps with copy bans as store_allowed false",
+    "done_when": "the loader reports them as live only"
+   },
+   {
+    "do": "Write staleness_bound and test it",
+    "done_when": "Graph drive item with poll 900 s returns 902 s, not 21,600 s"
+   },
+   {
+    "do": "Add the CI check that re-probes and diffs",
+    "done_when": "a changed limit in a mock fails the job"
+   }
+  ],
+  "config": {
+   "VENDORS_DIR": "vendors // one file per app",
+   "RECHECK_EVERY_DAYS": "7 // matches the capability re-probe",
+   "GRAPH_DRIVEITEM_SUB_MAX_MIN": "42300 // research T01",
+   "GITHUB_ACK_TIMEOUT_S": "10 // research T05"
+  },
+  "verify": [
+   "python -c \"from brain.apps.staleness import load_vendors;print(len(load_vendors()))\"  # 6",
+   "pytest tests/test_staleness.py -q  # bound is min of push and poll"
+  ],
+  "pitfalls": [
+   "Using the average webhook latency hides the 6 hour worst case on Graph drive items",
+   "Copying a vendor number from memory: every row needs a source link or a 'check current docs' note",
+   "Forgetting store_allowed lets a banned copy into the index"
+  ]
+ }
+}

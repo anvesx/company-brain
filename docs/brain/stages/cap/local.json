@@ -1,0 +1,793 @@
+{
+ "group": {
+  "line": "A signed laptop daemon tails Claude Code and Codex transcripts by byte offset, masks secrets on the device, keeps its token in the keychain behind a pause button, and is rolled out and killed by device management.",
+  "dumb": "A small app on each laptop reads the chat logs that Claude Code and Codex already write. It hides passwords and keys before anything is sent, and it only runs if the owner agreed. A pause button stops it at once. The company installs and updates it centrally and can switch it off. It cannot read chats in the Claude Desktop app, because where that app stores them is not confirmed, and it loses turns that the tool deletes while the laptop is offline."
+ },
+ "comps": {
+  "cp_daemon": {
+   "line": "Signed daemon tails allowlisted session folders, posts new turns over outbound-only TLS\nbackoff = min(300 s, 2 s x 2^n) x jitter(0.5..1)",
+   "dumb": "A small program runs quietly on each laptop. It watches only the folders where Claude Code and Codex keep their chat logs, and sends new lines to the brain. The laptop always calls out; nothing can call in. If the network is down it waits and tries again, and it only marks a line as sent after the brain confirms it.",
+   "inn": "File-change events for the allowlist (Claude Code projects folder, Codex home folder), turn batches {session, offset, text} from cp_hook, pause state and device token from cp_vault, policy file from cp_mdm.",
+   "out": "HTTPS POST of batches (up to 200 turns or 256 KB or 5 s, whichever first) to the ingestion endpoint, after cp_redact. Heartbeat {device_id, version, paused, last_ack_at} every 300 s.",
+   "store": "Reads session files read-only. Writes a local state file of {path, inode, offset, acked_offset} per file (about 100 bytes each, design) and a spool of at most 50 MB for unsent batches (design). No chat text is kept after the brain acknowledges.",
+   "fail": "Network or 5xx error: retry with backoff 2 s, 4 s, 8 s ... capped at 300 s, forever, offsets not advanced. 401: stop uploads, ask cp_vault to re-link, retry after 15 min. Spool full: stop reading new bytes and raise a device alert. Crash: restarts in 5 s under the service manager and resumes from acked_offset.",
+   "hard": "Which folders Claude Desktop uses for local chats is unconfirmed, so desktop chats are not read; the folder list for Codex also needs a check against the current docs.",
+   "req": "Requirement: 'No primitive lets a server read the client's chat history'",
+   "prop": "Proposal: the Model Context Protocol has no primitive to read chat history, so capture needs a process on the device that reads the files the tools already write.",
+   "deep": {
+    "purpose": "Move new AI-session turns from the laptop to the brain safely: read only allowlisted files, never accept inbound calls, never lose a turn that was written to disk while the network was down, never send while paused.",
+    "expected": [
+     "A turn written to a session file reaches the ingestion endpoint within 10 s at p95 while online",
+     "After an 8-hour offline gap, every turn still on disk is sent once, in order, with no duplicates after dedupe by (session, offset)",
+     "A new tool joins by adding one allowlist entry with a path glob and a parser name in the policy file; tools that expose hooks join through cp_hook, and apps with their own MCP server use the MCP bridge (so_mcp), which cannot read chat history"
+    ],
+    "not_expected": [
+     "It does not read any folder outside the allowlist, including other users' home folders",
+     "It does not open a listening port or accept a push",
+     "It does not decide what is secret; cp_redact does, before the batch is built"
+    ],
+    "algorithm": {
+     "name": "Allowlist file watcher with at-least-once upload and capped exponential backoff",
+     "formula": "delay_n = min(300 s, 2 s x 2^n) x U(0.5, 1.0); acked_offset advances only after HTTP 2xx",
+     "steps": [
+      "On start, load the state file and the policy file; refuse to run if the policy signature check fails",
+      "Watch each allowlist root; on a change event, ask cp_hook for the new complete lines after acked_offset",
+      "Check the pause flag with cp_vault; if paused, drop the event and read nothing",
+      "Send the lines through cp_redact, group into a batch, POST over TLS with the device token",
+      "On 2xx, write acked_offset to the state file with fsync; on error, sleep delay_n and retry the same batch"
+     ],
+     "params": {
+      "batch_limits": "200 turns, 256 KB, 5 s (design, tune on observed turn size)",
+      "backoff": "base 2 s, cap 300 s, jitter 0.5 to 1.0 (default, common practice)",
+      "heartbeat": "300 s (design)",
+      "spool_cap": "50 MB (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: number of consecutive failures",
+      "base: first delay in seconds",
+      "cap: longest delay in seconds",
+      "acked_offset: byte position confirmed by the brain"
+     ],
+     "formula_full": "delay_n = min(cap, base x 2^n) x u, u uniform in [0.5, 1.0]; expected load after an outage of D seconds with F devices = F / mean(delay) requests per second",
+     "derivation": "Doubling makes the gap grow fast so a long outage costs few attempts. Jitter spreads devices so they do not all retry in the same second when the service returns.",
+     "worked_example": "base 2 s, cap 300 s: failures 0 to 8 give ceilings 2, 4, 8, 16, 32, 64, 128, 256, 300 s. After 1,000 laptops lose the network together, the mean delay at the cap is 300 x 0.75 = 225 s, so the brain sees about 1000 / 225 = 4.4 retry requests per second, not 1,000 at once. (design)",
+     "complexity": "O(new bytes) per change event; state is O(number of files). A laptop with 2,000 session files holds about 200 KB of state.",
+     "failure_modes": [
+      "acked_offset written before the 2xx arrives would lose turns on a crash: it is written only after",
+      "Clock changes do not matter: delays use a monotonic clock",
+      "Source file purged during the gap (Claude Code removes sessions after about 30 days by default, x_cap_claude-code-transcripts): those turns are gone; the daemon reports a gap event with the dates"
+     ],
+     "calibration": "After 14 days of fleet data, set the cap to the p99 of outage length divided by 4, never above 600 s."
+    },
+    "alternatives": [
+     {
+      "name": "Browser extension or screen capture",
+      "why_rejected": "Reads far more than the session files and is the pattern behind the Recall backlash (x_sec_recall-incident)."
+     },
+     {
+      "name": "Cloud-side collection only",
+      "why_rejected": "Claude Code and Codex sessions on a laptop never reach a vendor compliance API for personal developer use; local files and hooks are the only route (x_cap_claude-code-transcripts)."
+     }
+    ],
+    "security": [
+     "Malware swaps the signed binary or the policy file: the daemon is code-signed, verifies the policy signature at start, and the ingestion endpoint rejects a device token whose build hash is not on the allowed list",
+     "Symlink trick sends a file outside the allowlist: every path is resolved to its real path and must sit under an allowlist root before it is opened",
+     "Inbound attack on the laptop: the daemon opens no listening socket; the only network path is outbound TLS to one pinned hostname",
+     "Stolen device token is used to inject fake turns: the token is write-only and tied to the device id, so it cannot read anything, and cp_vault can revoke it"
+    ],
+    "performance": {
+     "slo": "CPU under 1 percent of one core and memory under 80 MB on a laptop with 2,000 session files (design)",
+     "complexity": "O(new bytes) per event, O(files) at start",
+     "scaling": "At 10x sessions the watch handle count is the limit; the daemon watches folders, not files, and falls back to a 30 s scan when the operating system refuses more handles."
+    },
+    "edge_cases": [
+     "Empty file or file with only a partial last line: nothing is sent until a newline arrives",
+     "Two sessions write at once: each file has its own offset, order across files is not promised",
+     "File deleted by the tool: its state row is kept for 7 days, then dropped; no tombstone is sent because absence on a laptop is not a user delete",
+     "Laptop clock is wrong by hours: turn time comes from the log line, upload time from the server",
+     "Very large turn (over 1 MB): split into parts with a part counter, or truncated with a truncated flag after 4 MB (design)",
+     "User is paused for a week: files may be purged by the tool in that time; resume reads what remains and records the gap"
+    ],
+    "tests": [
+     {
+      "name": "offline then online",
+      "given": "network off for 8 h while 40 turns are written, then on",
+      "expect": "40 turns arrive once each, acked_offset equals file size"
+     },
+     {
+      "name": "pause blocks reads",
+      "given": "pause is on and a file grows by 5 lines",
+      "expect": "zero bytes read and zero requests sent; state file unchanged"
+     },
+     {
+      "name": "path escape",
+      "given": "symlink inside the allowlist points to ~/.ssh/config",
+      "expect": "file is not opened and a path_rejected event is logged"
+     },
+     {
+      "name": "crash before ack",
+      "given": "process killed after POST but before 2xx",
+      "expect": "batch is sent again and the brain dedupes it by (session, offset)"
+     }
+    ],
+    "cost_levers": [
+     "Batching at 200 turns or 256 KB cuts request count by about 100x versus one POST per turn",
+     "Gzip on the batch body; chat text compresses well"
+    ],
+    "feedback_events": [
+     "User taps 'this was not mine' on a captured session; the owner pins the folder out of the allowlist"
+    ],
+    "analytics_events": [
+     {
+      "name": "capture.batch_sent",
+      "fields": [
+       "device_id",
+       "n_turns",
+       "bytes",
+       "ms",
+       "attempt"
+      ],
+      "when": "after each acknowledged batch"
+     },
+     {
+      "name": "capture.gap",
+      "fields": [
+       "device_id",
+       "tool",
+       "from",
+       "to",
+       "reason"
+      ],
+      "when": "when files were purged or the device was paused over a span"
+     },
+     {
+      "name": "capture.heartbeat",
+      "fields": [
+       "device_id",
+       "version",
+       "paused",
+       "spool_bytes"
+      ],
+      "when": "every 300 s"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Microsoft Recall is the closest shipped local capture: opt-in, off by default on managed devices, encrypted, with app and retention policy (x_sec_recall-ms). Its first preview stored data in a readable local database and was pulled (x_sec_recall-incident).",
+    "refs": [
+     "x_cap_claude-code-transcripts",
+     "x_cap_codex-hooks-otel",
+     "x_cap_mcp-spec",
+     "x_sec_recall-ms",
+     "x_sec_recall-incident"
+    ]
+   }
+  },
+  "cp_hook": {
+   "line": "Stop and SessionEnd hooks ping the daemon; a tail reads JSONL from a saved byte offset\nresume cost = new bytes, not file size",
+   "dumb": "Claude Code and Codex write each chat to a log file with one line per event. The reader remembers how many bytes it already read in each file. Next time it jumps straight to that spot and reads only the new lines. A hook that fires when a turn or a session ends tells it when to look.",
+   "inn": "Hook calls from the tool carrying the path of the session transcript file (the tools call this field transcript_path), file-change events from cp_daemon, and the saved state {path, inode, offset}.",
+   "out": "Complete new lines {session, tool, offset_start, offset_end, line_text} sent to cp_daemon. Counters for skipped or unparsable lines.",
+   "store": "Reads session files read-only. Writes {path, inode, size_seen, offset} per file to the local state file owned by cp_daemon. Keeps no line text after handing it on.",
+   "fail": "Unparsable line: counted, skipped, offset still advances past it after 1 attempt. File shorter than the saved offset: reset offset to 0 and let dedupe by (session, turn) absorb the repeats. Hook script times out after 2 s: the next file-change event covers it. Hook not installed: the tail alone still runs, with a delay of up to 30 s.",
+   "hard": "The exact line schema of Claude Code transcripts is not verified; Codex marks the hook transcript path as unstable; whether Codex rollout files end in .jsonl or .jsonl.zst is disputed between sources.",
+   "req": "Requirement: 'Transcripts are JSONL under ~/.claude/projects'",
+   "prop": "Proposal: use hooks for timing and files for content, because a hook can be missed but a file on disk can be re-read.",
+   "deep": {
+    "purpose": "Turn tool-written session files into an ordered stream of complete new lines, exactly once per byte range, whether the tool offers hooks, files, or both.",
+    "expected": [
+     "Only bytes after the saved offset are read; a 4 MB file with 900 new bytes reads 900 bytes",
+     "A half-written last line is held back until its newline arrives",
+     "A new tool joins by giving a path glob and a line parser in the allowlist policy; Cursor and GitHub Copilot expose no chat content by API, so only their own hooks or custom logging could feed this reader (x_cap_cursor-audit, x_cap_github-copilot-audit)"
+    ],
+    "not_expected": [
+     "It does not trust the path given by a hook: the daemon re-checks the path against the allowlist",
+     "It does not redact; cp_redact runs next",
+     "It does not delete or edit any session file"
+    ],
+    "algorithm": {
+     "name": "Byte-offset tail with inode check and partial-line hold-back",
+     "formula": "new_offset = index of last newline in file[offset:] + offset + 1; read cost = new_offset - offset bytes",
+     "steps": [
+      "Stat the file; if the inode changed or size < offset, set offset to 0 and mark a rollover",
+      "Seek to offset and read to end of file in chunks of 64 KB",
+      "Keep only bytes up to and including the last newline; hold the remainder for next time",
+      "Parse each complete line as JSON; on a parse error count it and skip the line",
+      "Hand the lines and the new offset to cp_daemon; the offset is committed only after upload is acknowledged"
+     ],
+     "params": {
+      "chunk": "64 KB (default)",
+      "hook_timeout": "2 s (design)",
+      "fallback_scan": "30 s when hooks are absent (design)",
+      "retention_window": "30 days, the Claude Code default for cleanupPeriodDays (x_cap_claude-code-transcripts)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "offset: bytes already acknowledged",
+      "size: current file size in bytes",
+      "L: length of the held-back partial line"
+     ],
+     "formula_full": "bytes_read = size - offset; bytes_committed = size - offset - L; full re-read cost = size",
+     "derivation": "Appending logs only grow at the end, so everything before the offset is unchanged. Reading from the offset gives the same result as a full read at a fraction of the work. Holding back the partial line keeps every committed range ending on a line boundary.",
+     "worked_example": "File size 4,000,000 bytes, offset 3,999,100. New bytes = 900. The last 60 bytes have no newline yet, so L = 60 and 840 bytes are committed. A full re-read would cost 4,000,000 bytes, about 4,760 times more. For 300 files the saved work per scan is about 1.2 GB of reads.",
+     "complexity": "O(new bytes) per scan; O(1) memory beyond one 64 KB chunk.",
+     "failure_modes": [
+      "A tool rewrites a file in place (compaction): size may drop or stay the same while content changes; the inode and a hash of the first 4 KB are compared to catch it",
+      "Offset points into the middle of a multi-byte character: offsets always land after a newline, which is a single byte in UTF-8"
+     ],
+     "calibration": "Measure the share of lines that fail to parse over a week. If it is above 0.5 percent, the schema changed: stop skipping and alert instead."
+    },
+    "alternatives": [
+     {
+      "name": "Read hook payloads only",
+      "why_rejected": "A missed or timed-out hook loses the turn for good; files stay on disk until the 30-day purge, so a tail can always catch up."
+     },
+     {
+      "name": "Poll full files every minute",
+      "why_rejected": "Cost grows with file size, and a 4 MB file costs 4,760 times the tail."
+     }
+    ],
+    "security": [
+     "Prompt injection inside a transcript line (an attacker's text pasted into a chat): lines are treated as data and never executed or passed to a model here",
+     "A hook payload names a path outside the allowlist: the path is resolved to its real path and rejected if it is not under an allowlist root",
+     "A session file is replaced by a huge or crafted file to exhaust memory: reads are capped at 64 KB chunks and 8 MB per scan per file (design)"
+    ],
+    "performance": {
+     "slo": "p95 under 50 ms from file change to lines handed to cp_daemon for a 4 MB file",
+     "complexity": "O(new bytes) per scan",
+     "scaling": "At 10x files (20,000) the change-event fan-out is the limit; scan only files whose modified time is newer than the last scan."
+    },
+    "edge_cases": [
+     "Empty file: offset stays 0, nothing is emitted",
+     "Duplicate hook calls for the same turn: the second finds no new bytes and emits nothing",
+     "File truncated and rewritten: rollover detected by inode or first-4-KB hash, offset reset, dedupe handles the repeats",
+     "Two readers on the same file (Claude Code itself is still writing): the reader opens read-only and never locks",
+     "Unicode and emoji in turns: kept as UTF-8, lines split only on the newline byte",
+     "Codex file ends in .jsonl.zst: skipped with a counter until the format is confirmed, because sources disagree (check current docs)"
+    ],
+    "tests": [
+     {
+      "name": "tail resume",
+      "given": "4,000,000 byte file, offset 3,999,100, 900 bytes appended",
+      "expect": "reads 900 bytes, emits whole lines only, commits 840 when 60 bytes lack a newline"
+     },
+     {
+      "name": "partial line",
+      "given": "last line cut after 60 bytes",
+      "expect": "no emission for that line; next scan emits it whole once the newline arrives"
+     },
+     {
+      "name": "rollover",
+      "given": "inode changes and size is 12,000 bytes while offset is 3,999,100",
+      "expect": "offset resets to 0 and a rollover event is logged"
+     },
+     {
+      "name": "bad line",
+      "given": "line 7 of 20 is not JSON",
+      "expect": "19 lines emitted, bad_line counter is 1, offset passes line 20"
+     }
+    ],
+    "cost_levers": [
+     "Reading only new bytes keeps disk and CPU near zero",
+     "Skipping files not modified since the last scan"
+    ],
+    "feedback_events": [
+     "A rising bad_line rate raises a schema-change alert to the fleet owner"
+    ],
+    "analytics_events": [
+     {
+      "name": "hook.scan",
+      "fields": [
+       "tool",
+       "files_checked",
+       "bytes_read",
+       "lines_emitted",
+       "bad_lines",
+       "ms"
+      ],
+      "when": "after each scan"
+     },
+     {
+      "name": "hook.rollover",
+      "fields": [
+       "tool",
+       "path_hash",
+       "old_offset",
+       "new_size"
+      ],
+      "when": "when a file is replaced or truncated"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Log shippers such as Filebeat and Fluent Bit track a per-file offset and inode in a registry file for the same reason; this card applies that pattern to session transcripts.",
+    "refs": [
+     "x_cap_claude-code-transcripts",
+     "x_cap_codex-hooks-otel",
+     "x_cap_mcp-spec"
+    ]
+   }
+  },
+  "cp_redact": {
+   "line": "Gitleaks-style rules plus entropy check and personal-data masking, before any byte leaves the laptop\nH = -sum p log2 p; flag if H >= 4.0 and length >= 20",
+   "dumb": "Before a chat line is sent anywhere, this step looks for things that must never leave the laptop, such as passwords, access keys and long random-looking strings. It also hides email addresses and phone numbers. Each hit is replaced by a short label. If the step runs out of time on a line, the text is dropped and only the line's metadata is sent.",
+   "inn": "Raw lines {session, offset, text} from cp_daemon, and the shared rule set (patterns, keywords, entropy thresholds, allowlist) from sc_scan.",
+   "out": "Clean lines {session, offset, text_redacted, redactions[{rule_id, start, end}], content_dropped} to cf_norm. No raw text leaves this step.",
+   "store": "Keeps nothing on disk. The rule set is cached in memory and refreshed every 24 h from the signed policy file. Writes counters only (hits per rule id).",
+   "fail": "Scan exceeds 50 ms per line: text dropped, content_dropped = true, metadata sent. Rule file fails its signature check: keep the last good rule set; with none, drop all text and alert. Out of memory on a huge line: line dropped the same way. No retries, since the scan is deterministic.",
+   "hard": "Pattern and entropy scanning always misses some secrets and masks some harmless text; the miss rate on real chat data is unmeasured. The gitleaks project is feature complete and moving to a successor, so the rule format may change.",
+   "req": "Requirement: 'Detects secrets in git, dirs, stdin; TOML rules'",
+   "prop": "Proposal: redact on the device, so a secret pasted into a chat never reaches the network, the index, or the vendor copy we hold.",
+   "deep": {
+    "purpose": "Make sure a secret or personal identifier pasted into an AI chat is removed on the laptop, before upload, and fail closed when the scan cannot finish.",
+    "expected": [
+     "A known key pattern such as a cloud access key or a private key block is replaced by [REDACTED:rule_id]",
+     "A random-looking 20+ character token above the entropy threshold is replaced even if no pattern matches",
+     "A new secret type joins by adding a rule (regex, keywords, entropy) to the shared rule file; the same file feeds sc_scan so index and device agree"
+    ],
+    "not_expected": [
+     "It does not claim to find every secret; it lowers the chance",
+     "It does not classify chat content as sensitive or not (that is zone logic elsewhere)",
+     "It does not send raw text to any service, including a model, to decide what to hide"
+    ],
+    "algorithm": {
+     "name": "Rule prefilter, regex match and Shannon entropy gate, then personal-data masking",
+     "formula": "H(s) = -sum_i p_i log2 p_i over characters of s; redact if rule matches or (len(s) >= 20 and H(s) >= 4.0)",
+     "steps": [
+      "For each rule, skip it unless one of its keywords appears in the line (cheap prefilter)",
+      "Run the rule regex; for rules with an entropy field, keep the match only if H is at or above the rule threshold",
+      "Run the generic gate: split on whitespace and punctuation, test every token of 20+ characters for H >= 4.0",
+      "Mask emails and phone numbers with fixed patterns and tag them [EMAIL] and [PHONE]",
+      "Merge overlapping spans, replace each with [REDACTED:rule_id], record spans, and stop with content_dropped if 50 ms is exceeded"
+     ],
+     "params": {
+      "entropy_threshold": "4.0 bits per character (tune on 1,000 labelled tokens; random base64 is near 6.0, English words near 3.5)",
+      "min_length": "20 characters (default)",
+      "time_budget": "50 ms per line (design)",
+      "rule_refresh": "24 h (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "s: a candidate token",
+      "p_i: share of character i in s",
+      "H: Shannon entropy in bits per character",
+      "len: number of characters"
+     ],
+     "formula_full": "H(s) = - sum_{i in alphabet(s)} p_i log2(p_i); maximum is log2(number of distinct characters)",
+     "derivation": "Random strings use many characters about equally, so H is high. Words and repeated text reuse a few characters, so H is low. A threshold between the two ranges splits secrets from prose.",
+     "worked_example": "'aaaaaaaaaaaaaaaaaaaa' has H = 0.00 and is kept. 'configurationmanagement' (23 characters) has H = 3.45 and is kept. 'a1B2c3D4e5F6g7H8i9J0' (20 distinct characters) has H = 4.32 and is redacted. A 40-character key such as 'wJalrXUtnFEMIK7MDENGbPxRfiCYzEXAMPLEKEY' has H = 4.66 and is redacted.",
+     "complexity": "O(L x R_k) for L characters and R_k rules that pass the keyword prefilter; one entropy pass is O(token length).",
+     "failure_modes": [
+      "Hex strings top out at 4.0 bits, so a hex secret can sit right on the threshold: hex rules carry their own lower threshold of 3.0",
+      "Long identifiers or hashes pasted in chats are masked although harmless: they are lost, accepted as the price of fail-closed",
+      "Secrets split across two lines or split by the user are not caught"
+     ],
+     "calibration": "Label 1,000 tokens from consented pilot chats as secret or not. Pick the threshold with at least 95 percent recall; report the false mask rate next to it."
+    },
+    "alternatives": [
+     {
+      "name": "Server-side redaction after upload",
+      "why_rejected": "The secret has already crossed the network and sits in transit logs and queues."
+     },
+     {
+      "name": "Send text to a model to find secrets",
+      "why_rejected": "Sends the secret to the model provider, which is exactly what redaction must prevent."
+     }
+    ],
+    "security": [
+     "A secret split with spaces or base64-encoded to slip past patterns: the generic entropy gate and a decode step for base64 and hex candidates catch many, not all, so the claim is lower risk, not none",
+     "A crafted line built to make a regex run forever (catastrophic backtracking): rules use a linear-time regex engine and the 50 ms budget drops the line",
+     "Redaction map leaks the secret: spans store positions and rule ids only, never the matched text",
+     "Poisoned rule file turns redaction off: rules are signed, and a failed check keeps the last good set"
+    ],
+    "performance": {
+     "slo": "p95 under 5 ms per 2 KB line, hard budget 50 ms",
+     "complexity": "O(L x R_k) per line with the keyword prefilter",
+     "scaling": "At 10x line volume the regex pass dominates; compile rules once and run lines on a small worker pool of 2 threads."
+    },
+    "edge_cases": [
+     "Empty line: passes through unchanged with no spans",
+     "A 2 MB pasted log: scanned in 64 KB windows with 256 characters of overlap; over the budget the whole line is dropped",
+     "Same secret appears 50 times: every occurrence is replaced, one rule hit counter per occurrence",
+     "Unicode look-alike characters used to hide a key: text is normalised to NFKC before matching",
+     "Code blocks full of harmless long identifiers: masked at a known cost, owner can allowlist a rule id per team"
+    ],
+    "tests": [
+     {
+      "name": "known key",
+      "given": "line contains a cloud access key in the published example format",
+      "expect": "replaced by [REDACTED:rule_id], span recorded, no key text in output"
+     },
+     {
+      "name": "entropy gate",
+      "given": "line contains 'a1B2c3D4e5F6g7H8i9J0' and 'configurationmanagement'",
+      "expect": "first token redacted (H 4.32), second kept (H 3.45)"
+     },
+     {
+      "name": "timeout fails closed",
+      "given": "a 5 MB line with 60 ms of work",
+      "expect": "content_dropped true, text absent, metadata present"
+     },
+     {
+      "name": "no raw text out",
+      "given": "run 1,000 lines containing the same planted secret",
+      "expect": "zero outputs contain the secret string"
+     }
+    ],
+    "cost_levers": [
+     "Keyword prefilter skips most rules for most lines",
+     "Runs on the device, so no server compute is spent"
+    ],
+    "feedback_events": [
+     "User marks a masked token as 'not secret'; the rule id gets a team allowlist entry after 3 such marks"
+    ],
+    "analytics_events": [
+     {
+      "name": "redact.scan",
+      "fields": [
+       "device_id",
+       "lines",
+       "hits_by_rule",
+       "dropped_lines",
+       "p95_ms"
+      ],
+      "when": "every 1,000 lines"
+     },
+     {
+      "name": "redact.rules_loaded",
+      "fields": [
+       "version",
+       "n_rules",
+       "signature_ok"
+      ],
+      "when": "on every rule refresh"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "x_sec_gitleaks",
+      "name": "gitleaks",
+      "take": "Use its TOML rule shape (regex, keywords, entropy) and base64 and hex decoding; do not depend on the project's binary because it is in maintenance mode."
+     }
+    ],
+    "industry": "Microsoft Recall applies sensitive information filtering by default on the device before storage (x_sec_recall-ms); gitleaks runs over files and standard input with TOML rules (x_sec_gitleaks).",
+    "refs": [
+     "x_sec_gitleaks",
+     "x_sec_recall-ms",
+     "x_sec_owasp-llm"
+    ]
+   }
+  },
+  "cp_vault": {
+   "line": "Token stays in the OS keychain, only the daemon reads it, a visible pause switch stops capture\npause check before every read and upload",
+   "dumb": "The laptop's secure storage, called the keychain, holds the one key this app uses to talk to the brain. Only the app can read it. The app also shows a clear pause button. When you press it, nothing more is read or sent, and the app tells you it is paused. The first time it runs it shows what it collects and asks for your consent.",
+   "inn": "Consent and pause actions from the user interface; link result {device_id, token} from the sign-in flow; revoke and disable signals from the brain via cp_mdm policy.",
+   "out": "Pause state {paused, since, reason} and the device token to cp_daemon and cp_hook. Consent record {user, notice_version, accepted_at} to the brain.",
+   "store": "The device token in the operating system keychain (macOS Keychain, Windows Credential Manager, or the Linux secret service, check current docs for access-control details). Pause flag and consent record in the local state file, signed with a key held in the keychain.",
+   "fail": "Keychain locked or unavailable: the daemon reads nothing and shows 'locked'; it checks again every 30 s. Token expired or revoked (HTTP 401): capture stops and the app asks the user to sign in again; nothing is spooled meanwhile. Pause file tampered with: signature fails, treated as paused.",
+   "hard": "How well the keychain protects the token from other programs run by the same user is not researched here and needs a per-platform review; consent wording and legal basis per country is unsettled.",
+   "req": "Requirement: 'snapshots need user opt-in'",
+   "prop": "Proposal: capture of personal chats is acceptable only with visible consent, one-press pause, and a token that can write but never read.",
+   "deep": {
+    "purpose": "Hold the credential safely and give the owner an immediate, visible way to stop capture, so the trust of the person on the laptop is kept.",
+    "expected": [
+     "After the user presses pause, the next file read and the next upload both stop within 250 ms and the icon shows paused",
+     "The device token is never written to disk outside the keychain, nor to logs",
+     "A new platform joins by adding a keychain adapter with get, set and delete; the pause and consent logic stays the same"
+    ],
+    "not_expected": [
+     "It does not decide what is captured; the allowlist and cp_redact do",
+     "It does not hold any key that can read stored chats",
+     "It does not let the company enable capture on a user who has not consented, unless policy says so and the notice was shown (a legal call, not a code one)"
+    ],
+    "algorithm": {
+     "name": "Keychain-held write-only device token with a signed pause flag checked before every read and upload",
+     "formula": "capture_allowed = consented and not paused and token_valid and signature_ok(pause_state)",
+     "steps": [
+      "At first run, show the notice listing the folders read and what is redacted; record consent with the notice version",
+      "Exchange the sign-in result for a device token limited to upload, store it in the keychain under an item only the signed daemon may read",
+      "On every loop step, cp_daemon asks capture_allowed; a false value skips the read and drops any in-flight batch",
+      "On pause, write {paused: true, since} signed with the keychain key, update the icon, and send a pause event to the brain",
+      "On resume, re-check consent version; if the notice changed, ask again before capturing"
+     ],
+     "params": {
+      "pause_latency": "250 ms (design)",
+      "locked_recheck": "30 s (design)",
+      "token_lifetime": "30 days with rotation on use (design, in line with refresh rotation guidance, x_sec_rfc9700-refresh)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Store the token in a config file with file permissions",
+      "why_rejected": "Any same-user process can read it; a first Recall preview kept data in a readable local database and was pulled (x_sec_recall-incident)."
+     },
+     {
+      "name": "Hidden always-on capture",
+      "why_rejected": "Breaks trust and likely breaks works-council and notice rules (x_sa_betrvg, x_sa_ai-act-26)."
+     }
+    ],
+    "security": [
+     "Same-user malware reads the keychain item: the token is write-only and device-bound, so theft allows false uploads but no reads, and the brain can revoke it in one call; researchers claim same-user malware can still pull data from Recall (x_sec_recall-incident), so this risk is lowered, not removed",
+     "Malware edits the pause file to turn capture back on: the flag is signed with a keychain key; a bad signature means paused",
+     "Token written to a crash dump or log: the token type is excluded from logging and crash reports by name",
+     "A user is silently re-enrolled after uninstalling: consent records are per install and a new install shows the notice again"
+    ],
+    "performance": {
+     "slo": "pause takes effect within 250 ms; keychain read under 20 ms and cached for 60 s (design)",
+     "complexity": "O(1) per check",
+     "scaling": "At 10x devices the load is the brain's token revoke list; it is a set of device ids checked on each upload, size O(devices)."
+    },
+    "edge_cases": [
+     "Empty keychain after an operating system reset: the daemon is unlinked and asks to sign in; no capture",
+     "Two users on one laptop: each user account has its own keychain item, consent and pause state",
+     "Pause pressed during an upload: the batch in flight is allowed to finish only if the request is already sent, the next batch is not built",
+     "Clock skew on the laptop: the pause flag uses a monotonic counter, not wall time, for ordering",
+     "Consent withdrawn: capture stops, local state is wiped, and a delete request for that owner's records is sent to the brain's erasure flow"
+    ],
+    "tests": [
+     {
+      "name": "pause is immediate",
+      "given": "pause pressed while files grow",
+      "expect": "no reads and no requests for 10 s; icon state is paused within 250 ms"
+     },
+     {
+      "name": "token not on disk",
+      "given": "search the home folder and logs after a full run",
+      "expect": "token string appears nowhere outside the keychain"
+     },
+     {
+      "name": "tampered flag",
+      "given": "set paused false by editing the file",
+      "expect": "signature check fails and the daemon stays paused"
+     },
+     {
+      "name": "notice changes",
+      "given": "notice version goes from 3 to 4",
+      "expect": "capture stops until the user accepts version 4"
+     }
+    ],
+    "cost_levers": [
+     "Local checks only; no server cost",
+     "Token reuse for 60 s avoids a keychain call per batch"
+    ],
+    "feedback_events": [
+     "Pause count per device per week; a spike tells the owner the capture is felt as intrusive"
+    ],
+    "analytics_events": [
+     {
+      "name": "consent.recorded",
+      "fields": [
+       "device_id",
+       "notice_version",
+       "accepted"
+      ],
+      "when": "when the user answers the notice"
+     },
+     {
+      "name": "capture.paused",
+      "fields": [
+       "device_id",
+       "by",
+       "reason"
+      ],
+      "when": "on every pause or resume"
+     },
+     {
+      "name": "token.revoked",
+      "fields": [
+       "device_id",
+       "source"
+      ],
+      "when": "when a token is revoked or expires"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Microsoft Recall requires opt-in, Windows Hello, and encrypts data with keys protected by the TPM (a hardware key chip), with policy control for admins (x_sec_recall-ms). Limitless ended capture in several regions after its acquisition and offered export and delete (x_sec_limitless).",
+    "refs": [
+     "x_sec_recall-ms",
+     "x_sec_recall-incident",
+     "x_sec_rfc9700-refresh",
+     "x_sa_betrvg",
+     "x_sa_ai-act-26"
+    ]
+   }
+  },
+  "cp_mdm": {
+   "line": "Notarised signed installer pushed by device management, pinned update channel, remote disable\nworst disable delay = heartbeat 300 s + jitter",
+   "dumb": "IT installs the app on every laptop with their device-management tool, so nobody has to run an installer by hand. The app is signed and checked by the operating system vendor before it runs. Updates come only from one fixed place and are checked before they apply. If something goes wrong, the company can switch the app off from the server.",
+   "inn": "Signed installer package and a policy file (allowlist, brain hostname, update channel, minimum version) pushed by the device-management tool; heartbeat answers from the brain carrying the disable flag.",
+   "out": "Installed daemon and policy to cp_daemon; install and version report {device_id, version, channel} back to the management console and the brain.",
+   "store": "Package and policy on disk in a folder only the administrator can write. Last accepted version number and the policy signature in the local state file. The signing keys stay with the release team, never on a laptop.",
+   "fail": "Update signature fails: the update is dropped, the old version keeps running, and an alert is sent after 1 failure. Update download fails: retry at 5 min, 30 min, 3 h, then wait for the next 24 h check. Heartbeat fails for 24 h: the daemon pauses itself until it hears back (design). Installer rejected by the operating system: the device shows as not installed in the console.",
+   "hard": "Notarisation, hardened runtime, and the exact management-tool settings (Jamf, Intune) were not verified in research and must be checked against current vendor docs; the self-pause after 24 h without a heartbeat is a design choice to confirm with the owner.",
+   "req": "Requirement: 'Recall is off and removed on managed devices by default'",
+   "prop": "Proposal: a capture agent is only acceptable if IT can roll it out, update it, and kill it centrally, like Recall's managed-device controls (x_sec_recall-ms).",
+   "deep": {
+    "purpose": "Put one trusted build on every approved laptop, keep it current, and give the company a fast way to stop it without touching each device.",
+    "expected": [
+     "A device in the management group receives the package and the daemon is running within 1 hour of enrolment",
+     "An update is applied only if its signature verifies and its version is higher than the current one",
+     "A disable flag set on the server stops capture on every online device within 300 s plus jitter"
+    ],
+    "not_expected": [
+     "It does not enable capture for a user who has not consented; cp_vault gates that",
+     "It does not auto-update from any other source than the pinned channel",
+     "It does not let a user edit the policy file, which is signed"
+    ],
+    "algorithm": {
+     "name": "Signed, notarised package with pinned update channel, anti-rollback version check, and heartbeat kill switch",
+     "formula": "apply(update) iff verify(sig, pinned_key) and version > current and channel == pinned; disable_latency <= T_hb + jitter",
+     "steps": [
+      "Build the app, sign it with the developer certificate and submit it for notarisation (check current Apple docs)",
+      "Publish the package and a signed manifest {version, sha256, min_version} to the pinned channel",
+      "The management tool pushes the package and the signed policy file to enrolled devices",
+      "Every 24 h and at start, the daemon fetches the manifest, verifies the signature and hash, and refuses any version not higher than the current one",
+      "Every 300 s the heartbeat returns the disable flag; if true, stop the daemon and show a notice to the user"
+     ],
+     "params": {
+      "heartbeat": "300 s (design, tune to 60 s if the owner wants faster disable)",
+      "update_check": "24 h (design)",
+      "self_pause_after": "24 h without heartbeat (design)",
+      "channels": "stable and pilot; devices pinned by policy"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T_hb: heartbeat period in seconds",
+      "j: random start offset per device, 0 to T_hb",
+      "F: devices"
+     ],
+     "formula_full": "max disable delay = T_hb for online devices; heartbeat load = F / T_hb requests per second; offline devices stop at the self-pause limit",
+     "derivation": "Each online device polls once per period, so a flag set just after a poll is seen within one full period. Jitter spreads the polls evenly, so load is the average rate, not a spike.",
+     "worked_example": "F = 3,000 laptops, T_hb = 300 s: load = 3,000 / 300 = 10 requests per second. Worst-case disable time for an online laptop = 300 s. A laptop offline over a weekend (60 h) pauses itself after 24 h, so at most 24 h of capture continues unseen. (design)",
+     "complexity": "O(1) per device per heartbeat; O(F) rollout, bounded by the management tool's wave size.",
+     "failure_modes": [
+      "Server outage looks like a missed heartbeat on all devices: after 24 h every device self-pauses, which is safe but loses capture; alert at 1 h to fix before then (design)",
+      "A bad release is signed and pushed: the pilot channel and a staged rollout of 5 percent, 25 percent, then 100 percent limit the blast radius"
+     ],
+     "calibration": "Move to a 60 s heartbeat only if the owner needs disable within 2 minutes and the heartbeat endpoint holds under 50 requests per second for the fleet. (design)"
+    },
+    "alternatives": [
+     {
+      "name": "Users install it themselves",
+      "why_rejected": "Uneven coverage, no central disable, and unsigned copies appear."
+     },
+     {
+      "name": "Auto-update from a public release page",
+      "why_rejected": "A hijacked page ships malware to every laptop; a pinned channel with signature check limits that."
+     }
+    ],
+    "security": [
+     "Malicious update pushed through a stolen release account: signing keys are separate from the publishing account and update signatures are checked against a pinned key on the device",
+     "Rollback to an old vulnerable build: the daemon refuses any version not higher than its last accepted version",
+     "Policy file edited to widen the allowlist: the policy is signed and the signature is checked at every start",
+     "Disable flag spoofed over the network: the heartbeat runs over TLS to a pinned host and the answer is signed"
+    ],
+    "performance": {
+     "slo": "install under 2 minutes on a laptop; update applied within 24 h of release for 95 percent of online devices (design)",
+     "complexity": "O(1) per device",
+     "scaling": "At 10x devices (30,000) heartbeats reach 100 per second; serve the answer from a cached file behind a CDN so it costs nothing per device."
+    },
+    "edge_cases": [
+     "Device off for months: on next start it updates before it captures anything",
+     "Two policy versions pushed at once: the higher signed version number wins",
+     "Update interrupted by shutdown: the old build is kept until the new one verifies fully",
+     "Laptop moves between management groups: policy changes with the group; the allowlist narrows immediately",
+     "Owner removes a laptop from the group: the next heartbeat returns disable and the app uninstalls itself on the next management sync"
+    ],
+    "tests": [
+     {
+      "name": "bad signature",
+      "given": "update package with one byte changed",
+      "expect": "update refused, old version still running, alert raised"
+     },
+     {
+      "name": "rollback blocked",
+      "given": "offer version 1.4.0 while 1.5.0 is installed",
+      "expect": "refused with reason downgrade"
+     },
+     {
+      "name": "remote disable",
+      "given": "set disable true and wait 300 s",
+      "expect": "all online test devices have stopped capture and show the notice"
+     },
+     {
+      "name": "offline self pause",
+      "given": "block heartbeat for 24 h",
+      "expect": "daemon pauses itself and sends nothing until the heartbeat returns"
+     }
+    ],
+    "cost_levers": [
+     "Staged rollout waves limit support load",
+     "Heartbeat served from a cached file keeps it near free"
+    ],
+    "feedback_events": [
+     "Install failure reasons per device group feed the rollout dashboard"
+    ],
+    "analytics_events": [
+     {
+      "name": "mdm.installed",
+      "fields": [
+       "device_id",
+       "version",
+       "channel",
+       "group"
+      ],
+      "when": "after a successful install or update"
+     },
+     {
+      "name": "mdm.update_refused",
+      "fields": [
+       "device_id",
+       "reason",
+       "offered_version"
+      ],
+      "when": "when signature, channel or downgrade check fails"
+     },
+     {
+      "name": "mdm.disabled",
+      "fields": [
+       "device_id",
+       "source",
+       "latency_s"
+      ],
+      "when": "when the daemon stops because of the disable flag"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Microsoft Recall is off and removed by default on managed devices and is governed by admin policy (x_sec_recall-ms). Claude Desktop lets owners allow only approved extensions and push policy at machine level (x_sa_dxt-allow).",
+    "refs": [
+     "x_sec_recall-ms",
+     "x_sec_apple-notary",
+     "x_sa_dxt-allow",
+     "x_sa_betrvg",
+     "x_cap_claude-code-transcripts"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "cp_mdm",
+   "b": "cp_hook",
+   "l": "managed hook settings",
+   "k": "n",
+   "d": "Hook entries and allowlist roots {tool, path_glob, parser} pushed through managed settings"
+  },
+  {
+   "a": "cp_vault",
+   "b": "cp_hook",
+   "l": "pause state",
+   "k": "s",
+   "d": "capture_allowed flag {paused, signature_ok} checked before each read"
+  },
+  {
+   "a": "cp_daemon",
+   "b": "cp_vault",
+   "l": "token and pause check",
+   "k": "s",
+   "d": "Request for token and capture_allowed answer on every loop step"
+  },
+  {
+   "a": "cp_daemon",
+   "b": "cp_mdm",
+   "l": "version heartbeat",
+   "k": "d",
+   "d": "Heartbeat {device_id, version, paused, spool_bytes, last_ack_at} every 300 s; answer carries the disable flag"
+  },
+  {
+   "a": "cp_daemon",
+   "b": "op_health",
+   "l": "capture gaps",
+   "k": "d",
+   "d": "Gap and heartbeat events {device_id, tool, from, to, reason} for fleet coverage"
+  }
+ ]
+}

@@ -1,0 +1,61 @@
+{
+ "ix_ptr": {
+  "milestone": "M0",
+  "effort_days": 2,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "one row per pointer, plain SQL"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3",
+    "why": "async and pipeline mode"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "brain/index/pointer.py : upsert and read",
+   "migrations/001_pointer.sql : the table"
+  ],
+  "schema": "CREATE TABLE pointer (\n  doc_id text PRIMARY KEY,\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  version text NOT NULL,\n  content_hash text NOT NULL,\n  acl_version bigint NOT NULL DEFAULT 0,\n  deleted_at timestamptz\n);",
+  "interface": "def upsert_pointer(p: Pointer) -> bool  # True if applied, False if a newer version already won",
+  "code": "def upsert_pointer(conn, p):\n    cur = conn.execute(\n        '''INSERT INTO pointer(doc_id,tenant_id,uri,version,content_hash,acl_version)\n           VALUES (%s,%s,%s,%s,%s,%s)\n           ON CONFLICT (doc_id) DO UPDATE SET version=EXCLUDED.version,\n             content_hash=EXCLUDED.content_hash, acl_version=EXCLUDED.acl_version\n           WHERE pointer.version < EXCLUDED.version''',\n        (p.doc_id,p.tenant_id,p.uri,p.version,p.content_hash,p.acl_version))\n    return cur.rowcount == 1",
+  "steps": [
+   {
+    "do": "Create the table",
+    "done_when": "\\d pointer lists 7 columns"
+   },
+   {
+    "do": "Write upsert_pointer",
+    "done_when": "unit test inserts one row"
+   },
+   {
+    "do": "Send an older version",
+    "done_when": "upsert returns False and row unchanged"
+   },
+   {
+    "do": "Send a newer version",
+    "done_when": "upsert returns True and version bumps"
+   }
+  ],
+  "config": {
+   "POINTER_DB_URL": "postgres://... // one DB per tenant group",
+   "POOL_SIZE": "10 // start small",
+   "STMT_TIMEOUT_MS": "2000 // fail fast"
+  },
+  "verify": [
+   "pytest tests/test_pointer.py -q  # 4 passed",
+   "psql -c 'select count(*) from pointer'  # matches test fixtures"
+  ],
+  "pitfalls": [
+   "String versions compare badly (\"10\" < \"9\"): store a numeric or fixed-width version",
+   "Never store content here: only the hash"
+  ]
+ }
+}

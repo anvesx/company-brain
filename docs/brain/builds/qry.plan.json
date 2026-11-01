@@ -1,0 +1,457 @@
+{
+ "qr_id": {
+  "milestone": "M0",
+  "effort_days": 4,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "token check",
+    "pick": "PyJWT 2.x with JWKS fetch from the OIDC provider",
+    "why": "Verify signature, expiry and audience; check current docs for the JWKS cache API"
+   },
+   {
+    "part": "OIDC provider",
+    "pick": "Keycloak or Ory (any OIDC provider)",
+    "why": "Standalone pick; the brain only needs issuer and JWKS"
+   },
+   {
+    "part": "resource binding",
+    "pick": "RFC 8707 resource indicator as the audience",
+    "why": "Research notes the MCP authorization spec requires it"
+   },
+   {
+    "part": "do not pick",
+    "pick": "trusting a user id sent in a header or body",
+    "why": "Anyone can forge it; identity comes from a verified token only"
+   }
+  ],
+  "install": [
+   "pip install pyjwt[crypto] httpx",
+   "docker run -d -p 8081:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=dev quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/query/principal.py : token validation and context building",
+   "brain/query/context.py : RequestContext dataclass",
+   "tests/test_principal.py : wrong audience, no mapping, agent intersection"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"RequestContext\",\n  \"type\": \"object\",\n  \"required\": [\"tenant_id\", \"user_id\", \"principals\", \"scope\", \"principal_set_id\"],\n  \"properties\": {\n    \"tenant_id\": {\"type\": \"string\"},\n    \"user_id\": {\"type\": \"string\"},\n    \"agent_id\": {\"type\": [\"string\", \"null\"]},\n    \"principals\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"scope\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"acl_version\": {\"type\": \"integer\"},\n    \"principal_set_id\": {\"type\": \"string\"}\n  }\n}",
+  "interface": "def resolve_context(token: str, agent_id: str | None = None, participants: list[str] | None = None) -> RequestContext  # raises Unauthorized, never returns a partial context",
+  "code": "import hashlib, jwt\n\ndef resolve_context(db, jwks, cfg, token, agent_id=None, participants=None):\n    try:\n        claims = jwt.decode(token, jwks.key_for(token), algorithms=[\"RS256\"],\n                            audience=cfg.resource_id, issuer=cfg.issuer)   # audience must be the brain\n    except jwt.PyJWTError as e:\n        raise Unauthorized(str(e))\n    scopes = set(claims.get(\"scope\", \"\").split())\n    pid = map_subject(db, claims[\"iss\"], claims[\"sub\"])      # via ac_id, verified mappings only\n    if pid is None:\n        raise Unauthorized(\"no verified principal mapping\")\n    snap = load_groups(db, pid)                              # flattened ids and snapshot id\n    principals = {pid, *snap.group_ids}\n    scope = scopes\n    if agent_id:\n        agent = load_agent(db, agent_id)\n        if agent is None or agent.owner != pid:\n            raise Unauthorized(\"agent not owned by caller\")\n        scope = scope & set(agent.scopes) & user_grants(db, pid)\n    for other in participants or []:                         # tricky part: a shared session sees the intersection\n        op = map_subject_id(db, other)\n        principals &= {op, *load_groups(db, op).group_ids} | {pid}\n    if len(principals) > 5000:\n        principals = {f\"set:{snap.snapshot_id}\"}\n    acl_v = current_acl_version(db, claims[\"tenant\"])\n    psid = hashlib.sha256((\",\".join(sorted(principals)) + f\"|{acl_v}\").encode()).hexdigest()\n    return RequestContext(claims[\"tenant\"], pid, agent_id, sorted(principals), sorted(scope), acl_v, psid)",
+  "steps": [
+   {
+    "do": "Define RequestContext",
+    "done_when": "pydantic model validates the sample JSON"
+   },
+   {
+    "do": "Validate the token with audience and issuer",
+    "done_when": "wrong-audience token raises Unauthorized in a test"
+   },
+   {
+    "do": "Map the subject through ac_id",
+    "done_when": "unmapped subject raises Unauthorized"
+   },
+   {
+    "do": "Add agent scope intersection",
+    "done_when": "agent with scope a,b and owner scope b,c yields scope b"
+   },
+   {
+    "do": "Hash the principal set with acl_version",
+    "done_when": "same inputs give the same id; a version bump changes it"
+   },
+   {
+    "do": "Add the 300 ms lookup timeout",
+    "done_when": "a slow stub makes the request fail with 401, not hang"
+   }
+  ],
+  "config": {
+   "TOKEN_AUDIENCE": "brain resource id // RFC 8707 audience",
+   "ISSUER": "https://idp.example/realms/co // your OIDC issuer",
+   "IDENTITY_LOOKUP_TIMEOUT_MS": "300 // design budget",
+   "MAX_GROUP_IDS": "5000 // above this pass a group-set handle"
+  },
+  "verify": [
+   "pytest tests/test_principal.py -q  # all passed",
+   "curl -s -H 'Authorization: Bearer bad' localhost:8080/mcp  # HTTP 401"
+  ],
+  "pitfalls": [
+   "Skipping the audience check accepts tokens minted for another service: symptom is a token replay working from an unrelated app",
+   "Treating an unmapped user as anonymous instead of rejecting gives them public-only access silently",
+   "Hashing groups without acl_version leaves the cache valid after a permission change"
+  ]
+ },
+ "qr_rw": {
+  "milestone": "M3",
+  "effort_days": 6,
+  "depends_on": [
+   "qr_id"
+  ],
+  "stack": [
+   {
+    "part": "model gateway",
+    "pick": "LiteLLM proxy (any LLM gateway)",
+    "why": "One place for model choice, cost caps and logs; check current docs for the config format"
+   },
+   {
+    "part": "small model",
+    "pick": "A small, fast tier model from your provider via the gateway",
+    "why": "Planning needs no heavy reasoning; the question is short"
+   },
+   {
+    "part": "validation",
+    "pick": "pydantic with extra='forbid' (current major)",
+    "why": "Reject extra fields and over-long plans; the model output is untrusted"
+   },
+   {
+    "part": "do not pick",
+    "pick": "giving the planner any retrieved text or user data",
+    "why": "It sees only the question; that keeps injection out of the planning step"
+   }
+  ],
+  "install": [
+   "pip install pydantic httpx",
+   "pip install 'litellm[proxy]'"
+  ],
+  "layout": [
+   "brain/query/plan.py : call, validate, resolve entities",
+   "brain/query/schema.py : Plan model",
+   "config/litellm.yaml : the planner route",
+   "tests/test_plan.py : extra field, five subs, timeout fallback"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"QueryPlan\",\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"rewritten\", \"subs\", \"entities\", \"freshness_hint\"],\n  \"properties\": {\n    \"rewritten\": {\"type\": \"string\", \"maxLength\": 500},\n    \"subs\": {\"type\": \"array\", \"maxItems\": 4, \"items\": {\"type\": \"string\", \"maxLength\": 300}},\n    \"entities\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"freshness_hint\": {\"enum\": [\"none\", \"hours\", \"minutes\", \"live\"]}\n  }\n}",
+  "interface": "async def plan_query(question: str, prefs: dict) -> QueryPlan  # on any failure returns the single-sub plan with the original question",
+  "code": "import re, asyncio\nfrom pydantic import BaseModel, ConfigDict, Field, ValidationError\n\nclass QueryPlan(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n    rewritten: str = Field(max_length=500)\n    subs: list[str] = Field(max_length=4)\n    entities: list[str] = []\n    freshness_hint: str = \"none\"\n\ndef clean(q, limit=2000):\n    return re.sub(r\"[\\x00-\\x1f\\x7f]\", \" \", q)[:limit]\n\nasync def plan_query(gateway, ents, question, prefs):\n    q = clean(question)\n    fallback = QueryPlan(rewritten=q, subs=[q], entities=[], freshness_hint=\"none\")\n    try:\n        raw = await asyncio.wait_for(\n            gateway.json_call(model=\"planner\", schema=QueryPlan.model_json_schema(),\n                              system=\"Rewrite and split the question. Output JSON only.\",\n                              user={\"question\": q, \"preferences\": prefs}),   # no data, only the question\n            timeout=0.8)\n        plan = QueryPlan.model_validate(raw)         # tricky part: model output is untrusted, validate hard\n    except (asyncio.TimeoutError, ValidationError, Exception):\n        return fallback                              # planning is an optimisation, never a blocker\n    plan.entities = [e for e in (await ents.resolve(x) for x in plan.entities) if e]\n    return plan",
+  "steps": [
+   {
+    "do": "Define the QueryPlan model",
+    "done_when": "model rejects a sample with an extra key"
+   },
+   {
+    "do": "Add the gateway route for the planner",
+    "done_when": "curl to the gateway returns JSON for a test question"
+   },
+   {
+    "do": "Write plan_query with the 800 ms timeout",
+    "done_when": "a stub that sleeps 2 s returns the fallback plan"
+   },
+   {
+    "do": "Cap sub-questions at four",
+    "done_when": "a stub returning five subs yields the fallback"
+   },
+   {
+    "do": "Resolve entities through the index entity lookup",
+    "done_when": "entity strings map to ids in a fixture"
+   },
+   {
+    "do": "Log the plan to the trace",
+    "done_when": "trace has one plan span per query"
+   }
+  ],
+  "config": {
+   "MAX_SUBS": "4 // raise only if the golden set shows gain",
+   "PLANNER_TIMEOUT_MS": "800 // then fall back",
+   "MAX_QUESTION_CHARS": "2000 // truncate before the call",
+   "PLANNER_MODEL": "small-tier alias // set in the gateway, not in code"
+  },
+  "verify": [
+   "pytest tests/test_plan.py -q  # all passed",
+   "curl -s localhost:4000/health  # gateway healthy"
+  ],
+  "pitfalls": [
+   "Letting the planner see retrieved text opens prompt injection: symptom is plans that echo document instructions",
+   "No fallback makes search fail when the model is slow",
+   "Entity ids from an unvalidated model string can point at another tenant: resolve inside the tenant only"
+  ]
+ },
+ "qr_route": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "qr_rw",
+   "qr_id"
+  ],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12, plain functions",
+    "why": "A weighted score and four hard rules; a framework adds nothing"
+   },
+   {
+    "part": "capability data",
+    "pick": "Per-app capability descriptor rows (search support, rate budget)",
+    "why": "Hard rules need facts, not guesses; descriptor is owned by the connector layer"
+   },
+   {
+    "part": "rate state",
+    "pick": "Redis counters per app and window",
+    "why": "Budget spent is read at route time; check current docs for Redis atomics"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an LLM to choose the route",
+    "why": "Routing runs on every sub-question and must be explainable and cheap"
+   }
+  ],
+  "install": [
+   "pip install redis pydantic",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/query/route.py : rules, scores, tie rule",
+   "brain/query/capability.py : descriptor reader",
+   "tests/test_route.py : live-only app, low budget, tie goes to both"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"RouteDecision\",\n  \"type\": \"object\",\n  \"required\": [\"sub\", \"path\", \"reason\", \"scores\"],\n  \"properties\": {\n    \"sub\": {\"type\": \"string\"},\n    \"path\": {\"enum\": [\"index\", \"live\", \"both\"]},\n    \"reason\": {\"type\": \"string\"},\n    \"scores\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"number\"}}\n  }\n}",
+  "interface": "def route(sub: str, plan: QueryPlan, apps: list[AppState]) -> RouteDecision  # path is index, live or both",
+  "code": "W = dict(F=0.4, C=0.3, L=0.2, B=0.1)\nTIE = 0.05\n\ndef route(sub, plan, apps):\n    live_ok = [a for a in apps if a.has_search and a.budget_left_frac > 0.20]   # keep 20% for sync\n    live_only = any(a.live_only for a in apps)                                  # terms-of-service rule\n    if live_only and live_ok:\n        return RouteDecision(sub, \"live\", \"live-only app\", {})\n    if not live_ok:\n        return RouteDecision(sub, \"index\", \"no live-capable app within budget\", {})\n    scores = {}\n    for p in (\"index\", \"live\"):\n        F = freshness_fit(p, plan.freshness_hint)        # each 0..1\n        C = coverage(p, plan.entities, apps)\n        L = latency_norm(p, apps)\n        Bu = budget_spent_norm(p, apps)\n        scores[p] = W[\"F\"] * F + W[\"C\"] * C - W[\"L\"] * L - W[\"B\"] * Bu\n    ranked = sorted(scores, key=scores.get, reverse=True)\n    if abs(scores[ranked[0]] - scores[ranked[1]]) < TIE:   # tricky part: near tie fuses both paths\n        return RouteDecision(sub, \"both\", \"scores within 0.05\", scores)\n    return RouteDecision(sub, ranked[0], f\"{ranked[0]} scored {scores[ranked[0]]:.2f}\", scores)",
+  "steps": [
+   {
+    "do": "Define the descriptor reader",
+    "done_when": "fixture app returns has_search and budget_left_frac"
+   },
+   {
+    "do": "Write the hard rules",
+    "done_when": "a live-only app routes live regardless of scores"
+   },
+   {
+    "do": "Write the four score functions each in 0..1",
+    "done_when": "property test keeps outputs inside 0 and 1"
+   },
+   {
+    "do": "Add the utility and tie rule",
+    "done_when": "scores 0.41 and 0.39 return path both"
+   },
+   {
+    "do": "Enforce the 1.5 s live deadline in the caller",
+    "done_when": "a stub live path that takes 3 s is cut at 1.5 s"
+   },
+   {
+    "do": "Write the reason string to the trace",
+    "done_when": "trace shows path and reason for each sub-question"
+   }
+  ],
+  "config": {
+   "WEIGHTS": "0.4,0.3,0.2,0.1 // freshness, coverage, latency, budget; tune on the golden set",
+   "TIE_MARGIN": "0.05 // below this route both",
+   "LIVE_DEADLINE_MS": "1500 // hard cut for the live path",
+   "BUDGET_RESERVE": "0.20 // fraction of each long-window quota kept for sync"
+  },
+  "verify": [
+   "pytest tests/test_route.py -q  # all passed",
+   "python -m brain.query.route --explain 'what changed in the Q3 deck today'  # prints path and reason"
+  ],
+  "pitfalls": [
+   "Letting live calls spend the whole quota stalls sync: symptom is freshness lag rising after heavy queries, so keep the 20% reserve",
+   "Un-normalised latency swamps the weights: symptom is index chosen for everything",
+   "Routing on a stale capability row sends searches to an app that dropped search"
+  ]
+ },
+ "qr_cache": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "qr_id",
+   "ac_store"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Redis 7",
+    "why": "TTL keys and sets for the reverse map; fast enough for the hot path"
+   },
+   {
+    "part": "key",
+    "pick": "SHA-256 over normalised query, principal_set_id, acl_version, filters hash",
+    "why": "A permission change makes old entries unreachable without a scan"
+   },
+   {
+    "part": "events",
+    "pick": "The change and erase events from the freshness layer",
+    "why": "Reverse map deletes keys when a document changes"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a cache keyed by query text only",
+    "why": "It serves one user's results to another: the worst possible leak"
+   }
+  ],
+  "install": [
+   "pip install redis",
+   "docker run -d -p 6379:6379 redis:7"
+  ],
+  "layout": [
+   "brain/query/cache.py : key, get, put, invalidate",
+   "brain/query/events.py : subscribe to change and erase events",
+   "tests/test_cache.py : key isolation, reverse map, TTL"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"CacheEntry\",\n  \"type\": \"object\",\n  \"required\": [\"pointers\", \"stored_at\"],\n  \"properties\": {\n    \"pointers\": {\"type\": \"array\", \"maxItems\": 10, \"items\": {\"type\": \"object\", \"required\": [\"doc_id\", \"chunk_id\"]}},\n    \"stored_at\": {\"type\": \"string\", \"format\": \"date-time\"}\n  }\n}",
+  "interface": "def cache_get(ctx: RequestContext, query: str, filters: dict) -> list[Pointer] | None  # None on miss; cache_put and invalidate_doc(tenant_id, doc_id) are the other two calls",
+  "code": "import hashlib, json, unicodedata\n\ndef norm(q):\n    return \" \".join(unicodedata.normalize(\"NFKC\", q).lower().split())\n\ndef key(ctx, query, filters):\n    f = json.dumps(filters, sort_keys=True)\n    raw = \"|\".join([norm(query), ctx.principal_set_id, str(ctx.acl_version), f])\n    return f\"qc:{ctx.tenant_id}:{ctx.principal_set_id[:12]}:\" + hashlib.sha256(raw.encode()).hexdigest()\n\ndef cache_get(r, ctx, query, filters):\n    v = r.get(key(ctx, query, filters))\n    return json.loads(v) if v else None\n\ndef cache_put(r, ctx, query, filters, pointers, ttl=300):\n    blob = json.dumps(pointers[:10])\n    if len(blob) > 2048:\n        return                                         # oversize entry: skip, never truncate silently\n    k = key(ctx, query, filters)\n    pipe = r.pipeline()\n    pipe.set(k, blob, ex=ttl)\n    for p in pointers[:10]:                            # reverse map: doc id to the keys that hold it\n        rk = f\"qcr:{ctx.tenant_id}:{p['doc_id']}\"\n        pipe.sadd(rk, k)\n        pipe.expire(rk, ttl * 2)\n    pipe.execute()\n\ndef invalidate_doc(r, tenant, doc_id):\n    rk = f\"qcr:{tenant}:{doc_id}\"\n    keys = r.smembers(rk)\n    if keys:\n        r.delete(*keys)                                # tricky part: delete every holder of this document\n    r.delete(rk)",
+  "steps": [
+   {
+    "do": "Write norm and key",
+    "done_when": "same query with extra spaces and capitals gives one key"
+   },
+   {
+    "do": "Write cache_get and cache_put with a 300 s TTL",
+    "done_when": "a put then get returns the pointers, then misses after 300 s"
+   },
+   {
+    "do": "Include principal_set_id and acl_version in the key",
+    "done_when": "two users with the same query get different keys"
+   },
+   {
+    "do": "Build the reverse map",
+    "done_when": "a put with 3 documents adds 3 reverse sets"
+   },
+   {
+    "do": "Subscribe to change and erase events",
+    "done_when": "after a change event for doc d1 every key holding d1 is gone"
+   },
+   {
+    "do": "Drop cached results on a revocation signal",
+    "done_when": "entries for that principal vanish within 5 s of the signal"
+   }
+  ],
+  "config": {
+   "CACHE_TTL_S": "300 // tune to the freshness target",
+   "MAX_ENTRY_POINTERS": "10 // under 2 KB per entry",
+   "KEY_PARTITION": "tenant then principal set prefix // enables per-user purge",
+   "REVERSE_MAP_TTL_S": "600 // twice the entry TTL"
+  },
+  "verify": [
+   "pytest tests/test_cache.py -q  # all passed",
+   "redis-cli keys 'qc:t1:*' | wc -l  # 0 after invalidate_doc for every doc in the entries"
+  ],
+  "pitfalls": [
+   "Key without principal_set_id serves cached results across users: symptom is user B seeing user A's titles",
+   "Forgetting the reverse map leaves deleted documents in cached answers until the TTL",
+   "Caching results before the live recheck stores items the user may have lost; store pointers, recheck on every hit"
+  ]
+ },
+ "qr_scope": {
+  "milestone": "M3",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_cat",
+   "ac_filter",
+   "qr_rw"
+  ],
+  "stack": [
+   {
+    "part": "catalog",
+    "pick": "ix_cat bitmaps",
+    "why": "The only source of candidate ids"
+   },
+   {
+    "part": "do not pick",
+    "pick": "post-filtering after ranking",
+    "why": "It leaks counts and loses recall"
+   }
+  ],
+  "install": [
+   "pip install pyroaring",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/query/scope.py : build scope and widen",
+   "tests/test_scope.py"
+  ],
+  "schema": "{\"ids\":\"list[int]\",\"size\":\"int\",\"terms_used\":\"list[str]\",\"widened\":\"bool\",\"capped\":\"bool\"}",
+  "interface": "def build_scope(ctx: RequestContext, plan: Plan) -> Scope  # ids are already ANDed with ctx permission bitmap",
+  "code": "WIDEN_ORDER = [\"period\", \"type\", \"entity\"]\n\ndef build_scope(ctx, plan, cat, acl, cap=5000):\n    terms = list(plan.terms)\n    widened = False\n    for _ in range(3):\n        ids = cat.ids_for(ctx.tenant, terms) & acl.visible(ctx)   # permission AND happens first\n        if len(ids) > 0:\n            break\n        drop = next((t for k in WIDEN_ORDER for t in terms if t.kind == k), None)\n        if drop is None:\n            return Scope.unscoped()\n        terms.remove(drop); widened = True\n    capped = len(ids) > cap\n    return Scope(sorted(ids)[:cap] if capped else sorted(ids), len(ids), [t.value for t in terms], widened, capped)",
+  "steps": [
+   {
+    "do": "Write build_scope with the AND order",
+    "done_when": "size is of the permitted set only"
+   },
+   {
+    "do": "Add widening",
+    "done_when": "empty first set widens once and says so"
+   },
+   {
+    "do": "Add the cap",
+    "done_when": "set of 9,000 returns 5,000 with capped true"
+   },
+   {
+    "do": "Pass ids as allow-list to qr_hyb",
+    "done_when": "hybrid search touches only those ids"
+   }
+  ],
+  "config": {
+   "SCOPE_CAP": "5000 // above this ranked search is cheaper",
+   "MAX_WIDEN": "2 // rounds of dropping the least specific term",
+   "UNSCOPED_ON_CATALOG_MS": "200 // catalog slower than this means unscoped"
+  },
+  "verify": [
+   "pytest tests/test_scope.py -q  # all passed",
+   "python -m brain.query.scope --demo 'Q3 postmortems Atlas'  # prints size under 500"
+  ],
+  "pitfalls": [
+   "Computing the size before the permission AND leaks counts",
+   "Widening on permission-empty sets hides the real cause"
+  ]
+ },
+ "qr_rev": {
+  "milestone": "M4",
+  "effort_days": 5,
+  "depends_on": [
+   "qr_route",
+   "qr_hyd",
+   "op_trace"
+  ],
+  "stack": [
+   {
+    "part": "model",
+    "pick": "small model through the gateway with JSON schema output",
+    "why": "Closed enum output keeps the loop bounded"
+   },
+   {
+    "part": "do not pick",
+    "pick": "free-form 'what next' prompts",
+    "why": "Free text can invent actions"
+   }
+  ],
+  "install": [
+   "pip install pydantic",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/query/revise.py : diagnosis and repair",
+   "tests/test_revise.py"
+  ],
+  "schema": "{\"diagnosis\":\"empty|off_topic|wrong_source|stale|too_broad|conflict\",\"action\":\"widen_scope|switch_source|rewrite_terms|split_question|stop\",\"new_terms\":[\"str\"]}",
+  "interface": "def revise(state: PlanState, step_result: StepResult) -> Revision | Stop  # at most 3 per sub-question",
+  "code": "def revise(gw, state, res):\n    if state.revisions >= 3 or state.tokens_left < 800:\n        return Stop(state.open_sub_questions())\n    if res.top_score >= 0.8:\n        return Continue()\n    out = gw.json(model=SMALL, schema=Revision, prompt=render(res))      # result shown as quoted data\n    key = (out.action, res.step_id)\n    if key in state.tried:\n        return Stop(state.open_sub_questions())\n    state.tried.add(key); state.revisions += 1\n    return out",
+  "steps": [
+   {
+    "do": "Define the two enums and schema",
+    "done_when": "invalid action fails validation"
+   },
+   {
+    "do": "Add the cap and token check",
+    "done_when": "3 revisions then Stop"
+   },
+   {
+    "do": "Add the repeat check",
+    "done_when": "same action twice stops"
+   },
+   {
+    "do": "Log each revision to op_trace",
+    "done_when": "trace row has diagnosis"
+   }
+  ],
+  "config": {
+   "MAX_REVISIONS": "3",
+   "SKIP_ABOVE_SCORE": "0.8",
+   "TIMEOUT_MS": "3000"
+  },
+  "verify": [
+   "pytest tests/test_revise.py -q  # all passed",
+   "python -m brain.query.revise --demo empty  # prints diagnosis empty and action switch_source"
+  ],
+  "pitfalls": [
+   "Letting the model name a new action type breaks the bound",
+   "Revising on a good result wastes the call"
+  ]
+ }
+}

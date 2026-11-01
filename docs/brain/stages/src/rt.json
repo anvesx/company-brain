@@ -1,0 +1,1134 @@
+{
+ "group": {
+  "line": "A declarative manifest runtime, a capability probe that picks the cheapest freshness path, a hierarchical token bucket, an MCP client and a hashing normaliser carry every app into one shape.",
+  "dumb": "Each company app is connected by a short form, and a probe learns what that app can do. A budget keeps us inside each app's limits. Apps that already speak the shared AI tool language are called live. Whatever we read is rewritten into a small card with a fixed address and a fingerprint, and the apps stay the owners of the real content."
+ },
+ "comps": {
+  "so_sdk": {
+   "line": "Declarative connector manifest plus a sandboxed code hook (low-code, as in Airbyte)\nrequests = ceil(changed / page_size) + 1",
+   "dumb": "A new app joins by filling in a form, not by writing a program. The form says how to sign in, which lists to read, how paging works and where the 'changed since' marker lives. Only odd apps need a small piece of code, and that code runs in a locked box.",
+   "inn": "Manifest {app, version, auth{type, authorize_url, token_url, scopes[]}, streams[{name, path, paginator, cursor_field, record_selector, acl_mapping}], hooks{}}; token from so_oauth or so_svc; budget grants from so_rate.",
+   "out": "Raw app records with their cursor position {stream, records[], next_cursor, acl_raw} sent to so_apps calls and then to so_norm; a descriptor request to so_cap.",
+   "store": "Reads manifests from the connector registry (versioned, signed). Writes nothing of its own; cursors go to ch_cursor, records go to so_norm in memory only.",
+   "fail": "Manifest fails schema validation: the connector refuses to load, 0 calls made, the author sees the failing path. Call returns 5xx: 3 attempts at 1 s, 4 s and 16 s, then the page is parked in the dead-letter queue (ch_dlq) with its cursor. A hook crashes or runs over 30 s: it is killed, the page is parked, and the stream continues.",
+   "hard": "Which share of the top 50 apps can be pure manifest, with no code hook, is untested.",
+   "prop": "Proposal: one thin contract per app (auth, streams, paging, cursor, access-list mapping) so adding an app is a mapping file plus auth, as the connector sources describe.",
+   "deep": {
+    "purpose": "Define every connector as data the runtime interprets, with a small sandboxed hook for the cases data cannot express.",
+    "expected": [
+     "A valid manifest runs a full list and read with no custom code",
+     "The cursor returned by one page is exactly the cursor sent on the next call",
+     "A manifest change is versioned and takes effect on the next sync, not mid-page"
+    ],
+    "not_expected": [
+     "It does not choose how often to sync; so_cap and ch_sched do",
+     "It does not store document bodies; text passes through memory to so_norm and the transient path"
+    ],
+    "algorithm": {
+     "name": "Manifest interpreter with a code escape hatch",
+     "formula": "pages = ceil(changed / page_size) + 1 (the +1 confirms the end);  cursor_next = record_selector(response).cursor_field",
+     "steps": [
+      "Validate the manifest against the schema and the host allowlist for the app",
+      "Resolve auth from the vault by (tenant, app) and ask so_rate for a budget grant",
+      "Call the stream path with page_size and cursor, following the paginator type (cursor, offset or link)",
+      "Run the record selector and acl_mapping; call a hook only if the manifest names one, inside the sandbox",
+      "Return records and next_cursor; persist the cursor only after the batch commits downstream"
+     ],
+     "params": {
+      "page_size": "vendor maximum, or 100 (default) when unspecified",
+      "hook_timeout": "30 s (design)",
+      "retries": "3 at 1 s, 4 s, 16 s (design)",
+      "host_allowlist": "only the app's registered API hosts"
+     }
+    },
+    "math": {
+     "definitions": [
+      "changed: records changed since the cursor",
+      "page_size: records per call",
+      "requests: calls for one incremental pass"
+     ],
+     "formula_full": "requests = ceil(changed / page_size) + 1",
+     "derivation": "Each page returns page_size records and the last call returns a short or empty page, so a pass needs the ceiling plus one confirming call.",
+     "worked_example": "changed = 1,250 records, page_size = 100: ceil(1250/100) = 13, plus 1 = 14 calls. A full sync of N = 2,000,000 at the same page size would need 20,001 calls, which is why incremental cursors matter.",
+     "complexity": "O(changed / page_size) calls; O(page_size) memory.",
+     "failure_modes": [
+      "A vendor that ignores page_size returns oversized pages: the paginator caps records per page in memory",
+      "Cursor field absent on some records: the stream falls back to full list and flags it in the descriptor"
+     ],
+     "calibration": "Set page_size to the vendor maximum unless response time exceeds 5 s; then halve it."
+    },
+    "alternatives": [
+     {
+      "name": "Write each connector in code",
+      "why_rejected": "Every app is a snowflake (t_t49) but most differences are data; code per app costs more to review and secure."
+     },
+     {
+      "name": "Only manifests, no hook",
+      "why_rejected": "Some apps need signing or odd paging; without a hook those apps could not join."
+     }
+    ],
+    "security": [
+     "Tool poisoning through a manifest: a manifest with a redirect or extra host could leak tokens. Control: calls are limited to the host allowlist, redirects off the allowlist are refused, and manifests are signed and reviewed",
+     "A hook reading secrets or calling out: control is a sandbox with no network except the app host and no direct vault access, only a scoped token handle",
+     "Injection through record content: fields from the app are treated as data and never evaluated or used to build a URL",
+     "Cross-tenant read: every call carries the tenant's own token, and a connector instance is bound to one tenant"
+    ],
+    "performance": {
+     "slo": "p95 under 1 s overhead per page beyond the vendor's response time (design)",
+     "complexity": "O(changed / page_size)",
+     "scaling": "At 10x apps the cost is manifest review, not compute; the registry caches parsed manifests and runs one worker pool per (tenant, app)."
+    },
+    "edge_cases": [
+     "Empty stream: 1 call, 0 records, cursor unchanged",
+     "Huge page: records capped in memory and the rest streamed",
+     "Duplicate record across pages: passed on, deduped by ch_dedupe",
+     "Concurrent syncs for one stream: per (tenant, app, stream) lock",
+     "Unicode in field names: kept as-is, mapped through the manifest",
+     "A new app joins by writing a manifest; if it ships an MCP server, so_mcp covers live read with no manifest at all"
+    ],
+    "tests": [
+     {
+      "name": "pagination",
+      "given": "1,250 changed, page_size 100",
+      "expect": "14 calls, cursor from page 13 saved only after commit"
+     },
+     {
+      "name": "host allowlist",
+      "given": "vendor redirects to evil.example",
+      "expect": "request refused, 1 alert"
+     },
+     {
+      "name": "bad manifest",
+      "given": "stream missing cursor_field and path",
+      "expect": "load fails naming both paths, 0 calls"
+     },
+     {
+      "name": "hook timeout",
+      "given": "hook runs 31 s",
+      "expect": "hook killed at 30 s, page parked in dead-letter queue"
+     }
+    ],
+    "cost_levers": [
+     "Vendor maximum page size and incremental cursors keep call counts low"
+    ],
+    "feedback_events": [
+     "Connector author marks a failing stream; admin reports missing records"
+    ],
+    "analytics_events": [
+     {
+      "name": "sdk.page",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "stream",
+       "n_records",
+       "ms",
+       "cursor_kind"
+      ],
+      "when": "after each page"
+     },
+     {
+      "name": "sdk.hook",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "hook",
+       "ms",
+       "outcome"
+      ],
+      "when": "after each hook run"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-audit",
+      "key_idea": "Connectors need a least-privilege review before joining.",
+      "how": "Manifest scopes are checked against the catalog before a connector loads."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_airbyte",
+      "name": "Airbyte",
+      "take": "Low-code connector manifests with streams, pagination and incremental cursors."
+     },
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Sync scripts that emit only metadata if configured; relevant to pointer-only sync."
+     },
+     {
+      "ref": "r_dlt",
+      "name": "dlt",
+      "take": "Light connectors that record metadata and cursors."
+     }
+    ],
+    "industry": "Glean connectors fetch, map to a common document and push (t_t47); Microsoft ships prebuilt connectors plus a schema SDK for the long tail (t_t50).",
+    "refs": [
+     "t_t47",
+     "t_t50",
+     "t_t49",
+     "r_airbyte",
+     "r_nango",
+     "r_dlt"
+    ]
+   },
+   "req": "Requirement: 'Read and write every tool the company uses through APIs'"
+  },
+  "so_cap": {
+   "line": "Capability descriptor {webhook, delta, list, search, acl_api, rate}; pick the cheapest path that meets lag\ncost(path) = calls per hour",
+   "dumb": "Every app can tell us different things: some push a ping when something changes, some keep a 'changed since' list, some only let us list everything. We ask each app once and write down what it can do. Then we pick the cheapest way that still keeps the brain fresh enough.",
+   "inn": "Probe results {app, endpoint, status, headers}; freshness target per tenant and app {target_lag_s}; vendor terms flags {store_allowed} from gv_tos.",
+   "out": "Capability descriptor {app, webhook: bool, delta: bool, list: bool, search: bool, acl_api: bool, rate: {limit, window_s}, store_allowed: bool, max_webhook_latency_s}; chosen path {primary, backstop, sweep_interval_s}.",
+   "store": "Reads probe responses and gv_tos flags. Writes one descriptor per (tenant, app) to the connector registry, re-probed weekly.",
+   "fail": "Probe call fails: 3 attempts at 1 s, 4 s and 16 s, then the descriptor keeps its last good values and is marked stale; after 14 days stale, the lag monitor alerts. Contradictory results (say webhook works but never fires in 24 h): the path falls back to polling and the descriptor flags webhook_unreliable.",
+   "hard": "How to detect a vendor that quietly changes its delta behaviour between weekly probes is open.",
+   "prop": "Proposal: freshness methods differ per vendor, and sources report no delta API for Notion, Jira, GitHub, HubSpot, Linear or Figma, so the choice of path must be data, not code.",
+   "deep": {
+    "purpose": "Record what each app can do and choose the cheapest freshness path that still meets the tenant's lag target.",
+    "expected": [
+     "An app with webhook and delta gets webhook as doorbell, delta as the read, and a polling backstop",
+     "An app with no delta gets list polling plus the reconciliation sweep",
+     "An app with store_allowed false gets live query only and no content index path"
+    ],
+    "not_expected": [
+     "It does not run the sync; ch_sched and ch_wf do",
+     "It does not change vendor terms; gv_tos owns them"
+    ],
+    "algorithm": {
+     "name": "Constraint-based path selection over a capability descriptor",
+     "formula": "choose argmin over paths of cost(path) = calls_per_hour(path)  subject to lag(path) <= target_lag",
+     "steps": [
+      "Probe: list, webhook registration, delta cursor start, search and access-list endpoints, and read rate-limit headers",
+      "Build the descriptor and mark unknown fields false until proven",
+      "Enumerate legal paths: webhook+delta, delta poll, list poll; each adds a sweep",
+      "Compute lag(path): webhook path is bounded by the vendor's maximum delivery latency unless a backstop poll is added; poll path is interval plus p99 fetch time",
+      "Pick the cheapest path that meets target_lag, add the backstop and sweep interval, and write the choice"
+     ],
+     "params": {
+      "target_lag": "15 minutes (default, tune per tenant by asking what staleness hurts)",
+      "reprobe": "weekly (design)",
+      "sweep_interval": "7 days (default, from the reconciliation scan in the research)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "target: allowed lag in seconds",
+      "L_webhook: maximum vendor delivery latency",
+      "I: poll interval",
+      "F: p99 fetch time"
+     ],
+     "formula_full": "lag(webhook only) = L_webhook;  lag(poll) = I + F;  require lag <= target",
+     "derivation": "A webhook alone is only as good as its worst delivery, so webhook paths need a backstop poll sized to the target. Polling lag is the interval plus one fetch.",
+     "worked_example": "Graph driveItem notifications have an average under 1 minute but a maximum of 6 hours (t_t01). With target = 900 s, webhook alone gives up to 21,600 s, which fails. A backstop poll with I = 840 s and F = 40 s gives 880 s, which passes. Cost: 3600/840 = 4.3 polls per hour per stream.",
+     "complexity": "O(paths), a handful; run once per probe.",
+     "failure_modes": [
+      "A vendor with no delta (Notion, Jira, GitHub, HubSpot, Linear, Figma in our research) forces list polling, whose cost grows with N: the sweep and poll cover it, and the descriptor sets expected_lag higher",
+      "Webhook subscription expires (Graph driveItem up to 42,300 minutes, t_t01): the descriptor stores expiry so the scheduler renews early"
+     ],
+     "calibration": "Set target per tenant from a question to the admin: how stale may an answer be. Check the real lag from the freshness monitor weekly and tighten or loosen."
+    },
+    "alternatives": [
+     {
+      "name": "Hard-code a path per app",
+      "why_rejected": "Vendors change; a data descriptor can be corrected without a release."
+     },
+     {
+      "name": "Always webhook",
+      "why_rejected": "Messages are lost and delayed (t_t54); a backstop is required."
+     }
+    ],
+    "security": [
+     "Spoofed webhook: a descriptor that says webhook works could be fed by a forged sender. Control: the descriptor records only that the vendor accepted our registration and the receiver verifies each signature elsewhere (ch_hook)",
+     "Descriptor poisoning by a tenant admin: control is that only the probe writes descriptor fields, never a manual edit without audit",
+     "Probe costing the tenant quota: probes use 1 to 3 calls each and go through so_rate",
+     "Terms bypass: store_allowed from gv_tos cannot be overridden by a probe"
+    ],
+    "performance": {
+     "slo": "p95 probe set under 10 s per app (design); runs weekly, off the query path",
+     "complexity": "O(paths) per descriptor",
+     "scaling": "At 10x apps probes are 10x calls per week, still negligible; run them in a fair queue."
+    },
+    "edge_cases": [
+     "App unreachable during probe: stale descriptor kept",
+     "Tenant with a private instance (custom domain): probe uses the tenant's base URL",
+     "Vendor lists webhook support but our plan does not include it: registration fails, descriptor says false",
+     "Concurrent probes for one app: single flight",
+     "Clock skew in expiry fields: renew when 20 percent of lifetime remains",
+     "A new app joins by manifest (so_sdk) or MCP bridge (so_mcp); its first probe fills the descriptor and nothing else needs code"
+    ],
+    "tests": [
+     {
+      "name": "backstop sized",
+      "given": "target 900 s, webhook max latency 21,600 s",
+      "expect": "descriptor adds poll with interval at most 860 s"
+     },
+     {
+      "name": "no delta",
+      "given": "probe finds no delta endpoint",
+      "expect": "path list poll plus sweep, delta false"
+     },
+     {
+      "name": "store flag",
+      "given": "gv_tos says store_allowed false for Slack",
+      "expect": "descriptor path is live only"
+     },
+     {
+      "name": "stale probe",
+      "given": "3 failed probes",
+      "expect": "last good descriptor kept, marked stale"
+     }
+    ],
+    "cost_levers": [
+     "Probe weekly and cache results; poll only when the descriptor demands it"
+    ],
+    "feedback_events": [
+     "Operator marks a path wrong when lag alarms; this retriggers a probe"
+    ],
+    "analytics_events": [
+     {
+      "name": "cap.probed",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "webhook",
+       "delta",
+       "list",
+       "search",
+       "acl_api",
+       "ms"
+      ],
+      "when": "after each probe"
+     },
+     {
+      "name": "cap.path_chosen",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "primary",
+       "backstop",
+       "est_calls_per_hour"
+      ],
+      "when": "after each decision"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_stale-poison",
+      "key_idea": "Stale index entries can be worse than none.",
+      "how": "The backstop and lag target stop silent staleness."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_pipedream",
+      "name": "Pipedream",
+      "take": "Open registry of webhook and polling triggers per app, a model for the descriptor values."
+     },
+     {
+      "ref": "r_cocoindex",
+      "name": "CocoIndex",
+      "take": "Change detection and lineage as core features."
+     }
+    ],
+    "industry": "Microsoft pairs webhooks with delta queries and renewal jobs (t_t01, t_t02); Google treats push as a doorbell and re-reads the changes list (t_t03).",
+    "refs": [
+     "t_t01",
+     "t_t02",
+     "t_t03",
+     "t_t54",
+     "p_stale-poison",
+     "r_pipedream"
+    ]
+   },
+   "req": "Requirement: 'Read and write every tool the company uses through APIs'"
+  },
+  "so_rate": {
+   "line": "Hierarchical token bucket per (tenant, app, endpoint); honours Retry-After; fair queue across tenants\ntokens = min(B, tokens + r * dt)",
+   "dumb": "Every app only lets us make so many requests per hour. We keep a budget for each company and each app and each kind of call, and we hand out a ticket before every request. If the app says 'slow down', we stop that budget until it says we can go again, and one company never uses up another's share.",
+   "inn": "Budget request {tenant_id, app_id, endpoint, cost, priority: live|backfill}; vendor feedback {status: 429, retry_after_s, remaining, reset_at}.",
+   "out": "Grant {tenant_id, app_id, endpoint, tokens, wait_ms} or deny {reason: paused|empty, retry_after_ms}.",
+   "store": "State in memory with a periodic checkpoint every 10 s to a shared store, keyed (tenant, app, endpoint). Reads quota settings from the capability descriptor. Writes no document data.",
+   "fail": "Shared store unreachable: each worker keeps its last known bucket and refills at 50 percent of the nominal rate for up to 60 s, then pauses and pages the on-call. A 429 without Retry-After: backoff 1 s, 2 s, 4 s up to 60 s with full jitter. Clock jump: refill uses monotonic time only.",
+   "hard": "Fair weighting for tenants of different size, and how to split a quota the vendor shares across several of our connections, is open.",
+   "prop": "Proposal: each vendor sets its own limits (hourly points, per-second bursts, tight per-minute caps), so quota must be modelled per tenant, app and endpoint with a reserved share for live traffic.",
+   "deep": {
+    "purpose": "Keep every call inside the vendor's quota, protect live traffic from backfill, and stop one tenant from starving another.",
+    "expected": [
+     "A tenant's backfill never takes more than its configured share of the hourly quota",
+     "After a 429 with Retry-After, no call to that bucket is made before the stated time",
+     "Two tenants with full queues each get service in proportion to their weights"
+    ],
+    "not_expected": [
+     "It does not decide what to fetch; callers do",
+     "It does not retry calls; it only grants or delays them"
+    ],
+    "algorithm": {
+     "name": "Hierarchical token bucket with deficit round robin",
+     "formula": "tokens(t) = min(B, tokens(t0) + r * (t - t0));  grant iff child.tokens >= cost AND parent.tokens >= cost",
+     "steps": [
+      "Refill each bucket by r times elapsed time, capped at burst B, using a monotonic clock",
+      "On a request, check the endpoint bucket then the (tenant, app) parent bucket; both must hold the cost",
+      "Live requests may use up to 100 percent; backfill may use at most its share (default 50 percent) of the parent",
+      "If empty, queue the request; tenants are served by deficit round robin so each gets quantum proportional to its weight",
+      "On a 429, set the bucket paused until now + Retry-After and drop its tokens to 0"
+     ],
+     "params": {
+      "backfill_share": "50 percent (estimate from t_t06, tune per tenant)",
+      "burst_B": "vendor's per-second burst cap, for example 100 requests per second for Jira GET (t_t06)",
+      "checkpoint": "every 10 s (design)",
+      "drr_quantum": "1 request-cost unit per weight point (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "r: refill rate in tokens per second",
+      "B: burst capacity",
+      "cost: tokens for one call (some vendors price calls in points)",
+      "Q: hourly quota",
+      "s: backfill share"
+     ],
+     "formula_full": "r = Q / 3600;  backfill_rate = s * r;  live_reserved = (1 - s) * r",
+     "derivation": "A bucket that refills at the quota rate never lets average use exceed the quota, and the burst cap B limits short spikes to what the vendor allows.",
+     "worked_example": "Jira standard tenant: quota = 100,000 + 10 * users points per hour, capped at 500,000 (t_t06). For 200 users: Q = 102,000, r = 28.3 points/s. Backfill share 50 percent: 51,000 points/hour. Identity reads cost 2 points per object (t_t06), so backfill can fetch 25,500 identity objects per hour. Slack non-marketplace: conversations.history is 1 request/min with 15 objects per page (t_t07), which is why Slack is live only. Notion: about 3 requests/s per connection (t_t08).",
+     "complexity": "O(1) per grant; DRR adds O(number of active tenants) per scheduling round.",
+     "failure_modes": [
+      "Quota overrun blocks until the next UTC hour for Jira (t_t06): the budgeter keeps a reserve to avoid it",
+      "Hours-long windows (t_t09): reserve a slice for freshness traffic so live sync survives a drained quota"
+     ],
+     "calibration": "Start backfill share at 50 percent, then raise it only when the freshness monitor shows live lag below half its target for 7 days."
+    },
+    "alternatives": [
+     {
+      "name": "One global limiter",
+      "why_rejected": "A noisy tenant or app would block the rest; limits differ per app and endpoint (t_t48)."
+     },
+     {
+      "name": "Retry on 429 without a budget",
+      "why_rejected": "Retries add load exactly when the vendor is saying stop."
+     }
+    ],
+    "security": [
+     "Noisy neighbour: one tenant floods a shared limiter. Control: per-tenant buckets and deficit round robin so each tenant gets only its weighted share",
+     "Quota exhaustion as a denial of service on live traffic by our own backfill. Control: a reserved live share (default 50 percent)",
+     "Forged vendor feedback (a spoofed Retry-After from a bad proxy): control is that feedback is read only from the TLS response of the vendor host",
+     "Budget request flood from a buggy connector: per-caller cap on queued requests, 1,000 by default (design), then reject"
+    ],
+    "performance": {
+     "slo": "p95 grant under 2 ms in process (design)",
+     "complexity": "O(1) per grant",
+     "scaling": "At 10x tenants the shared checkpoint store becomes the limit; shard the buckets by tenant hash and keep the hot state in process."
+    },
+    "edge_cases": [
+     "Empty quota: request queued, not dropped, up to 10 minutes then returned as deny",
+     "Huge cost (a single call costing more than B): rejected with a clear error",
+     "Same request granted twice by two workers after failover: the vendor 429 and the bucket pause correct it within one window",
+     "Concurrent grants on one bucket: atomic decrement",
+     "Clock skew: monotonic clock only; wall time used for Retry-After conversions",
+     "MCP calls from so_mcp share the same bucket as native calls, so a new app joining by manifest or MCP gets the same protection"
+    ],
+    "tests": [
+     {
+      "name": "retry-after",
+      "given": "429 with Retry-After 30",
+      "expect": "no grant for that bucket for 30 s"
+     },
+     {
+      "name": "backfill share",
+      "given": "parent quota 102,000/h, share 50 percent",
+      "expect": "backfill capped at 51,000 points per hour"
+     },
+     {
+      "name": "fair queue",
+      "given": "tenants A and B weight 1 each, both backlogged",
+      "expect": "grants alternate 1:1"
+     },
+     {
+      "name": "burst cap",
+      "given": "B = 100, 300 requests arrive at once",
+      "expect": "100 granted at once, rest paced at r"
+     }
+    ],
+    "cost_levers": [
+     "Larger backfill share finishes onboarding sooner but costs live freshness; tune per tenant"
+    ],
+    "feedback_events": [
+     "Operator overrides a share after a freshness alarm; vendor 429 counts feed tuning"
+    ],
+    "analytics_events": [
+     {
+      "name": "rate.grant",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "endpoint",
+       "priority",
+       "wait_ms"
+      ],
+      "when": "after each grant"
+     },
+     {
+      "name": "rate.paused",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "endpoint",
+       "retry_after_s"
+      ],
+      "when": "when a 429 pauses a bucket"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_seven-failures",
+      "key_idea": "Use the failure points as a test checklist.",
+      "how": "Quota exhaustion maps to its failure points around missing content and incomplete answers."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_temporal",
+      "name": "Temporal",
+      "take": "Durable retries and long waits for jobs that sleep until a quota window reopens."
+     }
+    ],
+    "industry": "Dash and Glean run per-connector queues because limits differ (t_t48); Atlassian, Notion and Slack publish the limits we model (t_t06, t_t08, t_t07).",
+    "refs": [
+     "t_t06",
+     "t_t07",
+     "t_t08",
+     "t_t09",
+     "t_t48",
+     "r_temporal"
+    ]
+   },
+   "req": "Requirement: 'Read and write every tool the company uses through APIs'"
+  },
+  "so_mcp": {
+   "line": "MCP client with audience-bound tokens, pinned tool list, read tools only\nP(some source times out) = 1 - (1 - p)^n",
+   "dumb": "Some apps already offer their own search and read tools that any AI helper can call. The MCP bridge calls those tools for the asking person, using that person's own key. It lets us add such an app without building a custom connector.",
+   "inn": "Tool call {tenant_id, user_id, app_id, tool, arguments, deadline_ms}; per-user token from so_obo; budget grant from so_rate.",
+   "out": "Tool result {app_id, tool, items[{native_id, title, snippet, url, modified_at}], truncated, ms} or an error {code: timeout|denied|upstream_down}. Items go to so_norm.",
+   "store": "Reads the pinned tool list per (app, server version) from the registry. Writes nothing; results stay in memory for the request. Writes an audit row per call to pl_idp.",
+   "fail": "Server timeout at the call deadline (default 3 s): the source is dropped, the answer says it was skipped, no retry on the query path. Server returns an error: 1 retry after 200 ms only for read tools, then drop. Tool list differs from the pinned hash: the bridge refuses to call and alerts an admin.",
+   "hard": "Dash reports simple MCP queries taking up to 45 s (t_t11), so whether a 3 s budget leaves useful results for slow servers is open.",
+   "prop": "Proposal: any app that ships an MCP server becomes a live-read path without a custom crawler (t_t51), but tokens must be audience-bound and never passed through (t_t24).",
+   "deep": {
+    "purpose": "Call an app's own MCP server for live read and search, as the asking user, when no native connector exists or the app forbids copies.",
+    "expected": [
+     "Only tools on the allowlist (read and search) are callable",
+     "Each call carries a token whose audience is that server",
+     "A slow server delays the answer by no more than the deadline"
+    ],
+    "not_expected": [
+     "It does not index what it fetches; results are not stored",
+     "It does not call write tools; ll_ro and the policy layer own actions"
+    ],
+    "algorithm": {
+     "name": "MCP client with pinned tools and deadline budget",
+     "formula": "P(at least one of n sources times out) = 1 - (1 - p)^n;  per-source deadline = min(3 s, remaining_budget)",
+     "steps": [
+      "Look up the server and its pinned tool list hash; fetch the live list and compare",
+      "Ask so_obo for a token with resource set to the server (RFC 8707)",
+      "Ask so_rate for a budget grant, then call the allowed tool with the deadline",
+      "Validate result shape; truncate to 10 items; pass to so_norm",
+      "Write the audit row; on timeout or error return a typed error, never partial text as a success"
+     ],
+     "params": {
+      "deadline": "3 s per source (design)",
+      "max_items": "10 per call (design)",
+      "retries": "1 at 200 ms for read tools (design)",
+      "tool_allowlist": "read and search tools only"
+     }
+    },
+    "math": {
+     "definitions": [
+      "p: probability one source times out",
+      "n: sources called in parallel",
+      "P: chance at least one times out"
+     ],
+     "formula_full": "P = 1 - (1 - p)^n",
+     "derivation": "Calls run in parallel; the answer is complete only if every call returns, so the chance of a gap grows with n.",
+     "worked_example": "p = 0.05, n = 4: P = 1 - 0.95^4 = 1 - 0.8145 = 0.1855, so about 1 in 5 live answers is missing a source. With a 3 s deadline the answer is still returned and says which source was skipped.",
+     "complexity": "O(n) calls in parallel; latency is the slowest source up to the deadline.",
+     "failure_modes": [
+      "Slow tools make the deadline the dominant cost: sources are ranked by their recent p95 and the router prunes slow ones",
+      "Tool descriptions eat context (t_t19): expose one search tool per server to the planner, not all of them"
+     ],
+     "calibration": "Set deadline at the p90 of recent latency per server, never above 3 s on the query path; review monthly."
+    },
+    "alternatives": [
+     {
+      "name": "Native crawler per app",
+      "why_rejected": "Costly for the long tail; MCP covers apps that ship a server (t_t51)."
+     },
+     {
+      "name": "Pass the client's token to the server",
+      "why_rejected": "Banned by the MCP authorization rules (t_t24)."
+     }
+    ],
+    "security": [
+     "Tool poisoning: a server changes a tool description to steer the model. Control: the tool list is pinned by hash, changes need admin approval, and descriptions never reach the model unreviewed",
+     "Indirect injection through results (t_t52): control is that every item goes to qr_inj as untrusted data and carries no instructions",
+     "Token passthrough and confused deputy: control is per-user audience-bound tokens from so_obo (t_t24)",
+     "SSRF through a server URL: only registered server URLs are callable, and redirects off them are refused",
+     "Server returns more than asked (data exfil): result size capped at 10 items and 4 KB per snippet"
+    ],
+    "performance": {
+     "slo": "p95 under 3 s by deadline (design)",
+     "complexity": "O(n) parallel calls",
+     "scaling": "At 10x queries the limit is each vendor's tool limits (for Slack MCP Tier 2 about 20+ per minute, t_t25); so_rate shares them and the router prefers the index for common queries."
+    },
+    "edge_cases": [
+     "Server returns empty: valid answer, recorded as no hits",
+     "Huge result: truncated at 10 items with truncated true",
+     "Duplicate item in two servers: deduped by URI downstream",
+     "Server down: breaker after 5 failures in 30 s, source skipped for 60 s",
+     "Unicode in snippets: passed through as text, never executed",
+     "A new app joins through the MCP bridge by registering its server URL, pinning its tool list and approving scopes; no connector code is written"
+    ],
+    "tests": [
+     {
+      "name": "pinned tools",
+      "given": "server adds a tool",
+      "expect": "call refused, admin alert, 0 results"
+     },
+     {
+      "name": "deadline",
+      "given": "server takes 5 s, deadline 3 s",
+      "expect": "dropped at 3 s, answer notes the skipped source"
+     },
+     {
+      "name": "audience",
+      "given": "token for app A sent to server B",
+      "expect": "server B rejects, bridge audits"
+     },
+     {
+      "name": "write tool",
+      "given": "planner asks for a create tool",
+      "expect": "denied, not on allowlist"
+     }
+    ],
+    "cost_levers": [
+     "Parallel calls with a 3 s deadline; cache nothing; prefer the index for common queries"
+    ],
+    "feedback_events": [
+     "User marks a missing live source; admin reviews skipped-source counts"
+    ],
+    "analytics_events": [
+     {
+      "name": "mcp.call",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "tool",
+       "ms",
+       "n_items",
+       "outcome"
+      ],
+      "when": "after each call"
+     },
+     {
+      "name": "mcp.pin_mismatch",
+      "fields": [
+       "app_id",
+       "server_version"
+      ],
+      "when": "when a tool list differs from its pin"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "MCP threat model: scoped tokens, tool allowlists, audit.",
+      "how": "Pinned tool list, allowlist and audit rows adopt it directly."
+     },
+     {
+      "ref": "p_mcp-audit",
+      "key_idea": "Audit connectors for least privilege.",
+      "how": "Each server is reviewed before it is registered."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_mcp-servers",
+      "name": "MCP reference servers",
+      "take": "Pattern for exposing an app as live tools."
+     },
+     {
+      "ref": "r_fastmcp",
+      "name": "FastMCP",
+      "take": "Client and server framework."
+     },
+     {
+      "ref": "r_agentgateway",
+      "name": "agentgateway",
+      "take": "Proxy where tool allow-lists and per-user tokens can be enforced."
+     }
+    ],
+    "industry": "Slack's MCP server uses user tokens, per-tool scopes and admin approval (t_t25) and went generally available on 2026-02-17 (t_t13); Microsoft uses federated connectors over MCP for sensitive sources (t_t12).",
+    "refs": [
+     "t_t51",
+     "t_t24",
+     "t_t25",
+     "t_t13",
+     "t_t12",
+     "p_mcp-enterprise",
+     "p_mcp-audit",
+     "t_t52",
+     "r_mcp-servers"
+    ]
+   },
+   "req": "Requirement: 'Read and write every tool the company uses through APIs'"
+  },
+  "so_norm": {
+   "line": "Envelope {uri, version, content_hash, acl_ref} with SHA-256 over canonical content\nP(collision) = n^2 / 2^(b+1)",
+   "dumb": "Every app describes a document in its own way. We rewrite each one into the same small card with a fixed address, a version number and a fingerprint of its contents. The fingerprint lets us skip anything that has not truly changed, and the card never carries the full text.",
+   "inn": "Raw app object {native_id, kind-specific fields, modified_at, sharing fields} from so_apps; manifest mapping from so_sdk; tenant and app ids.",
+   "out": "Envelope {uri, app, tenant, kind: Document|Message|Principal|Event, version, content_hash, modified_at, acl_ref, title, container, author} sent to ch_bus; text handed in memory to the transient path, never persisted by this component.",
+   "store": "Reads mapping rules from the connector registry. Writes nothing durable: the envelope goes to the change event log (ch_bus). Message bodies from sources with store_allowed false are dropped after hashing, or not fetched at all.",
+   "fail": "Unmapped required field: the record is rejected with the field path and parked in the dead-letter queue after 0 retries (a retry cannot fix it), and the stream continues. Hash computation error: 1 retry, then park. More than 5 percent of a batch rejected in 10 minutes: the stream pauses and alerts.",
+   "hard": "The exact list of fields included in the canonical form for each app, so view counts or timestamps do not cause false changes, must be tuned per app.",
+   "prop": "Proposal: the brain needs one thin shape for every app (id, access list reference, text pointer, timestamps, type), as Dropbox describes, so downstream stages stay app-agnostic.",
+   "deep": {
+    "purpose": "Turn each app object into one of four envelopes with a stable address, a version and a content hash, so change detection and deduplication work the same for every app.",
+    "expected": [
+     "The same object always gets the same uri and, if unchanged, the same content_hash",
+     "A change to a volatile field (view count) does not change the hash",
+     "Envelope has no body text"
+    ],
+    "not_expected": [
+     "It does not decide whether the person may see the object; acl_ref points to the access list",
+     "It does not extract text; the transient path does"
+    ],
+    "algorithm": {
+     "name": "Canonicalise then hash",
+     "formula": "content_hash = SHA-256(canonical(selected fields));  uri = devx://{tenant}/{app}/{kind}/{native_id};  version = vendor revision else modified_at",
+     "steps": [
+      "Pick the fields per kind from the mapping; drop volatile fields (counts, last viewed)",
+      "Canonicalise: sort keys, Unicode NFC, trim whitespace, fixed number formatting",
+      "Hash with SHA-256 and hex-encode",
+      "Build the uri from tenant, app, kind and native id, escaping reserved characters",
+      "Set version from the vendor's revision or etag; if none, use modified_at and break ties by hash; emit the envelope"
+     ],
+     "params": {
+      "hash": "SHA-256 (design, chosen for collision safety)",
+      "uri_scheme": "devx:// (design)",
+      "volatile_fields": "per app mapping, default none",
+      "unicode": "NFC"
+     }
+    },
+    "math": {
+     "definitions": [
+      "n: number of distinct documents",
+      "b: hash length in bits",
+      "P: probability of any collision (birthday bound)"
+     ],
+     "formula_full": "P ~ n^2 / 2^(b+1)",
+     "derivation": "With n items and b bits, there are about n^2/2 pairs, each colliding with probability 2^-b.",
+     "worked_example": "n = 10^9 documents. With a 64-bit hash (Notion uses a 64-bit hash per span, t_t44): P = 10^18 / 2^65 = 10^18 / 3.69e19 = 0.027, about 2.7 percent, too high for whole-document identity. With SHA-256, b = 256: P = 10^18 / 2^257 = 10^18 / 2.3e77, about 4e-60.",
+     "complexity": "O(size of selected fields) per object; under 1 ms for typical documents.",
+     "failure_modes": [
+      "Hash of unnormalised text flips on whitespace: canonicalisation removes it",
+      "Two different documents with the same native_id across apps: the uri includes app and tenant"
+     ],
+     "calibration": "Use 256 bits at document level; chunk-level hashes downstream may use 64 bits because n per document is small."
+    },
+    "alternatives": [
+     {
+      "name": "Store raw vendor JSON",
+      "why_rejected": "Copies the content and ties every downstream stage to each vendor's shape."
+     },
+     {
+      "name": "Hash only modified_at",
+      "why_rejected": "Edits that do not move modified_at, and touches that do not change content, both go wrong."
+     }
+    ],
+    "security": [
+     "Poisoned content (p_poisoned-rag): the author field and source are recorded so trust can be applied later; control is that the envelope carries author and container id, not text",
+     "Collision attack where an attacker crafts two documents with equal hashes: control is a collision-resistant hash (SHA-256)",
+     "Injection via metadata (title with instructions): control is that metadata is data and is passed to qr_inj when shown to a model",
+     "Cross-tenant envelope: uri contains the tenant id and the bus rejects an envelope whose tenant differs from its connector's"
+    ],
+    "performance": {
+     "slo": "p95 under 5 ms per object (design)",
+     "complexity": "O(size of selected fields)",
+     "scaling": "At 10x volume it scales linearly with workers; the cost is CPU for hashing, trivial against vendor calls."
+    },
+    "edge_cases": [
+     "Empty body: hash of empty canonical form, valid",
+     "Huge object (100 MB file): only metadata hashed here; the body hash is taken by the transient path while streaming",
+     "Duplicate event for the same version: same envelope, deduped by ch_dedupe",
+     "Concurrent updates: version breaks ties",
+     "Unicode in title: NFC",
+     "Clock skew in modified_at: version uses the vendor revision when it exists",
+     "A new app joins by mapping fields into the four envelopes in its manifest (so_sdk) or the MCP bridge result shape (so_mcp)"
+    ],
+    "tests": [
+     {
+      "name": "stable hash",
+      "given": "same doc fetched twice",
+      "expect": "same uri, same content_hash"
+     },
+     {
+      "name": "volatile field",
+      "given": "view count changes from 10 to 11",
+      "expect": "content_hash unchanged"
+     },
+     {
+      "name": "unicode",
+      "given": "title with composed and decomposed forms of the same letter",
+      "expect": "same hash after NFC"
+     },
+     {
+      "name": "no body",
+      "given": "envelope for a 5 MB doc",
+      "expect": "envelope under 2 KB, contains no text field"
+     }
+    ],
+    "cost_levers": [
+     "Cheap hashing; skip downstream work on unchanged hash"
+    ],
+    "feedback_events": [
+     "Operator flags a false change or a missed change; tune the volatile field list"
+    ],
+    "analytics_events": [
+     {
+      "name": "norm.envelope",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "kind",
+       "bytes",
+       "changed",
+       "ms"
+      ],
+      "when": "after each envelope"
+     },
+     {
+      "name": "norm.reject",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "field_path"
+      ],
+      "when": "on each rejected record"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_temporal-validity",
+      "key_idea": "Store version and supersession explicitly.",
+      "how": "The envelope carries version and modified_at for later supersession links."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_cocoindex",
+      "name": "CocoIndex",
+      "take": "Change detection by content and lineage."
+     },
+     {
+      "ref": "r_dlt",
+      "name": "dlt",
+      "take": "Schema handling and incremental state with a thin schema."
+     }
+    ],
+    "industry": "Notion hashes spans so only changed text is re-embedded (t_t44); Dropbox keeps the common schema thin (id, access list, text pointer, timestamps, type) (t_t49).",
+    "refs": [
+     "t_t49",
+     "t_t44",
+     "t_t47",
+     "p_temporal-validity",
+     "p_poisoned-rag",
+     "r_cocoindex"
+    ]
+   },
+   "req": "Requirement: 'Ingest documents and messages; answer with citations; respect source permissions'"
+  },
+  "so_apps": {
+   "line": "Vendor REST, GraphQL and webhook APIs; the system of record stays here\nstaleness bound = min(webhook max latency, poll interval + p99 fetch)",
+   "dumb": "These are the company's real tools, like Slack, Drive, Microsoft 365, Notion, Jira, GitHub and the customer database. They keep the truth. The brain only asks them questions and remembers where things are.",
+   "inn": "Authenticated HTTPS requests {method, path, cursor, page_size} or MCP tool calls; webhook registrations {callback_url, secret, event types}.",
+   "out": "JSON responses with app-native ids, times and sharing fields; webhook posts that carry little or no content (Google push has an empty body, t_t03); rate-limit headers.",
+   "store": "Owns all source content and permissions. The brain stores none of it here; whatever the brain keeps is derived and listed in the index stage.",
+   "fail": "The app returns 429: so_rate pauses that bucket for Retry-After. App returns 5xx: 3 attempts at 1 s, 4 s and 16 s, then the page is parked. App outage over 24 h: the lag monitor reports it and answers mark the source stale. Slack stays live only, so a Slack outage means an honest 'source unavailable' answer.",
+   "hard": "No research source covers delta APIs for Notion, Jira, GitHub, HubSpot, Linear or Figma; our design covers them with polling and the reconciliation sweep.",
+   "prop": "Proposal: the system of record stays in each app so the brain never becomes a second source of truth; Slack's API terms bar persistent copies and indexes of its search data, so Slack is queried live.",
+   "deep": {
+    "purpose": "Name and bound what we rely on in each app: change signals, limits and terms, so the rest of the design can plan for the worst case rather than the average.",
+    "expected": [
+     "Each app is read with the least access that works",
+     "Vendor limits are respected through so_rate",
+     "Terms that bar copying (Slack) switch the app to live query only"
+    ],
+    "not_expected": [
+     "It does not belong to the brain; the brain cannot assume uptime or schema stability",
+     "It does not guarantee delivery of any change notification"
+    ],
+    "algorithm": {
+     "name": "Vendor contract table",
+     "formula": "staleness_bound = min(L_max, I + F), where L_max is the vendor's worst delivery latency, I the poll interval, F the p99 fetch time",
+     "steps": [
+      "Record, per vendor, the change signal (webhook, delta, none), its expiry, and its limits from the research",
+      "Mark vendors with copy bans as live only",
+      "Plan the backstop poll and sweep from the worst delivery latency, not the average",
+      "Re-check the table at every capability probe",
+      "Escalate when a vendor changes terms (gv_tos)"
+     ],
+     "params": {
+      "graph_driveItem_subscription_max": "42,300 minutes (t_t01)",
+      "graph_driveItem_latency_max": "6 hours (t_t01)",
+      "google_changes_channel_max": "604,800 s; files channel 86,400 s (t_t03)",
+      "github_ack_timeout": "10 s (t_t05)",
+      "jira_hourly": "100,000 + 10 * users points, capped at 500,000 (t_t06)",
+      "notion": "about 3 requests per second per connection (t_t08)",
+      "slack_history": "1 request per minute, 15 objects per page for non-Marketplace apps (t_t07)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "L_max: vendor worst-case webhook delivery latency",
+      "I: poll interval",
+      "F: p99 fetch time"
+     ],
+     "formula_full": "staleness_bound = min(L_max, I + F)",
+     "derivation": "A backstop poll caps staleness at one interval plus one fetch, whatever the webhook does.",
+     "worked_example": "driveItem L_max = 21,600 s (6 h, t_t01). Poll I = 840 s, F = 40 s: bound = min(21,600, 880) = 880 s, about 14.7 minutes.",
+     "complexity": "Constant: a table lookup.",
+     "failure_modes": [
+      "Vendor silently changes limits: the capability probe re-reads headers weekly",
+      "A vendor adds a delta API later: the descriptor can switch paths without a release"
+     ],
+     "calibration": "Review the table each quarter against vendor docs; record the date of each fact."
+    },
+    "alternatives": [
+     {
+      "name": "Copy everything into the brain",
+      "why_rejected": "Violates Slack terms (t_t07, t_t13) and makes the brain a second source of truth."
+     },
+     {
+      "name": "Trust one change path",
+      "why_rejected": "Notifications are lost and delayed (t_t54)."
+     }
+    ],
+    "security": [
+     "A forged webhook from a spoofed sender: control is a shared secret or signature check at ch_hook before enqueueing",
+     "Overbroad token at the vendor: control is read-only catalog scopes and a 180 day review",
+     "Prompt injection planted in an app document by any writer (p_poisoned-rag): control is that all fetched content is untrusted data (qr_inj)",
+     "Vendor-side breach: tokens are short-lived and wrapped per tenant; revocation is one call per connection"
+    ],
+    "performance": {
+     "slo": "p95 vendor latency varies; the brain's budget is a 3 s deadline on the query path (design)",
+     "complexity": "Not applicable; external",
+     "scaling": "At 10x load the vendor limit is the bound; so_rate shares it and the router prefers the index."
+    },
+    "edge_cases": [
+     "Vendor outage: answers mark the source stale or unavailable",
+     "Vendor changes a field name: the schema normaliser rejects records and alerts",
+     "Vendor deletes data: delete events become tombstones; the sweep finds those missed",
+     "Rate limit window long (hours): reserve a freshness slice (t_t09)",
+     "Unicode: kept as-is",
+     "A new app joins through the connector manifest (so_sdk) if it has a REST API, or the MCP bridge (so_mcp) if it ships an MCP server"
+    ],
+    "tests": [
+     {
+      "name": "copy ban",
+      "given": "app flagged store_allowed false",
+      "expect": "no content stored; live path used"
+     },
+     {
+      "name": "backstop",
+      "given": "webhook delayed 6 h",
+      "expect": "poll catches the change within 880 s"
+     },
+     {
+      "name": "channel expiry",
+      "given": "Drive files channel nearing 86,400 s",
+      "expect": "renewed with overlap before expiry"
+     },
+     {
+      "name": "ack",
+      "given": "GitHub webhook posted",
+      "expect": "receiver acks within 10 s"
+     }
+    ],
+    "cost_levers": [
+     "Vendor tier and quota are the main cost; prefer webhooks plus delta over frequent full polls"
+    ],
+    "feedback_events": [
+     "Admins report stale or missing items; the lag monitor attributes them to a vendor"
+    ],
+    "analytics_events": [
+     {
+      "name": "app.error",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "status",
+       "endpoint",
+       "retry_after_s"
+      ],
+      "when": "on each vendor error"
+     },
+     {
+      "name": "app.lag",
+      "fields": [
+       "tenant_id",
+       "app_id",
+       "lag_s"
+      ],
+      "when": "on each applied change"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_stale-poison",
+      "key_idea": "Stale entries can be worse than none.",
+      "how": "Bounding staleness per vendor feeds the freshness stamp."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_steampipe",
+      "name": "Steampipe",
+      "take": "Live SQL over SaaS APIs with no stored copy; shows the fetch-on-demand half works but is slow for broad scans."
+     }
+    ],
+    "industry": "Microsoft, Google and GitHub each document different change contracts (t_t01, t_t03, t_t05); Slack offers a Real-Time Search API for retrieval without storing data (t_t13).",
+    "refs": [
+     "t_t01",
+     "t_t03",
+     "t_t05",
+     "t_t06",
+     "t_t07",
+     "t_t08",
+     "t_t13",
+     "t_t54",
+     "p_poisoned-rag"
+    ]
+   },
+   "req": "Requirement: 'Read and write every tool the company uses through APIs'"
+  }
+ },
+ "edges": [
+  {
+   "a": "so_sdk",
+   "b": "so_norm",
+   "l": "raw records",
+   "k": "e",
+   "d": "Records {stream, native_id, fields, modified_at, acl_raw} for envelope building"
+  },
+  {
+   "a": "so_sdk",
+   "b": "ch_cursor",
+   "l": "cursor commit",
+   "k": "d",
+   "d": "Cursor {tenant_id, app_id, stream, cursor} written only after the batch commits",
+   "x": 1
+  },
+  {
+   "a": "so_sdk",
+   "b": "ch_dlq",
+   "l": "parked page",
+   "k": "d",
+   "d": "Failed page {stream, cursor, error, attempts: 3} for later replay",
+   "x": 1
+  },
+  {
+   "a": "so_cap",
+   "b": "so_sdk",
+   "l": "descriptor",
+   "k": "n",
+   "d": "Capability descriptor {webhook, delta, list, acl_api, store_allowed} that selects streams to run"
+  },
+  {
+   "a": "so_cap",
+   "b": "ch_hook",
+   "l": "webhook support",
+   "k": "n",
+   "d": "Descriptor flag and subscription expiry {app, webhook, expires_at} so the receiver registers and renews"
+  },
+  {
+   "a": "so_cap",
+   "b": "ch_delta",
+   "l": "delta support",
+   "k": "n",
+   "d": "Descriptor flag {app, delta, cursor_kind} telling the poller whether a cursor exists"
+  },
+  {
+   "a": "so_rate",
+   "b": "ch_fill",
+   "l": "backfill share",
+   "k": "n",
+   "d": "Backfill budget {tenant, app, tokens_per_hour} capped at its share of quota"
+  },
+  {
+   "a": "so_rate",
+   "b": "ch_wf",
+   "l": "pause signal",
+   "k": "d",
+   "d": "Pause {tenant, app, endpoint, retry_after_s} so durable workflows sleep rather than retry",
+   "x": 1
+  },
+  {
+   "a": "so_mcp",
+   "b": "so_norm",
+   "l": "live results",
+   "k": "n",
+   "d": "Items {native_id, title, snippet, url, modified_at} normalised for the live path"
+  },
+  {
+   "a": "so_mcp",
+   "b": "qr_live",
+   "l": "live hits",
+   "k": "e",
+   "d": "Live search items with url and version for hydration and ranking"
+  },
+  {
+   "a": "so_mcp",
+   "b": "pl_idp",
+   "l": "tool-call audit",
+   "k": "s",
+   "d": "Audit row {tenant_id, user_id, app_id, tool, outcome}",
+   "x": 1
+  },
+  {
+   "a": "so_norm",
+   "b": "ix_ptr",
+   "l": "pointer facts",
+   "k": "n",
+   "d": "uri, version, content_hash, modified_at, acl_ref to be stored as the pointer record"
+  },
+  {
+   "a": "so_apps",
+   "b": "so_rate",
+   "l": "rate feedback",
+   "k": "d",
+   "d": "Headers {status 429, Retry-After, remaining, reset_at} returned to the budgeter",
+   "x": 1
+  },
+  {
+   "a": "so_apps",
+   "b": "ch_hook",
+   "l": "webhook post",
+   "k": "d",
+   "d": "Webhook {event_type, resource id, signature}; often no content, only a doorbell",
+   "x": 1
+  },
+  {
+   "a": "so_apps",
+   "b": "so_admin",
+   "l": "consent grant",
+   "k": "e",
+   "d": "Admin consent or install grant {tenant_id, app_id, scopes[], granted_by} returned by the app's consent screen"
+  },
+  {
+   "a": "so_apps",
+   "b": "so_cap",
+   "l": "probe answers",
+   "k": "n",
+   "d": "Responses to the capability probe {endpoint, status, headers}"
+  }
+ ]
+}

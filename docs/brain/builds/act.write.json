@@ -1,0 +1,468 @@
+{
+ "ag_collect": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "zn_scope",
+   "ll_ro",
+   "ac_id"
+  ],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12 with FastAPI 0.115",
+    "why": "small typed service; one POST route"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "run table with cursor and status; same DB as the other action tables"
+   },
+   {
+    "part": "time zones",
+    "pick": "zoneinfo (standard library)",
+    "why": "daylight saving days of 23 or 25 hours handled without a third-party package"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an admin or compliance export key to read sessions",
+    "why": "reaches other people's data; the collector must ask as the owner only"
+   }
+  ],
+  "install": [
+   "pip install 'fastapi==0.115.*' 'psycopg[binary]==3.2.*' pydantic==2.*",
+   "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16"
+  ],
+  "layout": [
+   "agent/collect.py : window math, scan loop, scoring, digest cap",
+   "agent/routes.py : POST /agent/collect",
+   "migrations/020_agent_run.sql : run table",
+   "tests/test_collect.py : owner-only, budget and DST tests"
+  ],
+  "schema": "CREATE TABLE agent_run (\n  run_id uuid PRIMARY KEY,\n  tenant_id text NOT NULL,\n  owner_id text NOT NULL,\n  day date NOT NULL,\n  status text NOT NULL DEFAULT 'running',\n  cursor text,\n  n_events int,\n  n_dropped int,\n  started_at timestamptz NOT NULL DEFAULT now(),\n  UNIQUE (owner_id, day)\n);",
+  "interface": "POST /agent/collect {day: 'YYYY-MM-DD'} -> {run_id, window:{start,end}, events:[{event_id,kind,started_at,summary,pointer}], n_dropped}  # owner_id comes from the verified token, never the body",
+  "code": "from zoneinfo import ZoneInfo\nfrom datetime import datetime, timedelta, time\n\nCAP_EVENTS, CAP_TOK, BUDGET = 60, 400, 8000\nSCORE = {'work_tool': 3, 'long_session': 2}\n\ndef window(day, tz):\n    z = ZoneInfo(tz)\n    start = datetime.combine(day, time(0), z)\n    end = datetime.combine(day + timedelta(days=1), time(0), z)  # local midnight, so DST days are 23 or 25 h\n    return start.astimezone(ZoneInfo('UTC')), end.astimezone(ZoneInfo('UTC'))\n\ndef collect(owner_id, day, tz, scope_client, tok_len):\n    start, end = window(day, tz)\n    seen, events, cursor = set(), [], None\n    while True:\n        page = scope_client.search(owner=owner_id, zone='personal', start=start, end=end, cursor=cursor)\n        for e in page.rows:\n            if e.owner_id != owner_id:  # second check, fail closed\n                raise PermissionError('foreign row')\n            if e.event_id not in seen:\n                seen.add(e.event_id); events.append(e)\n        cursor = page.next\n        if not cursor: break\n    ranked = sorted(events, key=lambda e: (-SCORE.get(e.kind, 1), e.started_at))[:CAP_EVENTS]\n    kept, used = [], 0\n    for e in ranked:\n        t = min(tok_len(e.summary), CAP_TOK)\n        if used + t > BUDGET: break\n        kept.append(e); used += t\n    kept.sort(key=lambda e: e.started_at)\n    return kept, len(events) - len(kept)",
+  "steps": [
+   {
+    "do": "Create the run table",
+    "done_when": "\\d agent_run lists 9 columns"
+   },
+   {
+    "do": "Write window() and test a daylight saving day",
+    "done_when": "window length is 23 h on the spring change date"
+   },
+   {
+    "do": "Write the scan loop through the owner filter client",
+    "done_when": "a test with rows for owners A and B returns only A"
+   },
+   {
+    "do": "Add scoring, the 60-event cap and the 8,000 token budget",
+    "done_when": "a 240-event fixture yields the expected kept count and n_dropped"
+   },
+   {
+    "do": "Add the foreign-row guard",
+    "done_when": "a fixture row with the wrong owner raises PermissionError"
+   },
+   {
+    "do": "Add the route, token check and audit row",
+    "done_when": "a call without a token returns 401 and a valid call writes one audit row with no text"
+   }
+  ],
+  "config": {
+   "COLLECT_MAX_EVENTS": "60 // keeps the planner prompt small",
+   "COLLECT_SUMMARY_TOKENS": "400 // per-event cap",
+   "COLLECT_BUDGET_TOKENS": "8000 // hard digest limit",
+   "COLLECT_RUN_TOKEN_TTL_S": "900 // 15 minutes, bound to owner and day",
+   "COLLECT_MAX_PARALLEL_PER_TENANT": "20 // protects the owner filter store"
+  },
+  "verify": [
+   "pytest tests/test_collect.py -q  # all tests pass, including owner_only, budget_stop, dst_window",
+   "psql -c \"select count(*) from agent_run where owner_id='A'\"  # 1 row after one run, status=done"
+  ],
+  "pitfalls": [
+   "Computing the day in UTC: events near midnight land on the wrong day; always build the window from local midnight",
+   "Trusting owner_id from the request body: any caller could read another person's day; take it from the verified token only",
+   "Reading through an admin key because it is easier: breaks the own-data-only rule; the check is the second owner test in the loop"
+  ]
+ },
+ "ag_plan": {
+  "milestone": "M5",
+  "effort_days": 8,
+  "depends_on": [
+   "ag_collect",
+   "pl_gw",
+   "qr_id",
+   "sc_scan"
+  ],
+  "stack": [
+   {
+    "part": "gateway",
+    "pick": "LiteLLM proxy (pin a version; check current docs)",
+    "why": "one route to the Claude family with fallback, per-team budgets and redaction"
+   },
+   {
+    "part": "primary model",
+    "pick": "Claude Sonnet family via the gateway",
+    "why": "planning needs reliable JSON and good matching; check current docs for the exact model id and price"
+   },
+   {
+    "part": "fallback model",
+    "pick": "Claude Haiku family, then a second provider's mid-size model",
+    "why": "cheaper, still schema-valid; if all fail the run returns 0 items"
+   },
+   {
+    "part": "validation",
+    "pick": "pydantic 2 with a strict schema",
+    "why": "rejects unknown tools, change types and extra fields"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a framework agent loop with live tools",
+    "why": "gives the model write power; this planner has an empty tools list"
+   }
+  ],
+  "install": [
+   "pip install 'litellm==1.*' pydantic==2.* httpx==0.27.*",
+   "litellm --config litellm.yaml --port 4000"
+  ],
+  "layout": [
+   "agent/plan.py : prompt build, model call, validation, grounding",
+   "agent/schema.py : Item and Output models",
+   "agent/prompts/plan_v1.txt : versioned prompt text",
+   "tests/test_plan.py : grounding, injection and invalid JSON tests",
+   "litellm.yaml : model routes, fallbacks, budgets"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"required\": [\"items\"],\n  \"additionalProperties\": false,\n  \"properties\": {\"items\": {\"type\": \"array\", \"maxItems\": 12, \"items\": {\n    \"type\": \"object\",\n    \"required\": [\"item_id\",\"tool\",\"issue\",\"change_type\",\"change_text\",\"safe_text\",\"evidence\",\"confidence\"],\n    \"additionalProperties\": false,\n    \"properties\": {\n      \"item_id\": {\"type\": \"string\"}, \"tool\": {\"type\": \"string\"}, \"issue\": {\"type\": \"string\"},\n      \"change_type\": {\"type\": \"string\"},\n      \"change_text\": {\"type\": \"string\", \"maxLength\": 600},\n      \"safe_text\": {\"type\": \"string\", \"maxLength\": 300},\n      \"evidence\": {\"type\": \"array\", \"minItems\": 1, \"maxItems\": 5, \"items\": {\"type\": \"string\"}},\n      \"confidence\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1}}}}}\n}",
+  "interface": "def plan(owner_token: str, digest: list[Event], catalogue: dict[str, list[str]]) -> list[Item]  # proposals only; never writes",
+  "code": "from pydantic import BaseModel, Field, ValidationError\n\nclass Item(BaseModel, extra='forbid'):\n    item_id: str; tool: str; issue: str; change_type: str\n    change_text: str = Field(max_length=600)\n    safe_text: str = Field(max_length=300)\n    evidence: list[str] = Field(min_length=1, max_length=5)\n    confidence: float = Field(ge=0, le=1)\n\nclass Out(BaseModel, extra='forbid'):\n    items: list[Item] = Field(max_length=12)\n\ndef plan(owner_token, digest, catalogue, llm, brain, min_conf=0.4):\n    hints = find_issue_keys(digest)  # regex pre-step\n    ctx = [brain.search(owner_token, q) for q in hints[:6]]  # owner's own token\n    known = {k for d in digest for k in find_issue_keys([d])} | {r.issue for c in ctx for r in c}\n    ptrs = {d.event_id for d in digest} | {r.uri for c in ctx for r in c}\n    prompt = build_prompt(wrap_as_data(digest), wrap_as_data(ctx), catalogue)\n    for attempt in range(2):  # 1 repair retry\n        raw = llm(prompt, temperature=0, tools=[])  # tools stays empty, no token passed\n        try:\n            out = Out.model_validate_json(raw); break\n        except ValidationError:\n            prompt += '\\nReturn valid JSON only.'\n    else:\n        return []\n    good = []\n    for i in out.items:  # grounding: the tricky part, drop anything the data does not support\n        if i.tool in catalogue and i.change_type in catalogue[i.tool] and i.issue in known \\\n           and all(e in ptrs for e in i.evidence) and i.confidence >= min_conf:\n            good.append(i)\n    return good[:12]",
+  "steps": [
+   {
+    "do": "Define the Item schema and the catalogue format",
+    "done_when": "a bad item (unknown field) fails validation in a unit test"
+   },
+   {
+    "do": "Write the versioned prompt with data wrapping",
+    "done_when": "prompt hash is stable across two runs"
+   },
+   {
+    "do": "Configure the gateway with the primary and fallback routes and a daily token cap",
+    "done_when": "a request to the gateway returns a completion and a spend row"
+   },
+   {
+    "do": "Add the brain context searches with the owner's token",
+    "done_when": "a fixture search returns pointers the grounding check can resolve"
+   },
+   {
+    "do": "Implement grounding, repair retry and confidence floor",
+    "done_when": "tests grounding_drop and invalid_json pass"
+   },
+   {
+    "do": "Assert the request has an empty tools list and no credential",
+    "done_when": "test no_write_tool passes on the captured request"
+   },
+   {
+    "do": "Run 20 real days through it and have the owner label each item",
+    "done_when": "a sheet of accept, edit and reject counts exists; precision is computed"
+   }
+  ],
+  "config": {
+   "PLAN_MODEL": "claude-sonnet family via gateway // check current docs for the exact id",
+   "PLAN_FALLBACK": "claude-haiku family, then second provider // quality floor on schema validity",
+   "PLAN_MAX_ITEMS": "12 // keeps review short",
+   "PLAN_MIN_CONFIDENCE": "0.4 // tune on the first 100 decisions",
+   "PLAN_TIMEOUT_S": "30 // then fallback",
+   "PLAN_DAILY_TOKENS_PER_OWNER": "60000 // gateway budget against runaway cost"
+  },
+  "verify": [
+   "pytest tests/test_plan.py -q  # passes: grounding_drop, no_write_tool, invalid_json, injection_text",
+   "curl -s localhost:4000/spend/logs | head  # shows one row per planner call with team and tokens"
+  ],
+  "pitfalls": [
+   "Passing the owner's write token to the planner call 'for convenience': a hijacked plan could then act; the request must carry no credential",
+   "Trusting issue keys from the model: it will invent plausible ones; the grounding check against known keys is the guard",
+   "Logging the prompt in the trace: stores private text; log the prompt hash and token counts only",
+   "Model id hard-coded: models retire; take it from config and check current docs"
+  ]
+ },
+ "ag_gate": {
+  "milestone": "M5",
+  "effort_days": 6,
+  "depends_on": [
+   "ag_priv",
+   "pl_pol",
+   "ac_audit"
+  ],
+  "stack": [
+   {
+    "part": "policy",
+    "pick": "Open Policy Agent 0.6x as a sidecar (check current docs for the exact version) or Cedar",
+    "why": "versioned rule files; answers allow, deny or force_manual"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "item table with state and decisions in one transaction"
+   },
+   {
+    "part": "hashing",
+    "pick": "hashlib SHA-256 over canonical JSON (sorted keys)",
+    "why": "stable hash so the approval binds to exact text"
+   },
+   {
+    "part": "review UI",
+    "pick": "any web form or chat card behind the owner's login",
+    "why": "must be authenticated as the owner; do not accept approvals from agent tokens"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a single approve-all button as the only path",
+    "why": "encourages click-through; keep a per-item approval row"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.* httpx==0.27.*",
+   "docker run -d -p 8181:8181 openpolicyagent/opa:latest run --server /policies  # pin a tag; check current docs"
+  ],
+  "layout": [
+   "agent/gate.py : state machine and hash binding",
+   "agent/policy_client.py : OPA call with timeout and retry",
+   "policies/write.rego : allow, deny, force_manual rules",
+   "migrations/021_agent_item.sql : item and decision tables",
+   "tests/test_gate.py : default manual, hash binding, fail closed"
+  ],
+  "schema": "CREATE TABLE agent_item (\n  item_id uuid PRIMARY KEY,\n  run_id uuid NOT NULL,\n  owner_id text NOT NULL,\n  tool text NOT NULL,\n  issue text NOT NULL,\n  change_type text NOT NULL,\n  item_hash text NOT NULL,\n  state text NOT NULL CHECK (state IN ('pending','approved','rejected','expired','sent','failed')),\n  mode text CHECK (mode IN ('manual','auto')),\n  decided_at timestamptz,\n  expires_at timestamptz NOT NULL\n);\nCREATE TABLE agent_auto (\n  owner_id text NOT NULL, tool text NOT NULL, since timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (owner_id, tool)\n);",
+  "interface": "def submit(item: CheckedItem) -> str  # returns state; POST /agent/items/{id}/decision {decision, item_hash} from the owner's session only",
+  "code": "import hashlib, json\n\ndef item_hash(i):\n    body = {k: i[k] for k in ('tool', 'issue', 'change_type', 'change_text')}\n    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()\n\ndef submit(db, policy, item):\n    h = item_hash(item)\n    try:\n        verdict = policy.check(owner=item['owner_id'], tool=item['tool'],\n                               issue=item['issue'], change_type=item['change_type'])  # 2 s, 2 retries\n    except TimeoutError:\n        verdict = 'force_manual'  # fail closed: never auto when policy is silent\n    if verdict == 'deny':\n        return save(db, item, h, 'rejected', None)\n    auto = (verdict == 'allow' and item['guard_verdict'] == 'clean'\n            and db.exists('agent_auto', owner_id=item['owner_id'], tool=item['tool']))\n    return save(db, item, h, 'approved' if auto else 'pending', 'auto' if auto else None)\n\ndef decide(db, item_id, decision, seen_hash, session_owner):\n    row = db.get('agent_item', item_id)\n    if row.owner_id != session_owner:  # only the owner can decide\n        raise PermissionError\n    if row.state != 'pending' or row.item_hash != seen_hash:  # stale approval is void\n        raise ValueError('stale')\n    db.update('agent_item', item_id, state='approved' if decision == 'approve' else 'rejected', mode='manual')",
+  "steps": [
+   {
+    "do": "Create the tables",
+    "done_when": "\\d agent_item shows the state check constraint"
+   },
+   {
+    "do": "Write item_hash and a test for stable output",
+    "done_when": "same input gives the same hash across 100 runs"
+   },
+   {
+    "do": "Write the policy rules and the client with fail closed behaviour",
+    "done_when": "a stopped OPA container leaves the item pending"
+   },
+   {
+    "do": "Write submit() with default manual and opt-in auto",
+    "done_when": "fresh owner item is pending; auto only when the tool is on the list"
+   },
+   {
+    "do": "Write decide() with owner session and hash checks",
+    "done_when": "a decision from another owner or with an old hash is refused"
+   },
+   {
+    "do": "Add the 72 hour expiry job",
+    "done_when": "an item with expires_at in the past becomes expired after the job runs"
+   },
+   {
+    "do": "Write an audit row on every transition",
+    "done_when": "audit row count equals transition count in the test"
+   }
+  ],
+  "config": {
+   "GATE_EXPIRY_HOURS": "72 // stale proposals should not be sent",
+   "GATE_POLICY_TIMEOUT_MS": "2000 // then force_manual",
+   "GATE_MAX_PENDING": "50 // limits approval fatigue",
+   "GATE_AUTO_DEFAULT": "[] // auto-approve is opt-in per tool",
+   "GATE_POLICY_CACHE_S": "60 // allow answers only; deny cached 10 s"
+  },
+  "verify": [
+   "pytest tests/test_gate.py -q  # passes: default_manual, hash_binding, fail_closed, auto_opt_in",
+   "opa test policies/ -v  # all rego tests PASS"
+  ],
+  "pitfalls": [
+   "Hashing the Python dict repr or unsorted JSON: the hash changes between runs and approvals break; use sorted keys and fixed separators",
+   "Treating a policy timeout as allow: auto-sends during an outage; timeout must mean force_manual",
+   "Letting an agent token call the decision route: the model could approve its own item; accept the owner's session only",
+   "Auto list shared by all tools: one opt-in widens everything; key it by (owner, tool)"
+  ]
+ },
+ "ag_write": {
+  "milestone": "M5",
+  "effort_days": 8,
+  "depends_on": [
+   "ag_gate",
+   "so_oauth",
+   "so_obo",
+   "ac_audit"
+  ],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12 with httpx 0.27",
+    "why": "timeouts and retries are explicit"
+   },
+   {
+    "part": "token source",
+    "pick": "the token vault (so_oauth), for example Keycloak token exchange or Auth0 Token Vault",
+    "why": "exchanges the owner's stored grant for a short-lived tool token; check current docs for the exchange flag"
+   },
+   {
+    "part": "ledger",
+    "pick": "Postgres 16 with a unique key",
+    "why": "atomic reserve prevents duplicate writes"
+   },
+   {
+    "part": "tool API",
+    "pick": "Jira Cloud REST (comment and transition endpoints)",
+    "why": "check current docs for paths, scopes and any request-key support"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an admin or app-only token for writes",
+    "why": "changes show as a bot, reach any ticket, and MCP forbids passing tokens not issued to the server"
+   }
+  ],
+  "install": [
+   "pip install httpx==0.27.* 'psycopg[binary]==3.2.*' tenacity==8.*",
+   "psql -f migrations/022_write_ledger.sql"
+  ],
+  "layout": [
+   "agent/write.py : reserve, token fetch, one call, read-back",
+   "agent/adapters/jira.py : Jira comment and transition calls (check current docs)",
+   "migrations/022_write_ledger.sql : ledger table",
+   "tests/test_write.py : parallel, timeout read-back, allowlist, hash mismatch"
+  ],
+  "schema": "CREATE TABLE write_ledger (\n  idem_key text PRIMARY KEY,\n  item_id uuid NOT NULL,\n  owner_id text NOT NULL,\n  tool text NOT NULL,\n  item_hash text NOT NULL,\n  state text NOT NULL CHECK (state IN ('reserved','sent','confirmed','failed')),\n  tool_ref text,\n  updated_at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def write_item(item: ApprovedItem) -> Result  # Result{status: done|failed|unknown, tool_ref, retry_after}; at most one tool change per item",
+  "code": "import hashlib, time\n\ndef idem_key(i):\n    return hashlib.sha256(f\"{i.owner_id}|{i.tool}|{i.issue}|{i.item_hash}\".encode()).hexdigest()\n\ndef write_item(db, vault, egress, adapter, i):\n    if hash_of(i) != i.item_hash:\n        return Result('failed', reason='hash_mismatch')  # text changed after approval\n    if not egress.allows(adapter.host):\n        return Result('failed', reason='egress_denied')\n    k = idem_key(i)\n    if not db.reserve(k, i):  # INSERT ... ON CONFLICT DO NOTHING, rowcount 0 means a prior attempt\n        prior = db.get(k)\n        return resolve(prior, adapter, vault, i)  # read back if state is sent or reserved\n    token = vault.token_for(owner=i.owner_id, tool=i.tool)  # owner's own grant, never admin\n    for n in range(3):\n        try:\n            r = adapter.post(token, i, key=k, timeout=10)\n            if r.status == 429:\n                time.sleep(float(r.headers.get('Retry-After', 2 ** n))); continue\n            db.set(k, 'confirmed', r.id); return Result('done', r.id)\n        except TimeoutError:\n            db.set(k, 'sent')\n            if adapter.applied(token, i, k):  # read back before any retry\n                db.set(k, 'confirmed'); return Result('done')\n    db.set(k, 'failed'); return Result('failed')",
+  "steps": [
+   {
+    "do": "Create the ledger table",
+    "done_when": "\\d write_ledger shows the primary key on idem_key"
+   },
+   {
+    "do": "Write idem_key and the atomic reserve",
+    "done_when": "3 parallel calls leave exactly 1 reserved row"
+   },
+   {
+    "do": "Write the vault fetch for the owner's grant",
+    "done_when": "the captured request carries a token whose subject is the owner"
+   },
+   {
+    "do": "Write the Jira adapter for one comment call (check current docs)",
+    "done_when": "one comment appears on a test issue"
+   },
+   {
+    "do": "Add 429 handling that honours Retry-After and the read-back after timeout",
+    "done_when": "a simulated lost response ends confirmed with 1 comment"
+   },
+   {
+    "do": "Add the egress allowlist check and the hash check",
+    "done_when": "a non-listed host or altered text is refused before any network call"
+   },
+   {
+    "do": "Write the audit row for each attempt and a sweep for stuck reserved rows",
+    "done_when": "audit row exists per attempt; a stuck row is fixed after 5 minutes"
+   }
+  ],
+  "config": {
+   "WRITE_MAX_TRIES": "3 // on 429 or 5xx",
+   "WRITE_CALL_TIMEOUT_S": "10 // then read-back",
+   "WRITE_STUCK_SWEEP_MIN": "5 // reserved rows older than this are read back",
+   "WRITE_MAX_PER_OWNER_DAY": "50 // protects the owner's tool quota",
+   "WRITE_LEDGER_KEEP_DAYS": "90 // enough to dedupe late retries"
+  },
+  "verify": [
+   "pytest tests/test_write.py -q  # passes: one_write, timeout_readback, own_token, allowlist, hash_mismatch",
+   "psql -c \"select state,count(*) from write_ledger group by 1\"  # no rows stuck in reserved after the sweep"
+  ],
+  "pitfalls": [
+   "Retrying blindly after a timeout: the tool may have applied the change, so you post twice; read back first",
+   "Using the same key for different texts: the second edit is silently dropped; the key includes item_hash",
+   "Caching the owner's token in the writer process: a leak exposes every user; fetch per call, keep in memory only for that call",
+   "Assuming the vendor has an idempotency header: unverified here; check current docs, and rely on the ledger meanwhile"
+  ]
+ },
+ "ag_priv": {
+  "milestone": "M5",
+  "effort_days": 4,
+  "depends_on": [
+   "ag_plan",
+   "zn_promote",
+   "zn_taint"
+  ],
+  "stack": [
+   {
+    "part": "language",
+    "pick": "Python 3.12, standard library only",
+    "why": "hashlib and re are enough; no network and no model, so no new exposure"
+   },
+   {
+    "part": "hashing",
+    "pick": "hashlib.blake2b with digest_size=8",
+    "why": "fast 8 byte hashes for shingles held in memory"
+   },
+   {
+    "part": "test data",
+    "pick": "a 200-pair labelled set in tests/data",
+    "why": "100 copies and 100 independent texts to choose shingle size"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a model that judges privacy",
+    "why": "sends private text to another call and can be fooled"
+   }
+  ],
+  "install": [
+   "python3 -m venv .venv && . .venv/bin/activate",
+   "pip install pytest==8.*"
+  ],
+  "layout": [
+   "agent/priv.py : normalise, shingle, check, swap or block",
+   "agent/stoplist.txt : boilerplate phrases allowed to match",
+   "tests/test_priv.py : copy, both-overlap, clean, confirm tests",
+   "tests/data/pairs.jsonl : 200 labelled pairs"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"required\": [\"item_id\",\"text_final\",\"verdict\",\"overlap_score\"],\n  \"properties\": {\n    \"item_id\": {\"type\": \"string\"},\n    \"text_final\": {\"type\": \"string\"},\n    \"verdict\": {\"enum\": [\"clean\",\"paraphrased\",\"blocked\",\"owner_confirmed\"]},\n    \"overlap_score\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1},\n    \"reason\": {\"type\": \"string\"}\n  }\n}",
+  "interface": "def check(item: Proposed, private_text: str, confirmed: bool = False) -> Checked  # in-memory only; discards private_text on return",
+  "code": "import re, hashlib\n\nN = 8\n\ndef norm(t):\n    return re.sub(r'\\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', t.lower())).strip()\n\ndef shingles(t, n=N):\n    w = norm(t).split()\n    return {hashlib.blake2b(' '.join(w[i:i+n]).encode(), digest_size=8).digest()\n            for i in range(len(w) - n + 1)}\n\ndef overlap(text, priv_sh, priv_norm):\n    sh = shingles(text)\n    m = len(sh & priv_sh)\n    t = norm(text)\n    # second check: any 20-character exact run, which catches short private messages\n    if any(t[i:i+20] in priv_norm for i in range(max(0, len(t) - 19))):\n        m = max(m, 1)\n    return m / max(len(sh), 1), m\n\ndef check(item, private_text, confirmed=False):\n    if not private_text:\n        return blocked(item, 'source_missing')  # fail closed\n    p_norm = norm(private_text)\n    p_sh = shingles(private_text)\n    score, m = overlap(item.change_text, p_sh, p_norm)\n    if m == 0:\n        return Checked(item.item_id, item.change_text, 'clean', 0.0)\n    if confirmed:\n        return Checked(item.item_id, item.change_text, 'owner_confirmed', score)\n    s2, m2 = overlap(item.safe_text, p_sh, p_norm)\n    if m2 == 0 and item.safe_text:\n        return Checked(item.item_id, item.safe_text, 'paraphrased', score)\n    return blocked(item, 'copied_private_text')",
+  "steps": [
+   {
+    "do": "Write norm() and shingles() with tests",
+    "done_when": "norm('Hi, There!') equals 'hi there' and a 10-word text gives 3 shingles"
+   },
+   {
+    "do": "Write overlap() including the 20-character check",
+    "done_when": "a 12-word copy gives m=5; a short exact 20-character copy gives m>=1"
+   },
+   {
+    "do": "Write check() with swap, block and fail closed behaviour",
+    "done_when": "tests copy, both_overlap, clean and missing_source pass"
+   },
+   {
+    "do": "Add owner confirmation through zn_promote",
+    "done_when": "a confirmed item returns owner_confirmed and an audit row names the owner"
+   },
+   {
+    "do": "Build the 200-pair set and choose the shingle size",
+    "done_when": "chosen size has 0 missed copies and under 2 percent false blocks"
+   },
+   {
+    "do": "Add the stop list for common boilerplate",
+    "done_when": "a stop-list phrase of 8 words no longer blocks"
+   }
+  ],
+  "config": {
+   "PRIV_SHINGLE_WORDS": "8 // tune on the 200-pair set",
+   "PRIV_SUBSTRING_CHARS": "20 // catches short private lines",
+   "PRIV_CONFIRM_EXPIRY_H": "24 // a confirmation is not permanent",
+   "PRIV_CHECK_TIMEOUT_MS": "2000 // then block",
+   "PRIV_STOPLIST": "agent/stoplist.txt // boilerplate allowed to match"
+  },
+  "verify": [
+   "pytest tests/test_priv.py -q  # passes: verbatim_copy, both_overlap, clean, owner_confirm, missing_source",
+   "python3 -m agent.priv --eval tests/data/pairs.jsonl  # prints missed_copies=0 false_blocks<=2"
+  ],
+  "pitfalls": [
+   "Skipping normalisation: a copy with different case or punctuation slips through; normalise both sides",
+   "Storing the private shingle set or text: creates a second copy of private data; keep it in memory and drop it after the run",
+   "Treating an empty private source as no overlap: an outage then disables the guard; empty must mean block",
+   "Shingle size too small: common phrases block everything and owners stop trusting it; tune on labelled pairs"
+  ]
+ }
+}

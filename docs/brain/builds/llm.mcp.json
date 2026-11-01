@@ -1,0 +1,403 @@
+{
+ "ll_mcp": {
+  "milestone": "M0",
+  "effort_days": 6,
+  "depends_on": [
+   "ll_fmt",
+   "qr_id"
+  ],
+  "stack": [
+   {
+    "part": "MCP server",
+    "pick": "FastMCP (Python), streamable HTTP transport",
+    "why": "Named in research/repos.md. Check current docs for the exact import path and auth hooks. Do NOT hand-roll JSON-RPC."
+   },
+   {
+    "part": "token validation",
+    "pick": "PyJWT with the OIDC provider's JWKS (Keycloak or Ory)",
+    "why": "MCP authorization spec 2025-11-25 (research/techniques.md T24): resource-server checks, audience binding, PKCE S256, no token passthrough."
+   },
+   {
+    "part": "M0 auth shortcut",
+    "pick": "a static dev bearer token behind an env flag",
+    "why": "M0 is a walking skeleton. Remove the flag at M2. Never ship it enabled."
+   },
+   {
+    "part": "call log",
+    "pick": "Postgres table",
+    "why": "One row per call: tenant, caller, tool, argument hash, status, ms."
+   }
+  ],
+  "install": [
+   "pip install fastmcp pyjwt[crypto] httpx",
+   "npx @modelcontextprotocol/inspector http://localhost:8000/mcp",
+   "docker run -d -p 8080:8080 quay.io/keycloak/keycloak start-dev"
+  ],
+  "layout": [
+   "brain/mcp/server.py : tool registration and the HTTP app",
+   "brain/mcp/auth.py : accept() token checks",
+   "brain/mcp/calllog.py : one row per call",
+   "tests/test_mcp_auth.py : bad signature, audience and scope cases"
+  ],
+  "schema": "CREATE TABLE mcp_call_log (\n  id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  caller_id text NOT NULL,\n  tool text NOT NULL,\n  arg_hash text NOT NULL,\n  status text NOT NULL,\n  ms integer NOT NULL,\n  at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "MCP tools over POST /mcp (streamable HTTP, Authorization: Bearer): search{query, sources[], limit<=20, cursor}, fetch{id}, list_sources{}, who_knows{topic, limit<=10}. Result: envelopes (ll_fmt) or error {code, message, retry_after_s}.",
+  "code": "import time, hashlib, jwt\n\nSELF = 'https://brain.example.com/mcp'\nSCOPE = {'search': 'brain:read', 'fetch': 'brain:read',\n         'list_sources': 'brain:read', 'who_knows': 'brain:read'}\n\ndef accept(token, tool):\n    key = jwks.get_signing_key_from_jwt(token).key\n    claims = jwt.decode(token, key, algorithms=['RS256'],\n                        audience=SELF,  # tricky part: token must be minted for this server\n                        options={'require': ['exp', 'aud', 'sub']})\n    scopes = set(claims.get('scope', '').split())\n    if SCOPE[tool] not in scopes:\n        raise Forbidden(f'missing scope {SCOPE[tool]}')\n    return Principal(claims['sub'], claims.get('tenant'), claims.get('agent_id'), scopes)\n\n@mcp.tool()\nasync def search(query: str, sources: list[str] | None = None,\n                 limit: int = 20, cursor: str | None = None, ctx=None):\n    t0 = time.monotonic()\n    p = accept(bearer(ctx), 'search')\n    limit = min(limit, 20)\n    try:\n        res = await asyncio.wait_for(\n            core.search(p, query, sources, limit, cursor), 8.0)\n        status = 'ok'\n        return to_mcp_result(res)\n    except asyncio.TimeoutError:\n        status = 'timeout'\n        raise ToolError({'code': 'timeout', 'message': 'try again', 'retry_after_s': 2})\n    finally:\n        log_call(p, 'search', hashlib.sha256(query.encode()).hexdigest(),\n                 status, int((time.monotonic() - t0) * 1000))",
+  "steps": [
+   {
+    "do": "Start a FastMCP server with one search tool returning pointers from a fixture",
+    "done_when": "MCP Inspector lists the tool and a call returns 3 envelopes"
+   },
+   {
+    "do": "Add the 4 tools with limits (20 and 10)",
+    "done_when": "tools/list shows search, fetch, list_sources, who_knows"
+   },
+   {
+    "do": "Add accept() with audience, expiry and scope checks",
+    "done_when": "tests: wrong aud, expired token and missing scope each return an error"
+   },
+   {
+    "do": "Serve the protected-resource metadata and point it at the OIDC provider",
+    "done_when": "curl /.well-known/oauth-protected-resource returns JSON naming the issuer (check the spec for the exact path)"
+   },
+   {
+    "do": "Write one call-log row per call",
+    "done_when": "select count(*) from mcp_call_log equals the number of test calls"
+   },
+   {
+    "do": "Add the 8 s downstream timeout with retry_after_s",
+    "done_when": "test with a sleeping core returns code timeout in about 8 s"
+   },
+   {
+    "do": "Connect one real AI client",
+    "done_when": "the client lists the tools and one search returns results"
+   }
+  ],
+  "config": {
+   "MCP_AUDIENCE": "https://brain.example.com/mcp // aud claim must match",
+   "DOWNSTREAM_TIMEOUT_S": "8 // two attempts fit a 30 s assistant turn",
+   "MAX_LIMIT_SEARCH": "20 // keeps replies under the token cap",
+   "MAX_LIMIT_WHO_KNOWS": "10 // same reason",
+   "DEV_STATIC_TOKEN": "off // M0 only, must be off in any shared env"
+  },
+  "verify": [
+   "pytest tests/test_mcp_auth.py -q  # all pass",
+   "npx @modelcontextprotocol/inspector --cli http://localhost:8000/mcp --method tools/list  # 4 tools",
+   "curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/mcp  # 401 without a token"
+  ],
+  "pitfalls": [
+   "Accepting a token minted for another service lets one stolen token reach the brain: check aud every time",
+   "Passing the caller's token on to downstream apps breaks the spec: exchange it for a delegated token instead",
+   "Putting the token in a query string leaks it into logs: header only",
+   "Reply bigger than the client's budget gets cut: enforce the ll_schema caps",
+   "Leaving the M0 static token on in staging is an open door"
+  ]
+ },
+ "ll_api": {
+  "milestone": "M4",
+  "effort_days": 6,
+  "depends_on": [
+   "ll_fmt",
+   "ll_schema",
+   "qr_id"
+  ],
+  "stack": [
+   {
+    "part": "web framework",
+    "pick": "FastAPI",
+    "why": "Generates the OpenAPI document from the same models that validate requests, so the description cannot drift."
+   },
+   {
+    "part": "SDK generation",
+    "pick": "openapi-python-client for Python; openapi-typescript for TypeScript",
+    "why": "Check current docs for maintained generators. Do NOT hand-write SDKs, they drift."
+   },
+   {
+    "part": "idempotency store",
+    "pick": "Postgres table keyed by (principal, key)",
+    "why": "Same database, 24 h expiry."
+   },
+   {
+    "part": "cursor signing",
+    "pick": "hmac and hashlib from the standard library",
+    "why": "Opaque signed cursor that binds position, query and principal."
+   }
+  ],
+  "install": [
+   "pip install fastapi uvicorn pydantic",
+   "pip install openapi-python-client",
+   "npm install -D openapi-typescript"
+  ],
+  "layout": [
+   "brain/api/app.py : routes",
+   "brain/api/cursor.py : sign and verify cursors",
+   "brain/api/idempotency.py : replay table logic",
+   "openapi/brain.json : exported OpenAPI file, checked in",
+   "tests/test_api.py : cursor, idempotency and error shape tests"
+  ],
+  "schema": "CREATE TABLE idempotency (\n  principal_id text NOT NULL,\n  key text NOT NULL CHECK (length(key) <= 64),\n  request_hash text NOT NULL,\n  response_ref text,\n  expires_at timestamptz NOT NULL,\n  PRIMARY KEY (principal_id, key)\n);",
+  "interface": "POST /v1/search  body {query, sources[], limit<=50, cursor}  ->  200 {items[envelope], next_cursor, request_id}; errors are {type, title, status, retry_after_s, request_id}. Writes accept header Idempotency-Key (UUID, up to 64 chars).",
+  "code": "import base64, hmac, hashlib, json, time\n\ndef sign_cursor(pos, qhash, principal, ttl=900):\n    body = json.dumps({'p': pos, 'q': qhash, 'u': principal,\n                       'x': int(time.time()) + ttl}, separators=(',', ':')).encode()\n    mac = hmac.new(SECRET, body, hashlib.sha256).digest()\n    return base64.urlsafe_b64encode(body + mac).decode()\n\ndef read_cursor(tok, qhash, principal):\n    raw = base64.urlsafe_b64decode(tok.encode())\n    body, mac = raw[:-32], raw[-32:]\n    good = hmac.new(SECRET, body, hashlib.sha256).digest()\n    if not hmac.compare_digest(mac, good):  # tricky part: constant-time compare\n        raise Problem(400, 'bad_cursor')\n    c = json.loads(body)\n    if c['x'] < time.time() or c['q'] != qhash or c['u'] != principal:\n        raise Problem(400, 'cursor_expired_or_foreign')\n    return c['p']\n\n@app.post('/v1/search')\nasync def search(req: SearchReq, p: Principal = Depends(auth),\n                 idem: str | None = Header(None, alias='Idempotency-Key')):\n    qh = hashlib.sha256(req.query.encode()).hexdigest()\n    pos = read_cursor(req.cursor, qh, p.id) if req.cursor else 0\n    items, nxt = await core.search(p, req.query, req.sources, min(req.limit, 50), pos)\n    return {'items': items,\n            'next_cursor': sign_cursor(nxt, qh, p.id) if nxt is not None else None,\n            'request_id': new_request_id()}",
+  "steps": [
+   {
+    "do": "Create the FastAPI app and POST /v1/search returning fixture envelopes",
+    "done_when": "curl returns 200 with 3 items"
+   },
+   {
+    "do": "Export the OpenAPI file and check it in",
+    "done_when": "openapi/brain.json exists and lists /v1/search"
+   },
+   {
+    "do": "Add signed cursors with 15 minute expiry",
+    "done_when": "tests: tampered, expired and other-user cursors each return 400"
+   },
+   {
+    "do": "Add the idempotency table for write routes",
+    "done_when": "test: the same key twice gives one row and an identical response"
+   },
+   {
+    "do": "Return one error shape with request_id and retry_after_s on 429",
+    "done_when": "test asserts the shape for 400, 401, 403, 429"
+   },
+   {
+    "do": "Generate the Python SDK from the file and call it",
+    "done_when": "a script using the SDK returns items"
+   }
+  ],
+  "config": {
+   "CURSOR_TTL_S": "900 // a longer cursor reads a stale index generation",
+   "IDEMPOTENCY_WINDOW_H": "24 // covers client retry loops",
+   "DEFAULT_PAGE": "20 // fits the token cap for agents",
+   "MAX_PAGE": "50 // upper bound",
+   "CURSOR_SECRET": "from secret store // rotate with two keys live"
+  },
+  "verify": [
+   "pytest tests/test_api.py -q  # all pass",
+   "curl -s localhost:8000/openapi.json | python -c 'import json,sys; print(sorted(json.load(sys.stdin)[\"paths\"]))'  # includes /v1/search"
+  ],
+  "pitfalls": [
+   "Replaying an idempotency key with a different body must return 409, not the old response: compare request_hash",
+   "Offset cursors skip or repeat rows when the index changes: sign a position plus query hash and expire it",
+   "A cursor not bound to the principal lets one user page through another's result set",
+   "Hand-edited SDKs drift from the API: regenerate on every OpenAPI change"
+  ]
+ },
+ "ll_schema": {
+  "milestone": "M4",
+  "effort_days": 5,
+  "depends_on": [
+   "ll_fmt"
+  ],
+  "stack": [
+   {
+    "part": "definitions",
+    "pick": "one YAML file per tool in the repo, versioned",
+    "why": "The MCP server and the OpenAPI file both read it, so names and descriptions cannot differ."
+   },
+   {
+    "part": "eval runner",
+    "pick": "a small Python script that calls the model through the LLM gateway such as LiteLLM and records the chosen tool and arguments",
+    "why": "Do NOT eval by reading descriptions yourself; measure which tool a model picks on labelled prompts."
+   },
+   {
+    "part": "statistics",
+    "pick": "Wilson interval in pure Python (statistics module)",
+    "why": "A raw accuracy on 40 prompts is noisy. Gate on the lower bound."
+   },
+   {
+    "part": "token count",
+    "pick": "tiktoken or the provider count endpoint",
+    "why": "Measures reply size against the 1,500 and 4,000 token caps. Check current docs."
+   }
+  ],
+  "install": [
+   "pip install pyyaml litellm tiktoken",
+   "pip install pytest"
+  ],
+  "layout": [
+   "tools/search.yaml : name, description, input_schema",
+   "tools/fetch.yaml : same for fetch",
+   "tools/who_knows.yaml : same",
+   "tools/list_sources.yaml : same",
+   "evals/tooluse.jsonl : prompt, expected_tool, expected_args",
+   "brain/schema/eval.py : runner and Wilson bound"
+  ],
+  "schema": "{\n \"$id\": \"ToolDefinition\",\n \"type\": \"object\",\n \"required\": [\"name\", \"description\", \"input_schema\", \"version\"],\n \"properties\": {\n  \"name\": {\"type\": \"string\", \"pattern\": \"^[a-z_]{3,32}$\"},\n  \"description\": {\"type\": \"string\", \"maxLength\": 600},\n  \"input_schema\": {\"type\": \"object\"},\n  \"version\": {\"type\": \"string\"}\n }\n}",
+  "interface": "def run_eval(tools: list[ToolDef], cases: list[Case], model: str) -> EvalReport  # EvalReport = {accuracy, lower_bound, avg_reply_tokens, version}; release gate passes only if lower_bound >= 0.90",
+  "code": "import math\n\ndef wilson_lower(correct, n, z=1.96):\n    if n == 0:\n        return 0.0\n    p = correct / n\n    centre = p + z * z / (2 * n)\n    spread = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))\n    return (centre - spread) / (1 + z * z / n)\n\ndef run_eval(tools, cases, model):\n    correct, toks = 0, []\n    for c in cases:\n        resp = llm.complete(model=model, messages=[{'role': 'user', 'content': c.prompt}],\n                            tools=[t.as_llm_tool() for t in tools], temperature=0)\n        call = resp.tool_calls[0] if resp.tool_calls else None\n        ok = call is not None and call.name == c.expected_tool\n        # tricky part: score arguments too, subset match on the expected keys\n        if ok and c.expected_args:\n            ok = all(call.args.get(k) == v for k, v in c.expected_args.items())\n        correct += ok\n        if call is not None and ok:\n            toks.append(count_tokens(json.dumps(execute_stub(call))))\n    n = len(cases)\n    return EvalReport(correct / n, wilson_lower(correct, n),\n                      sum(toks) / max(len(toks), 1), version_of(tools))\n\ndef gate(report):\n    return report.lower_bound >= 0.90 and report.avg_reply_tokens <= 1500",
+  "steps": [
+   {
+    "do": "Write the 4 tool YAML files",
+    "done_when": "python -c loads all 4 and validates against ToolDefinition"
+   },
+   {
+    "do": "Write 40 labelled prompts covering each tool and near-miss prompts",
+    "done_when": "wc -l evals/tooluse.jsonl shows at least 40"
+   },
+   {
+    "do": "Implement run_eval and wilson_lower",
+    "done_when": "test: wilson_lower(36, 40) is about 0.77 and (40, 40) is about 0.91"
+   },
+   {
+    "do": "Run the eval and print the report",
+    "done_when": "report shows accuracy, lower_bound and avg_reply_tokens"
+   },
+   {
+    "do": "Rewrite descriptions and re-run until the gate passes",
+    "done_when": "gate(report) is True and the version string is bumped"
+   },
+   {
+    "do": "Serve the same definitions from ll_mcp and ll_api",
+    "done_when": "tools/list and openapi.json show identical names and descriptions"
+   }
+  ],
+  "config": {
+   "GATE_LOWER_BOUND": "0.90 // design gate, tune after 4 weeks of real calls",
+   "Z": "1.96 // 95 percent interval",
+   "SEARCH_REPLY_CAP_TOKENS": "1500 // search reply cap",
+   "FETCH_REPLY_CAP_TOKENS": "4000 // fetch reply cap"
+  },
+  "verify": [
+   "pytest tests/test_schema_eval.py -q  # all pass, includes the Wilson values",
+   "python -m brain.schema.eval evals/tooluse.jsonl  # prints lower_bound and gate PASS or FAIL"
+  ],
+  "pitfalls": [
+   "Descriptions that overlap (search vs who_knows) make models pick the wrong tool: add a when-not-to-use sentence",
+   "Evaluating on the prompts you tuned on overstates accuracy: hold out 10 prompts",
+   "Tool replies that exceed the cap crowd out the user's context: truncate snippets, cap limits",
+   "Renaming a tool breaks connected clients: bump the version and keep the old name for a release"
+  ]
+ },
+ "ll_fmt": {
+  "milestone": "M0",
+  "effort_days": 1.5,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "models",
+    "pick": "pydantic 2",
+    "why": "One model gives the JSON schema, the validation and the serialiser for both ll_mcp and ll_api."
+   },
+   {
+    "part": "timestamps",
+    "pick": "RFC 3339 UTC strings",
+    "why": "Plain strings every client can parse. Do NOT use local time."
+   },
+   {
+    "part": "language",
+    "pick": "Python 3.12",
+    "why": "A stateless mapping, no extra dependency."
+   }
+  ],
+  "install": [
+   "pip install pydantic pytest",
+   "python -c 'import pydantic; print(pydantic.VERSION)'"
+  ],
+  "layout": [
+   "brain/fmt/envelope.py : Envelope model and to_envelope()",
+   "tests/test_envelope.py : nine field and truncation tests"
+  ],
+  "schema": "{\n \"$id\": \"Envelope\",\n \"type\": \"object\",\n \"required\": [\"id\", \"title\", \"uri\", \"snippet\", \"score\", \"source_app\", \"version\", \"retrieved_at\", \"permission_checked_at\"],\n \"properties\": {\n  \"id\": {\"type\": \"string\"},\n  \"title\": {\"type\": \"string\"},\n  \"uri\": {\"type\": \"string\", \"format\": \"uri\"},\n  \"snippet\": {\"type\": \"string\", \"maxLength\": 300},\n  \"score\": {\"type\": \"number\"},\n  \"source_app\": {\"type\": \"string\"},\n  \"version\": {\"type\": \"string\"},\n  \"retrieved_at\": {\"type\": \"string\", \"format\": \"date-time\"},\n  \"permission_checked_at\": {\"type\": \"string\", \"format\": \"date-time\"}\n }\n}",
+  "interface": "def to_envelope(hit: HydratedHit, now: datetime) -> Envelope  # raises MissingField if any of the 9 fields is absent; adds acl_stale=true when now - permission_checked_at > 300 s",
+  "code": "from datetime import datetime\nfrom pydantic import BaseModel, Field\n\nFIELDS = ('id', 'title', 'uri', 'snippet', 'score', 'source_app',\n          'version', 'retrieved_at', 'permission_checked_at')\n\nclass Envelope(BaseModel):\n    id: str\n    title: str\n    uri: str\n    snippet: str = Field(max_length=300)\n    score: float\n    source_app: str\n    version: str\n    retrieved_at: datetime\n    permission_checked_at: datetime\n    acl_stale: bool = False\n\ndef cut(text, n=300):\n    if len(text) <= n:\n        return text\n    # tricky part: cut on a word boundary and leave room for the ellipsis\n    return text[:n - 1].rsplit(' ', 1)[0].rstrip() + '\\u2026'\n\ndef to_envelope(hit, now):\n    src = {\n        'id': hit.doc_id, 'title': hit.title, 'uri': hit.uri,\n        'snippet': cut(hit.text_excerpt), 'score': round(hit.fused_score, 4),\n        'source_app': hit.source_app, 'version': hit.source_version,\n        'retrieved_at': hit.fetched_at, 'permission_checked_at': hit.last_acl_check_at,\n    }\n    missing = [f for f in FIELDS if src.get(f) in (None, '')]\n    if missing:\n        raise MissingField(missing)  # a hit without provenance is not served\n    env = Envelope(**src)\n    env.acl_stale = (now - env.permission_checked_at).total_seconds() > 300\n    return env",
+  "steps": [
+   {
+    "do": "Write the Envelope model",
+    "done_when": "Envelope.model_json_schema() lists 9 required fields"
+   },
+   {
+    "do": "Write to_envelope with the field check",
+    "done_when": "test: a hit missing version raises MissingField"
+   },
+   {
+    "do": "Truncate snippets at 300 characters on a word boundary",
+    "done_when": "test: a 1,000 character excerpt gives a snippet of at most 300 characters"
+   },
+   {
+    "do": "Set acl_stale from permission_checked_at",
+    "done_when": "test: a 301 s old check sets acl_stale true, 299 s sets false"
+   },
+   {
+    "do": "Check size",
+    "done_when": "20 envelopes serialise to under 1,500 tokens with a tokenizer count"
+   }
+  ],
+  "config": {
+   "SNIPPET_MAX_CHARS": "300 // about 75 tokens so 20 hits fit the search cap",
+   "SCORE_DECIMALS": "4 // enough, saves tokens",
+   "ACL_STALE_AFTER_S": "300 // older checks are flagged for the caller"
+  },
+  "verify": [
+   "pytest tests/test_envelope.py -q  # all pass",
+   "python -c 'from brain.fmt.envelope import Envelope; print(len(Envelope.model_json_schema()[\"required\"]))'  # 9"
+  ],
+  "pitfalls": [
+   "Dropping permission_checked_at to save tokens hides staleness from the caller: all 9 fields stay",
+   "Cutting a snippet mid-word or mid-escape gives broken JSON or odd text: cut on a word boundary",
+   "Naive datetimes serialise without a zone and clients misread them: require UTC",
+   "Putting the full excerpt in the envelope breaks the token cap: snippet only, fetch returns more"
+  ]
+ },
+ "ll_browse": {
+  "milestone": "M4",
+  "effort_days": 5,
+  "depends_on": [
+   "ll_mcp",
+   "ix_cat",
+   "ix_link"
+  ],
+  "stack": [
+   {
+    "part": "render",
+    "pick": "Jinja2 templates over catalog queries",
+    "why": "Files are rendered at read time and not stored"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a file system export",
+    "why": "It would copy entries outside the permission filter"
+   }
+  ],
+  "install": [
+   "pip install jinja2",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/mcp/browse.py : path to virtual file",
+   "tests/test_browse.py"
+  ],
+  "schema": "{\"path\":\"str\",\"frontmatter\":\"object\",\"entries\":[\"{id,title,gist,path}\"]}",
+  "interface": "def read_path(ctx, path: str) -> VirtualFile  # only catalog paths resolve; raises NotFound",
+  "code": "import posixpath\n\ndef read_path(ctx, path):\n    norm = posixpath.normpath(\"/\" + path)\n    if \"..\" in path or not norm.startswith(\"/brain/\"):\n        raise NotFound(path)\n    topic, entry = parse(norm)                          # resolves only against the catalog\n    ids = catalog.ids(ctx.tenant, topic) & acl.visible(ctx)\n    return render(topic, entry, ids)",
+  "steps": [
+   {
+    "do": "Write the start file and topic index templates",
+    "done_when": "start file under 2 KB"
+   },
+   {
+    "do": "Resolve paths against the catalog only",
+    "done_when": "'..' is rejected"
+   },
+   {
+    "do": "Filter entries by permission",
+    "done_when": "index lists only visible entries"
+   },
+   {
+    "do": "Add a per-principal cache",
+    "done_when": "second read is a cache hit"
+   }
+  ],
+  "config": {
+   "CACHE_TTL_S": "60 // per principal set",
+   "PAGE_SIZE": "100 // entries per index page",
+   "START_FILE_MAX_BYTES": "2048 // design limit"
+  },
+  "verify": [
+   "pytest tests/test_browse.py -q  # all passed",
+   "curl -s localhost:8080/browse/brain/index.md | wc -c  # under 2048"
+  ],
+  "pitfalls": [
+   "Letting a path reach the real file system",
+   "Showing a 'hidden' placeholder that reveals an entry exists"
+  ]
+ }
+}

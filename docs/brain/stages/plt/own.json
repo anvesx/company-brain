@@ -1,0 +1,862 @@
+{
+ "group": {
+  "line": "Five platform parts the brain builds itself: an LLM gateway, an identity provider with a tamper-evident audit table, a policy engine, a lessons table linked to tests, and observability with an eval gate.",
+  "dumb": "The brain is a standalone product, so it builds its own support parts. One gate for every model call, one login and audit system, one rule book, one table of lessons learned, and one place for traces, release tests and incidents. Each card says what to build and which open-source tool to start from."
+ },
+ "comps": {
+  "pl_gw": {
+   "line": "One LLM gateway (LiteLLM-style): budget check, route by tier, redact, fall back\nallow iff used + est_cost <= budget",
+   "dumb": "Every time the brain needs a language model, it asks one gate that the brain runs itself. The gate checks the team budget, picks a model, hides personal data and switches vendor if one is down. No other part of the brain holds a vendor key.",
+   "inn": "Call {tenant_id, team_id, task_class, model_family_hint, messages, max_tokens, deadline_ms}; embedding batches {texts[], model}; caller principal from pl_idp.",
+   "out": "Response {text or vectors, model_used, tokens_in, tokens_out, cost, redactions: int, fallback_used: bool} or a typed error {budget_exceeded|policy_denied|upstream_down}.",
+   "store": "Owns the spend meter per (tenant, team, day) and the call log with redacted prompts, in the brain's own Postgres. Reads budgets from its config table.",
+   "fail": "Primary model errors or times out at the deadline: 1 retry after 300 ms, then the fallback model; both fail: typed error upstream_down, no silent partial. Budget exhausted: refused with budget_exceeded and the brain degrades (skips contextual lines, keeps the index). Redactor error: the call is blocked, never sent unredacted.",
+   "hard": "The brain's embedding and context-line volume at backfill (millions of calls) needs a separate backfill budget; not yet sized (tune after the first onboarding).",
+   "prop": "Proposal: the brain makes three kinds of model call (context lines at index time, planner and answer at query time, embeddings at both). All must pass one gateway the brain owns, so cost, redaction and failover are built once. Run an LLM gateway such as LiteLLM, or write a thin one.",
+   "deep": {
+    "purpose": "Provide one metered, redacting, failover model path for every brain call, so no stage holds a vendor key or leaks personal data to a model.",
+    "expected": [
+     "Every brain model call appears in the gateway meter under its tenant and team",
+     "A planted email address in a prompt is redacted before it leaves the gateway",
+     "A primary-model outage is answered by the fallback with fallback_used true"
+    ],
+    "not_expected": [
+     "It does not decide what to ask the model; the callers (ix_ctx, qr_rw, qr_ans, ix_embed) do",
+     "It does not store the brain's content; call logs hold redacted text only"
+    ],
+    "algorithm": {
+     "name": "Budget check, then route, then redact",
+     "formula": "allow iff used(team, period) + est_cost(call) <= budget(team, period);  route = cheapest model whose quality tier >= task_class tier",
+     "steps": [
+      "Authenticate the caller principal through pl_idp and read the team budget from the meter",
+      "Estimate cost = tokens_in * price_in + max_tokens * price_out; refuse if over budget",
+      "Pick the cheapest model that meets the task class tier (small for planning, large for answers)",
+      "Redact personal data and secrets in messages; record the count",
+      "Call the model; on error use the fallback; record tokens and actual cost"
+     ],
+     "params": {
+      "retry": "1 at 300 ms (design)",
+      "budget_period": "per team per day (default)",
+      "task_tiers": "small for planner and context lines, large for answers (design)",
+      "deadline": "set by caller, 3 s on the query path (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "used: spend so far in the period",
+      "est: estimated cost of this call",
+      "budget: team cap",
+      "T: tokens per document",
+      "N: documents"
+     ],
+     "formula_full": "est = T_in * p_in + T_out * p_out;  backfill_cost = N * est",
+     "derivation": "Cost is linear in tokens, so a backfill budget can be set before it starts by multiplying document count by per-call cost.",
+     "worked_example": "N = 1,000,000 chunks, context line needs T_in = 1,000 and T_out = 80 tokens with a small model priced at 1 and 5 units per million tokens (placeholder prices, tune to the real price list): est = 1000*1e-6*1 + 80*1e-6*5 = 0.0014 units per chunk, so 1,400 units for the backfill. A cap of 1,000 units per day would refuse after about 714,000 chunks.",
+     "complexity": "O(1) per call; the meter write is O(1).",
+     "failure_modes": [
+      "A runaway loop in the brain drains a team budget in minutes; the per-caller rate cap and budget refusal stop it",
+      "A price change makes stored estimates wrong; the meter records actual cost, not the estimate"
+     ],
+     "calibration": "Raise the budget only after the cost loop (op_cost) shows cost per answered question has stayed under target for 7 days (tune)."
+    },
+    "alternatives": [
+     {
+      "name": "Each stage calls its vendor directly",
+      "why_rejected": "Spend, redaction and failover would be rebuilt five times and drift apart."
+     },
+     {
+      "name": "Hosted vendor router with no local meter",
+      "why_rejected": "Budget refusal and redaction would sit outside the brain's trust boundary and could not be tested in CI."
+     }
+    ],
+    "security": [
+     "Personal data or a secret reaching a model vendor: control is redaction at the gateway before any outbound call",
+     "Prompt injection in retrieved text steering the model to exfiltrate: control is the gateway refusing tool calls outside the caller's scope plus the brain's untrusted-data wrapping upstream",
+     "Budget exhaustion by a hostile or buggy caller: control is per-team budget and per-caller rate cap",
+     "Vendor key theft: only the gateway holds vendor keys, in a secret store; the other brain parts hold none"
+    ],
+    "performance": {
+     "slo": "p95 gateway overhead under 50 ms excluding model time (design)",
+     "complexity": "O(1) per call",
+     "scaling": "At 10x calls the meter and redactor scale by sharding on tenant; model vendor limits become the bound."
+    },
+    "edge_cases": [
+     "Empty prompt: refused as invalid",
+     "Huge prompt over context limit: refused with a typed error, the caller chunks",
+     "Duplicate retried call after timeout: idempotency key prevents double charge",
+     "Concurrent calls at the budget edge: atomic meter decrement; one may be refused",
+     "Unicode: redactor works on NFC text",
+     "A new app joining the brain needs no gateway change; its text flows through the same calls"
+    ],
+    "tests": [
+     {
+      "name": "budget",
+      "given": "used 990, est 20, budget 1000",
+      "expect": "refused budget_exceeded"
+     },
+     {
+      "name": "redaction",
+      "given": "prompt holds jane@example.com",
+      "expect": "gateway sends [EMAIL], redactions = 1"
+     },
+     {
+      "name": "fallback",
+      "given": "primary times out at deadline",
+      "expect": "fallback model answers, fallback_used true"
+     },
+     {
+      "name": "meter",
+      "given": "3 calls at 0.0014 units",
+      "expect": "meter shows 0.0042 units for the team"
+     }
+    ],
+    "cost_levers": [
+     "Use the small tier for context lines and planning; batch embeddings; cache identical calls"
+    ],
+    "feedback_events": [
+     "Callers mark bad answers; the cost loop compares spend per good answer"
+    ],
+    "analytics_events": [
+     {
+      "name": "gw.call",
+      "fields": [
+       "tenant_id",
+       "team_id",
+       "task_class",
+       "model_used",
+       "tokens_in",
+       "tokens_out",
+       "cost",
+       "fallback_used"
+      ],
+      "when": "after each call"
+     },
+     {
+      "name": "gw.refused",
+      "fields": [
+       "tenant_id",
+       "team_id",
+       "reason"
+      ],
+      "when": "on each refusal"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_agentgateway",
+      "name": "agentgateway",
+      "take": "Proxy for agent, LLM and MCP traffic with auth and policy; shows the single-gate pattern. Alternative to a LiteLLM-style proxy."
+     }
+    ],
+    "industry": "Gateways with per-team budgets and model fallback are a common pattern (LiteLLM is one open-source example; check its current docs). Our inference is that the brain's volume makes the backfill budget the main sizing question; contextual retrieval (t_t26) is the main index-time call it meters.",
+    "refs": [
+     "t_t26",
+     "r_agentgateway"
+    ]
+   },
+   "req": "No sourced requirement; this is a design proposal (see prop)."
+  },
+  "pl_idp": {
+   "line": "OIDC provider (Keycloak or Ory) for principals, plus a hash-chained audit table\nrow_hash = SHA-256(prev_hash || row)",
+   "dumb": "The brain runs its own login system and keeps each company's data walled off from the others. It also writes a record of every action that nobody can quietly change, because each record carries a fingerprint of the one before it. A broken fingerprint shows tampering.",
+   "inn": "Credential or token {bearer}, tenant and user claims, agent id and owner; audit rows {tenant_id, principal, action, resource, outcome, ts} from ac_audit, so_mcp, so_obo and others.",
+   "out": "Verified principal {tenant_id, user_id or agent_id, owner, scopes[], acting: person|agent}; audit receipt {row_id, row_hash}; group and membership reads for the access-list stage.",
+   "store": "OIDC provider database for users, clients and keys; one append-only audit_log table in the brain's Postgres, partitioned by tenant, with an UPDATE and DELETE block.",
+   "fail": "Token fails signature, expiry (default 5 min access token) or audience check: 401, no row written beyond a denied audit entry. Audit write fails: the caller's action is refused (fail closed), retried by the caller up to 3 times over 2 s. Chain verify finds a break: raises a severity-1 alert within the 15-minute verify job.",
+   "hard": "Key rotation for the audit chain and archiving old partitions without breaking verification are not yet designed; plan an anchor hash per day (design).",
+   "prop": "Proposal: the brain needs verified users and agents, hard tenant walls and a tamper-evident log. Run an OIDC provider such as Keycloak or Ory for identity, and keep a hash-chained audit table in Postgres. No shared platform is assumed.",
+   "deep": {
+    "purpose": "Give every request a verified principal and tenant, and record every action in a log whose tampering can be detected.",
+    "expected": [
+     "A token for tenant A can never read a tenant B row",
+     "Every allow and deny decision writes one audit row",
+     "Editing any past audit row makes verify report the first broken row id"
+    ],
+    "not_expected": [
+     "It does not decide what a principal may do; pl_pol and the access-list stage do",
+     "It does not store document content, only action metadata"
+    ],
+    "algorithm": {
+     "name": "OIDC token verification and a SHA-256 hash chain",
+     "formula": "row_hash(n) = SHA-256(row_hash(n-1) || canonical_json(row(n)));  verify iff recomputed chain equals stored chain",
+     "steps": [
+      "Fetch the provider's signing keys (JWKS) and cache them for 10 minutes (default)",
+      "Verify signature, expiry, issuer, audience and the tenant claim on each bearer token",
+      "Map claims to a principal with scopes; mark acting as person or agent",
+      "Take a per-tenant advisory lock, read the last row_hash, compute the new hash and insert",
+      "A scheduled job recomputes the chain per tenant and compares to the stored hashes"
+     ],
+     "params": {
+      "access_token_ttl": "5 min (default)",
+      "jwks_cache": "10 min (default)",
+      "verify_interval": "15 min (design)",
+      "daily_anchor": "one signed anchor hash per tenant per day (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "row(n): the n-th audit row as canonical JSON",
+      "H: SHA-256, 256-bit output",
+      "n: rows in a tenant partition"
+     ],
+     "formula_full": "h_0 = SHA-256(tenant_id); h_n = H(h_{n-1} || row_n)",
+     "derivation": "Each hash covers all earlier rows through h_{n-1}, so changing row k changes every hash from k onward. A verifier needs only the rows and the last trusted hash.",
+     "worked_example": "A tenant has 10,000 rows. Someone edits row 4,000. Recomputing from row 1 gives a different h_4000 than stored, so verify stops at row 4,000 after hashing 4,000 rows. At about 1 microsecond per small hash that is far under a second of hashing.",
+     "complexity": "Insert O(1) (reads one last hash); full verify O(n) per tenant.",
+     "failure_modes": [
+      "A writer with database superuser can rewrite the chain from the edit onward; the daily anchor stored outside the database catches this",
+      "Concurrent inserts for one tenant fork the chain; the advisory lock serialises them"
+     ],
+     "calibration": "Pick the verify interval so a break is seen before the next daily anchor; shorten it if a tenant's row rate exceeds 100 per second (tune)."
+    },
+    "alternatives": [
+     {
+      "name": "Plain audit table with no chaining",
+      "why_rejected": "Edits and deletes would be invisible."
+     },
+     {
+      "name": "Write-once object storage only",
+      "why_rejected": "Cannot be queried by tenant and time for access reviews without a second copy."
+     }
+    ],
+    "security": [
+     "Token replay or forged token: control is signature, audience and 5-minute expiry checks, with revocation through the provider",
+     "Cross-tenant read: control is the tenant claim copied into every query as a row-level security setting",
+     "Audit tampering by an insider: control is the hash chain plus an off-database daily anchor",
+     "Agent acting beyond its owner: control is the owner and scopes in the principal, checked by pl_pol"
+    ],
+    "performance": {
+     "slo": "p95 token verify under 5 ms with cached keys; audit insert p95 under 10 ms (design)",
+     "complexity": "O(1) per verify and per insert",
+     "scaling": "Partition audit by tenant so the lock is per tenant; at 10x rows add monthly partitions and verify only the new one."
+    },
+    "edge_cases": [
+     "Expired token: 401 and a denied audit row",
+     "Key rotation at the provider: unknown key id triggers a JWKS refetch once",
+     "Two inserts at the same instant for one tenant: advisory lock orders them",
+     "Agent with no owner: refused",
+     "User moved between tenants: old tokens rejected on the tenant claim",
+     "A new app joins through the manifest and gets its own client id and scopes"
+    ],
+    "tests": [
+     {
+      "name": "tenant wall",
+      "given": "token tenant A queries a tenant B row",
+      "expect": "zero rows, one denied audit row"
+     },
+     {
+      "name": "tamper",
+      "given": "edit row 4,000 of 10,000",
+      "expect": "verify returns first_bad = 4000"
+     },
+     {
+      "name": "expiry",
+      "given": "token 6 min old",
+      "expect": "401"
+     },
+     {
+      "name": "order",
+      "given": "50 parallel inserts for one tenant",
+      "expect": "chain verifies with 50 distinct links"
+     }
+    ],
+    "cost_levers": [
+     "Cache JWKS and principal lookups; verify audit incrementally from the last checked row"
+    ],
+    "feedback_events": [
+     "Security review findings from the audit log feed new deny rules"
+    ],
+    "analytics_events": [
+     {
+      "name": "idp.verified",
+      "fields": [
+       "tenant_id",
+       "principal_type",
+       "ms"
+      ],
+      "when": "after each token check"
+     },
+     {
+      "name": "audit.appended",
+      "fields": [
+       "tenant_id",
+       "action",
+       "outcome"
+      ],
+      "when": "after each insert"
+     },
+     {
+      "name": "audit.verify",
+      "fields": [
+       "tenant_id",
+       "rows",
+       "first_bad"
+      ],
+      "when": "after each chain verify"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "MCP threat model calls for scoped tokens and audit.",
+      "how": "Scopes come from the OIDC provider; audit rows go to the chained table."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_openfga",
+      "name": "OpenFGA",
+      "take": "Relationship-based authorization used downstream of identity; identity itself stays in the OIDC provider."
+     }
+    ],
+    "industry": "Keycloak and Ory are open-source OIDC providers (check current docs for setup); hash-chained logs are a common tamper-evidence pattern.",
+    "refs": [
+     "t_t24",
+     "p_mcp-enterprise",
+     "r_openfga"
+    ]
+   },
+   "req": "No sourced requirement; this is a design proposal (see prop)."
+  },
+  "pl_pol": {
+   "line": "Policy engine (OPA or Cedar): allow, deny or needs_approval from versioned rules\ndecision = rules(principal, action, resource, context)",
+   "dumb": "One rule book, kept as code, answers every yes-or-no question about what a person or agent may do. It can say yes, no, or ask a human first. Each answer names the rule that gave it, and the rule book has version numbers so any answer can be replayed later.",
+   "inn": "Check request {tenant_id, principal, action, resource, context{app, sensitivity, channel}}; rule set versions.",
+   "out": "Decision {allow|deny|needs_approval, rule_ids[], reason, policy_version} and an audit row via pl_idp.",
+   "store": "Rule files in git, loaded as a versioned bundle; decision log in the audit table owned by pl_idp. No document content.",
+   "fail": "Engine unreachable or times out at 50 ms: deny (fail closed) and write an audit row. Bundle fails to load: keep the last good version and alert; reject the new bundle. Rule error at evaluate time: deny with reason rule_error.",
+   "hard": "Per-document relation lookups at scale belong to the access-list stage, not here; the boundary between rules and relations needs a worked example per app (tune).",
+   "prop": "Proposal: the brain gates tool calls, write actions and agent scopes with one policy language. Run OPA (Rego) or Cedar as an embedded or sidecar engine with rules in git. The brain owns its rules.",
+   "deep": {
+    "purpose": "Decide allow, deny or needs_approval for every sensitive action from versioned rules, and explain each decision.",
+    "expected": [
+     "The same input and policy version always give the same decision",
+     "A deny carries the rule id that caused it",
+     "A new rule ships only after its tests pass in CI"
+    ],
+    "not_expected": [
+     "It does not authenticate; pl_idp does",
+     "It does not do per-document access lists at query time; the access-list stage does"
+    ],
+    "algorithm": {
+     "name": "Policy as code with default deny",
+     "formula": "decision = deny if any deny rule matches; else needs_approval if any approval rule matches; else allow if any allow rule matches; else deny",
+     "steps": [
+      "Receive the request and attach the current policy_version",
+      "Evaluate deny rules first, then approval rules, then allow rules",
+      "Collect the ids of the rules that matched",
+      "Return the decision and write it to the audit log",
+      "If needs_approval, create an approval task and return a pending handle"
+     ],
+     "params": {
+      "timeout": "50 ms then deny (design)",
+      "default": "deny (design)",
+      "bundle_poll": "60 s (default), pull from git-backed bundle store"
+     }
+    },
+    "math": {
+     "definitions": [
+      "R: rule count",
+      "D: decisions per second"
+     ],
+     "formula_full": "latency ~ O(R_matching) per decision with indexed rules",
+     "derivation": "Engines index rules by input fields, so only rules that could match are evaluated; cost grows with matching rules, not total rules.",
+     "worked_example": "2,000 rules, but only 6 mention action = tool.call and app = jira. A decision evaluates those 6; at roughly 10 microseconds per rule that is about 60 microseconds, well under the 50 ms timeout.",
+     "complexity": "O(matching rules) per decision; bundle load O(R).",
+     "failure_modes": [
+      "Two rules conflict; deny-first ordering resolves it and a CI test lists conflicts",
+      "A stale bundle on one replica gives different answers; the decision carries policy_version so drift is visible"
+     ],
+     "calibration": "Raise the approval threshold only after the approval queue shows under 5% overrides for 30 days (tune)."
+    },
+    "alternatives": [
+     {
+      "name": "Rules hard-coded in each service",
+      "why_rejected": "Drift and no single audit of why something was allowed."
+     },
+     {
+      "name": "Relationship graph only (OpenFGA)",
+      "why_rejected": "Great for document access, awkward for context rules such as sensitivity and channel; used downstream, not here."
+     }
+    ],
+    "security": [
+     "Policy bypass by calling a tool directly: control is that tools are reachable only through the gateway, which calls this engine",
+     "Rule tampering: control is git review plus signed bundles",
+     "Fail-open on outage: control is default deny on timeout",
+     "Confused deputy: an agent acting for a user gets the intersection of both scopes"
+    ],
+    "performance": {
+     "slo": "p95 decision under 10 ms in process, under 50 ms as sidecar (design)",
+     "complexity": "O(matching rules)",
+     "scaling": "Stateless; scale replicas; bundle size is the memory bound."
+    },
+    "edge_cases": [
+     "Unknown action: deny",
+     "Missing context field: deny with reason missing_context",
+     "Approval never answered: expires after 24 hours (default) and denies",
+     "Bundle version rollback: allowed by pointing the poll at the previous tag",
+     "A new app joins by adding its action names and rules to the bundle"
+    ],
+    "tests": [
+     {
+      "name": "default deny",
+      "given": "action not in any rule",
+      "expect": "deny"
+     },
+     {
+      "name": "deny wins",
+      "given": "one allow and one deny match",
+      "expect": "deny with the deny rule id"
+     },
+     {
+      "name": "approval",
+      "given": "delete on sensitivity high",
+      "expect": "needs_approval with a handle"
+     },
+     {
+      "name": "timeout",
+      "given": "engine stalls 80 ms",
+      "expect": "deny and audit row"
+     }
+    ],
+    "cost_levers": [
+     "Run in process with a library; cache decisions for 5 s keyed on the full input (design)"
+    ],
+    "feedback_events": [
+     "Approver overrides become test cases for the rules"
+    ],
+    "analytics_events": [
+     {
+      "name": "policy.decision",
+      "fields": [
+       "tenant_id",
+       "action",
+       "decision",
+       "rule_ids",
+       "policy_version",
+       "ms"
+      ],
+      "when": "after each check"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_mcp-enterprise",
+      "key_idea": "Allowlists and approvals for tools.",
+      "how": "The rule bundle carries the tool allowlist and approval rules."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_opa",
+      "name": "Open Policy Agent",
+      "take": "Policy-as-code engine; Cedar is the other standalone option."
+     }
+    ],
+    "industry": "OPA is CNCF graduated; Cedar is an open-source policy language from AWS. Pick one and keep rules in git.",
+    "refs": [
+     "p_mcp-enterprise",
+     "r_opa"
+    ]
+   },
+   "req": "No sourced requirement; this is a design proposal (see prop)."
+  },
+  "pl_mem": {
+   "line": "Lessons table linked to eval tests: every correction becomes a rule and a test case\nsupersede(old, new) by version",
+   "dumb": "When someone corrects the brain, it writes the fix down as a lesson in its own table. Each lesson is also turned into a test, so the same mistake is caught before it ships again. When a newer lesson replaces an old one, the old one is kept but marked as replaced.",
+   "inn": "Corrections {tenant_id, user_id, query, bad_answer, fix}; unsupported claims from qr_cite; post-mortem notes; preference writes.",
+   "out": "Preferences and lessons for the planner {tenant_id, scope, rule_text, source, version}; test cases made from failures.",
+   "store": "Postgres tables lesson and lesson_test owned by the brain: rule_text, scope, source, version, valid_from, superseded_by, linked test id. No source document text.",
+   "fail": "Lesson write fails: the correction is queued and retried 3 times over 30 s, then parked for manual review. Test generation fails: the lesson is saved but flagged untested, and the weekly report lists it. Conflict with an active lesson: the write is held for review, never silently applied.",
+   "hard": "How many lessons the planner can take in its prompt before quality drops is untested; cap and measure (tune). Detecting a lesson that restates a private fact is only checked by a shingle test.",
+   "prop": "Proposal: the brain must learn from corrections without retraining. Keep a lessons table (scope, version, supersession) and link each lesson to an eval test in the CI gate. The brain owns the table.",
+   "deep": {
+    "purpose": "Turn corrections and failed citations into versioned lessons and regression tests, so fixed mistakes stay fixed.",
+    "expected": [
+     "A correction creates a lesson and a linked test within one minute",
+     "A superseded lesson is no longer served but stays in history",
+     "The CI gate fails if a linked test regresses"
+    ],
+    "not_expected": [
+     "It does not store document content, only the rule text and the failing query",
+     "It does not retrain any model"
+    ],
+    "algorithm": {
+     "name": "Versioned lessons with supersession, each linked to a test",
+     "formula": "active(l) iff l.superseded_by is null and now between valid_from and valid_to;  served = top-k active lessons by scope match",
+     "steps": [
+      "Normalise the correction into a rule_text and a scope (user, team, tenant)",
+      "Search active lessons in the same scope for a conflict by similarity above 0.85 (tune)",
+      "If conflict, hold for review; else insert with version = max + 1",
+      "Create a test case {query, must_not_contain bad claim, should_support fix} and link it",
+      "Serve the top-k active lessons to the planner by scope"
+     ],
+     "params": {
+      "conflict_similarity": "0.85 (tune on labelled pairs)",
+      "k_served": "10 (design, tune by eval)",
+      "review_hold": "7 days then expire the held write (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "l: a lesson",
+      "k: lessons served",
+      "p: probability the same mistake recurs"
+     ],
+     "formula_full": "served(q) = top_k { l active : scope(l) matches scope(q) } ranked by similarity(q, l.rule_text)",
+     "derivation": "Scope narrows the set first, then similarity ranks, so a user lesson cannot leak to another user and k bounds prompt size.",
+     "worked_example": "A tenant holds 400 lessons; 380 are active; the query matches scope for 120. Similarity ranks them and k = 10 are served, about 10 x 40 = 400 prompt tokens.",
+     "complexity": "O(L_scope) per query with an index; O(L_scope) per conflict check.",
+     "failure_modes": [
+      "Contradicting lessons both active: the conflict hold prevents it",
+      "Lesson text carries a secret from the correction: the gateway redactor runs on write"
+     ],
+     "calibration": "Choose k by eval: serve k in {5,10,20} and keep the smallest with no drop in answer score (tune)."
+    },
+    "alternatives": [
+     {
+      "name": "Fine-tune on corrections",
+      "why_rejected": "Slow, costly and cannot be undone for one lesson."
+     },
+     {
+      "name": "Free-form notes in a wiki",
+      "why_rejected": "No scope, no versions, no linked tests."
+     }
+    ],
+    "security": [
+     "Poisoned lessons from a malicious user: control is scope (a user lesson only affects that user) and review for team and tenant scope",
+     "Cross-tenant lesson leak: control is tenant_id on every row and in the query",
+     "Secret in a correction: control is redaction at the gateway before storage"
+    ],
+    "performance": {
+     "slo": "p95 lesson fetch under 20 ms (design)",
+     "complexity": "O(L_scope)",
+     "scaling": "Index on (tenant_id, scope, superseded_by); at 10x lessons add an embedding index for the similarity step."
+    },
+    "edge_cases": [
+     "Same correction submitted twice: deduped by hash of rule_text and scope",
+     "Lesson valid only until a date: valid_to honoured",
+     "A fix that is itself wrong: later correction supersedes it, history keeps both",
+     "Empty fix: rejected",
+     "A new app joins with no lessons and inherits only tenant-scope ones",
+     "A lesson learned from personal-zone data stays personal and is never shown to the team without the owner's confirmation."
+    ],
+    "tests": [
+     {
+      "name": "supersede",
+      "given": "new lesson replaces the first version",
+      "expect": "old version not served, new version served, old kept in history"
+     },
+     {
+      "name": "scope",
+      "given": "user lesson for u1",
+      "expect": "not served for u2"
+     },
+     {
+      "name": "linked test",
+      "given": "correction saved",
+      "expect": "lesson_test row exists and runs in the eval suite"
+     },
+     {
+      "name": "conflict",
+      "given": "two near-opposite rules",
+      "expect": "second held for review"
+     }
+    ],
+    "cost_levers": [
+     "Embed lesson text once; cap k; skip the conflict check for exact duplicates"
+    ],
+    "feedback_events": [
+     "Thumbs-down with a typed fix is the main source; qr_cite unsupported claims are the automatic source"
+    ],
+    "analytics_events": [
+     {
+      "name": "lesson.created",
+      "fields": [
+       "tenant_id",
+       "scope",
+       "source"
+      ],
+      "when": "after insert"
+     },
+     {
+      "name": "lesson.superseded",
+      "fields": [
+       "tenant_id",
+       "old",
+       "new"
+      ],
+      "when": "on supersede"
+     },
+     {
+      "name": "lesson.test_failed",
+      "fields": [
+       "tenant_id",
+       "lesson_id",
+       "run_id"
+      ],
+      "when": "when a linked test fails"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_temporal-validity",
+      "key_idea": "Facts carry validity over time.",
+      "how": "Lessons carry valid_from, valid_to and superseded_by."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_mem0",
+      "name": "mem0",
+      "take": "Example memory layer with per-user scopes; the brain keeps a simpler SQL table with linked tests."
+     }
+    ],
+    "industry": "Per-user memory layers are common; linking each lesson to a regression test is our proposal.",
+    "refs": [
+     "p_temporal-validity",
+     "r_mem0"
+    ]
+   },
+   "req": "No sourced requirement; this is a design proposal (see prop)."
+  },
+  "pl_obs": {
+   "line": "OpenTelemetry traces, a CI eval gate that blocks releases, and an incident log\ngate = pass iff all suites >= threshold",
+   "dumb": "The brain records a trace of every request, so any slow or wrong answer can be followed step by step. Before any change ships, a set of tests must pass or the release stops. When something goes wrong, an incident record keeps the timeline and the owner.",
+   "inn": "Eval results {suite, run_id, pass, metrics} from op_eval and op_leak; traces {trace_id, spans[]}; alerts and incident reports.",
+   "out": "Gate verdict {pass|fail, suite, run_id} to the release pipeline; incident records {id, severity, owner, timeline}; shared trace tooling to op_trace.",
+   "store": "OpenTelemetry collector with a trace backend (for example Tempo or Jaeger); eval_run and incident tables in the brain's Postgres. Spans hold ids and counts, never document text.",
+   "fail": "Collector down: services buffer spans in memory up to 10,000 and drop the oldest after that; requests are never blocked. Eval gate cannot run: the release fails closed. Incident write fails: retry 3 times over 10 s, then page the owner directly.",
+   "hard": "Thresholds per suite (recall, citation, zero-leak) are not set until the first labelled queries exist (tune after about 20 real queries, per t_t53).",
+   "prop": "Proposal: the brain needs traces, a release gate and an incident log. Use OpenTelemetry for traces, a CI job that runs the eval suites and fails the build, and an incidents table with a post-mortem template. No shared platform is assumed.",
+   "deep": {
+    "purpose": "Make every request traceable, stop any release that fails the eval suites, and keep a record of incidents.",
+    "expected": [
+     "Each query has one trace id across all stages",
+     "A failing eval suite blocks the release",
+     "Each incident has an owner, severity and timeline"
+    ],
+    "not_expected": [
+     "It does not define the eval cases; op_eval and op_leak do",
+     "It does not store document text in traces"
+    ],
+    "algorithm": {
+     "name": "Threshold gate over eval suites, with trace propagation",
+     "formula": "gate = pass iff for every suite s: metric(s) >= threshold(s), and zero_leak = 0 cross-tenant results",
+     "steps": [
+      "Services emit OpenTelemetry spans with a propagated trace id",
+      "CI runs each eval suite against the candidate build",
+      "Compare each metric to its threshold; zero_leak must equal 0",
+      "Write the run to eval_run and return pass or fail to the pipeline",
+      "On alert, open an incident row and link the trace ids"
+     ],
+     "params": {
+      "recall_threshold": "set from baseline minus 2 points (tune)",
+      "zero_leak": "0 results (design, no tolerance)",
+      "span_buffer": "10,000 spans (default)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "metric(s): score of suite s",
+      "threshold(s): minimum allowed",
+      "B: baseline score"
+     ],
+     "formula_full": "threshold(s) = B(s) - margin, margin = 2 points by default",
+     "derivation": "A fixed margin below the last good score lets noise pass but blocks real drops; the zero-leak suite has no margin.",
+     "worked_example": "Baseline recall@20 is 0.84, margin 0.02, so threshold 0.82. A candidate scoring 0.81 fails and the release stops; 0.83 passes.",
+     "complexity": "Gate is O(S) in suites; eval run cost is O(Q) queries per suite.",
+     "failure_modes": [
+      "Eval set too small makes the gate noisy; grow it from real queries",
+      "A flaky suite trains people to ignore the gate; flaky suites are quarantined and tracked"
+     ],
+     "calibration": "Re-baseline after each intended improvement, never after a failure (design)."
+    },
+    "alternatives": [
+     {
+      "name": "Manual release checks",
+      "why_rejected": "Skipped under time pressure."
+     },
+     {
+      "name": "Logs only, no traces",
+      "why_rejected": "Cannot follow one query across stages."
+     }
+    ],
+    "security": [
+     "Traces leaking content: control is that spans carry ids and counts only, and a test greps traces for planted secrets",
+     "Gate bypass by merging with failing checks: control is branch protection requiring the gate",
+     "Tampering with eval results: control is that results are written by the CI job identity and audited"
+    ],
+    "performance": {
+     "slo": "span overhead under 1 ms per span; full gate under 15 minutes in CI (design)",
+     "complexity": "O(spans) and O(queries)",
+     "scaling": "Sample 10% of healthy traces and keep all errors at 10x load (design)."
+    },
+    "edge_cases": [
+     "Eval suite times out: counts as fail",
+     "Missing trace id on an incoming call: one is generated",
+     "Incident with no owner: auto-assigned to the on-call",
+     "Collector restart: buffered spans flush",
+     "A new app joining adds its own suite to the gate"
+    ],
+    "tests": [
+     {
+      "name": "gate fail",
+      "given": "recall 0.81 vs threshold 0.82",
+      "expect": "fail verdict, release blocked"
+     },
+     {
+      "name": "leak",
+      "given": "one cross-tenant result",
+      "expect": "fail regardless of other scores"
+     },
+     {
+      "name": "trace",
+      "given": "one query through 5 stages",
+      "expect": "single trace id with 5 or more spans"
+     },
+     {
+      "name": "buffer",
+      "given": "collector down for 60 s",
+      "expect": "no request fails, spans flushed after"
+     }
+    ],
+    "cost_levers": [
+     "Sample healthy traces; run the full suite nightly and a fast subset on each push"
+    ],
+    "feedback_events": [
+     "Each incident post-mortem adds a lesson via pl_mem and an eval case"
+    ],
+    "analytics_events": [
+     {
+      "name": "eval.run",
+      "fields": [
+       "suite",
+       "run_id",
+       "pass",
+       "metric"
+      ],
+      "when": "after each suite"
+     },
+     {
+      "name": "gate.verdict",
+      "fields": [
+       "run_id",
+       "verdict"
+      ],
+      "when": "after each gate"
+     },
+     {
+      "name": "incident.opened",
+      "fields": [
+       "id",
+       "severity",
+       "owner"
+      ],
+      "when": "on creation"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_seven-failures",
+      "key_idea": "Failure points give a test checklist.",
+      "how": "The suites cover each failure point."
+     },
+     {
+      "ref": "p_ragas",
+      "key_idea": "Cheap automatic RAG metrics.",
+      "how": "Used for the recall and citation suites."
+     }
+    ],
+    "repos": [],
+    "industry": "OpenTelemetry is the vendor-neutral standard for traces; CI eval gates are a common release practice.",
+    "refs": [
+     "p_seven-failures",
+     "p_ragas",
+     "t_t53"
+    ]
+   },
+   "req": "No sourced requirement; this is a design proposal (see prop)."
+  }
+ },
+ "edges": [
+  {
+   "a": "pl_gw",
+   "b": "op_cost",
+   "l": "spend meter",
+   "k": "n",
+   "d": "Spend {tenant_id, team_id, cost, tokens} for the cost loop"
+  },
+  {
+   "a": "pl_gw",
+   "b": "pl_obs",
+   "l": "call traces",
+   "k": "d",
+   "d": "Spans {trace_id, model_used, ms, cost, redactions}",
+   "x": 1
+  },
+  {
+   "a": "pl_idp",
+   "b": "ac_audit",
+   "l": "verified principal",
+   "k": "s",
+   "d": "Principal {tenant_id, user_id, owner, scopes[]} for audit and filter building",
+   "x": 1
+  },
+  {
+   "a": "pl_idp",
+   "b": "so_obo",
+   "l": "token exchange",
+   "k": "s",
+   "d": "Exchanged token {audience, scopes, expiry} for on-behalf-of reads",
+   "x": 1
+  },
+  {
+   "a": "pl_pol",
+   "b": "ll_ro",
+   "l": "decision",
+   "k": "s",
+   "d": "Decision {allow|deny|needs_approval, rule_ids, policy_version}",
+   "x": 1
+  },
+  {
+   "a": "pl_pol",
+   "b": "pl_idp",
+   "l": "decision audit",
+   "k": "s",
+   "d": "Audit row {principal, action, decision, policy_version}",
+   "x": 1
+  },
+  {
+   "a": "pl_mem",
+   "b": "qr_cite",
+   "l": "lessons",
+   "k": "n",
+   "d": "Lessons {scope, rule_text, version} for the citation check"
+  },
+  {
+   "a": "pl_mem",
+   "b": "op_eval",
+   "l": "failure tests",
+   "k": "d",
+   "d": "Test cases {query, expected, source} made from failures",
+   "x": 1
+  },
+  {
+   "a": "pl_obs",
+   "b": "op_eval",
+   "l": "gate verdict",
+   "k": "n",
+   "d": "Verdict {pass|fail, suite, run_id}"
+  },
+  {
+   "a": "pl_obs",
+   "b": "pl_mem",
+   "l": "postmortem lessons",
+   "k": "d",
+   "d": "Incident lessons {incident_id, rule_text, test} written to memory",
+   "x": 1
+  }
+ ]
+}

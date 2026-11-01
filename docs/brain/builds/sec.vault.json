@@ -1,0 +1,530 @@
+{
+ "sc_runtime": {
+  "milestone": "M2",
+  "effort_days": 6,
+  "depends_on": [
+   "so_oauth",
+   "so_sdk"
+  ],
+  "stack": [
+   {
+    "part": "process",
+    "pick": "separate container, own Unix user, read-only root filesystem",
+    "why": "keeps the decrypt boundary small; check current docs for your platform's sandbox options"
+   },
+   {
+    "part": "KMS client",
+    "pick": "cloud KMS decrypt call (AWS KMS or GCP KMS), boto3 or the Google client, check current docs for versions",
+    "why": "envelope decrypt with a role that only the runtime holds"
+   },
+   {
+    "part": "IPC",
+    "pick": "Unix domain socket with peer credentials",
+    "why": "no TCP port, so no network path from an agent"
+   },
+   {
+    "part": "network policy",
+    "pick": "deny-all egress plus allow KMS, vault DB and active app hosts",
+    "why": "the runtime must have no route to the LLM gateway"
+   },
+   {
+    "part": "do not pick",
+    "pick": "passing tokens through MCP tool arguments",
+    "why": "MCP security best practices forbid token passthrough"
+   }
+  ],
+  "install": [
+   "pip install boto3 'psycopg[binary]' cryptography",
+   "docker build -t brain-runtime -f runtime/Dockerfile .",
+   "docker run --rm --read-only --network brain-runtime-net brain-runtime --selftest"
+  ],
+  "layout": [
+   "runtime/server.py : Unix socket server, one request type: get_access_token",
+   "runtime/vault.py : load ciphertext, call KMS decrypt, refresh with a lock",
+   "runtime/Dockerfile : non-root user, read-only root, no shell",
+   "migrations/110_token_record.sql : ciphertext table",
+   "tests/test_runtime_surface.py : no port, no model route, no token in logs"
+  ],
+  "schema": "CREATE TABLE token_record (\n  tenant_id text NOT NULL,\n  connection_id text NOT NULL,\n  token_class text NOT NULL CHECK (token_class IN ('admin','user')),\n  key_ref text NOT NULL,\n  enc_refresh_token bytea NOT NULL,\n  status text NOT NULL DEFAULT 'ok' CHECK (status IN ('ok','needs_reauth','revoked')),\n  updated_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (tenant_id, connection_id)\n);",
+  "interface": "# local Unix socket request, JSON in and out\nget_access_token(tenant_id: str, connection_id: str, audience: str) -> {access_token: str, expires_at: int}\n# raises NeedsReauth when the app rejects the refresh token",
+  "code": "import time, threading\n_cache, _locks = {}, {}\nMARGIN = 60  # seconds before expiry to refresh\n\ndef get_access_token(db, kms, app, tenant, conn_id, audience):\n    key = (tenant, conn_id)\n    tok = _cache.get(key)\n    if tok and tok['audience'] == audience and tok['expires_at'] - MARGIN > time.time():\n        return tok\n    lock = _locks.setdefault(key, threading.Lock())\n    with lock:  # tricky part: one refresh at a time, single-use refresh tokens\n        tok = _cache.get(key)\n        if tok and tok['expires_at'] - MARGIN > time.time():\n            return tok\n        rec = db.load(tenant, conn_id)\n        refresh = kms.decrypt(rec.key_ref, rec.enc_refresh_token)\n        try:\n            new = app.refresh(refresh)  # {access_token, refresh_token, expires_in}\n        except app.Rejected:\n            db.set_status(tenant, conn_id, 'needs_reauth')\n            raise NeedsReauth(conn_id)\n        db.save(tenant, conn_id, kms.encrypt(rec.key_ref, new['refresh_token']))\n        refresh = None  # drop plaintext\n        tok = {'access_token': new['access_token'], 'audience': audience,\n               'expires_at': time.time() + new['expires_in']}\n        _cache[key] = tok\n        db.audit(tenant, conn_id, rec.key_ref)  # key_ref only, never the token\n        return tok",
+  "steps": [
+   {
+    "do": "Create the token_record table and the runtime container with no published ports",
+    "done_when": "docker inspect shows no exposed port and a read-only root filesystem"
+   },
+   {
+    "do": "Write vault.py with KMS decrypt and the refresh lock",
+    "done_when": "unit test with a fake KMS returns a token and writes one audit row"
+   },
+   {
+    "do": "Add the Unix socket server with peer credential check",
+    "done_when": "a call from another user id is refused"
+   },
+   {
+    "do": "Apply the network policy: allow KMS, DB and active app hosts only",
+    "done_when": "curl to the LLM gateway host from inside the container fails"
+   },
+   {
+    "do": "Add log scrubbing and disable core dumps",
+    "done_when": "1,000 calls in debug mode leave zero token-shaped strings in logs"
+   },
+   {
+    "do": "Connect so_sdk to the socket",
+    "done_when": "a connector call gets a token and the app answers 200"
+   }
+  ],
+  "config": {
+   "MARGIN_SECONDS": "60 // refresh before expiry to absorb clock skew",
+   "KMS_RETRY_MS": "200,1000,5000 // matches the card's failure schedule",
+   "SOCKET_PATH": "/run/brain/runtime.sock // local only, mode 0600",
+   "CORE_DUMPS": "off // plaintext must not reach disk"
+  },
+  "verify": [
+   "pytest tests/test_runtime_surface.py -q  # 4 passed: no port, no model route, no token in logs, refresh race",
+   "docker run --rm brain-runtime --selftest  # prints listening: unix only"
+  ],
+  "pitfalls": [
+   "Single-use refresh tokens (Slack with rotation) break if two callers refresh together: symptom is needs_reauth after a burst; keep the per-connection lock",
+   "A token in an exception message reaches the log: wrap errors and log only connection_id and key_ref",
+   "Sharing one container for the runtime and the MCP server puts a tool surface next to the decrypt: keep them separate processes"
+  ]
+ },
+ "sc_split": {
+  "milestone": "M2",
+  "effort_days": 4,
+  "depends_on": [
+   "sc_runtime"
+  ],
+  "stack": [
+   {
+    "part": "keys",
+    "pick": "two customer-scoped keys per tenant in a managed KMS (AWS KMS or GCP KMS), check current docs for key policy syntax",
+    "why": "separate keys give separate blast radius"
+   },
+   {
+    "part": "infrastructure as code",
+    "pick": "Terraform, key policies in the repo",
+    "why": "a nightly diff can compare live policy to the repo"
+   },
+   {
+    "part": "roles",
+    "pick": "two service roles: admin-sync and user-query",
+    "why": "each denied on the other's key"
+   },
+   {
+    "part": "do not pick",
+    "pick": "one shared key with application-level class labels",
+    "why": "a label is not a lock; one role compromise opens both"
+   }
+  ],
+  "install": [
+   "brew install terraform",
+   "terraform -chdir=infra/keys init",
+   "pip install boto3 pytest"
+  ],
+  "layout": [
+   "infra/keys/main.tf : two keys and two roles per tenant",
+   "brain/keys/wrap.py : wrap and unwrap by token class",
+   "brain/keys/drift.py : nightly live policy vs repo diff",
+   "tests/test_cross_class_deny.py : both deny directions"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"key_class_map\",\n  \"type\": \"object\",\n  \"required\": [\"tenant_id\", \"admin_key_ref\", \"user_key_ref\"],\n  \"properties\": {\n    \"tenant_id\": {\"type\": \"string\"},\n    \"admin_key_ref\": {\"type\": \"string\"},\n    \"user_key_ref\": {\"type\": \"string\"}\n  },\n  \"additionalProperties\": false\n}",
+  "interface": "def wrap_data_key(tenant_id: str, token_class: Literal['admin','user'], data_key: bytes) -> bytes\ndef unwrap_data_key(tenant_id: str, token_class: Literal['admin','user'], wrapped: bytes) -> bytes  # AccessDenied if role is wrong class",
+  "code": "CLASS_KEY = {'admin': 'admin_key_ref', 'user': 'user_key_ref'}\n\ndef _key_for(tenant_id, token_class, db):\n    m = db.key_map(tenant_id)\n    if token_class not in CLASS_KEY:\n        raise ValueError('token_class must be admin or user')\n    return m[CLASS_KEY[token_class]]\n\ndef wrap_data_key(tenant_id, token_class, data_key, kms, db):\n    return kms.encrypt(_key_for(tenant_id, token_class, db), data_key)\n\ndef unwrap_data_key(tenant_id, token_class, wrapped, kms, db, audit):\n    ref = _key_for(tenant_id, token_class, db)\n    try:\n        return kms.decrypt(ref, wrapped)\n    except kms.AccessDenied:\n        # tricky part: a denial is a signal, not a retry case\n        audit.write(tenant_id, role=kms.caller_role(), key_ref=ref, op='decrypt', outcome='denied')\n        raise\n\ndef drift(live_policies, repo_policies):\n    return {k: (live_policies.get(k), v) for k, v in repo_policies.items()\n            if live_policies.get(k) != v}",
+  "steps": [
+   {
+    "do": "Write Terraform for two keys and two roles per tenant",
+    "done_when": "terraform plan shows 2 keys and 2 roles for a test tenant"
+   },
+   {
+    "do": "Add explicit deny for the other class on each key policy",
+    "done_when": "policy simulator denies admin role on the user key and the reverse"
+   },
+   {
+    "do": "Write wrap and unwrap with the class argument",
+    "done_when": "unit test round-trips a data key for both classes"
+   },
+   {
+    "do": "Write the cross-class tests",
+    "done_when": "both deny tests pass and write an audit row"
+   },
+   {
+    "do": "Add the nightly drift job",
+    "done_when": "editing a policy by hand makes the job report 1 diff"
+   },
+   {
+    "do": "Make connector registration reject a class that does not match the grant type",
+    "done_when": "registering a user-class connector with an app-only grant fails"
+   }
+  ],
+  "config": {
+   "KEYS_PER_TENANT": "2 // admin and user class",
+   "DRIFT_CHECK_INTERVAL": "24h // matches the card",
+   "DENY_ALERT": "3 in 10 min // tune from baseline"
+  },
+  "verify": [
+   "pytest tests/test_cross_class_deny.py -q  # 2 passed",
+   "python -m brain.keys.drift --tenant t1  # prints 0 differences"
+  ],
+  "pitfalls": [
+   "A convenience role granted both keys silently removes the split: symptom is a clean test but a drift diff the next night",
+   "Lazy creation of the admin key can race at first connect: create under a transaction so two keys are never made",
+   "Do not cite or assume KMS quotas: check current docs before the tenant count passes 1,000"
+  ]
+ },
+ "sc_noconf": {
+  "milestone": "M2",
+  "effort_days": 3,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "test runner",
+    "pick": "pytest 8",
+    "why": "runs in CI and at server start"
+   },
+   {
+    "part": "MCP client",
+    "pick": "the official MCP SDK client (Python), check current docs for version",
+    "why": "lists the live tool registry over the real protocol"
+   },
+   {
+    "part": "deny rules",
+    "pick": "a TOML file of patterns, gitleaks style (x_sec_gitleaks)",
+    "why": "patterns are data, reviewed like code"
+   },
+   {
+    "part": "do not pick",
+    "pick": "an admin scope that hides credential tools",
+    "why": "a scope can be mis-granted; a missing tool cannot be called"
+   }
+  ],
+  "install": [
+   "pip install pytest mcp",
+   "mkdir -p tests/toolaudit",
+   "pytest --version"
+  ],
+  "layout": [
+   "tests/toolaudit/deny.toml : deny patterns and the 2-reviewer exceptions list",
+   "tests/toolaudit/test_no_credential_tools.py : the audit",
+   "brain/mcp/boot_audit.py : same audit run at server start",
+   "ci/toolaudit.yml : CI step that blocks release"
+  ],
+  "schema": "# tests/toolaudit/deny.toml\n[deny]\nname_patterns = ['secret','token','credential','password','key','config','setting','webhook','refresh']\n\n[exceptions]\n# each entry needs two reviewers\nallowed = []\n",
+  "interface": "def audit_tools(tools: list[ToolDef], deny: DenyRules, canary: str, call: Callable) -> list[str]  # returns violation strings; empty list means pass",
+  "code": "import re, tomllib\n\ndef names_in(tool):\n    out = {tool.name}\n    out |= set(tool.input_schema.get('properties', {}))\n    out |= set(tool.output_schema.get('properties', {})) if tool.output_schema else set()\n    return out\n\ndef audit_tools(tools, deny, canary, call):\n    bad = []\n    rx = re.compile('|'.join(deny.name_patterns), re.I)\n    for t in tools:\n        if t.name in deny.allowed:\n            continue\n        for n in names_in(t):\n            if rx.search(n):\n                bad.append(f'{t.name}: name {n!r} matches deny pattern')\n        # tricky part: a harmless name can still return a secret, so probe with a canary\n        if t.read_only:\n            out = call(t.name, t.sample_args)\n            if canary in repr(out):\n                bad.append(f'{t.name}: canary secret appeared in output')\n    return bad\n\ndef test_no_credential_tools(live_server, deny, canary):\n    tools = live_server.list_tools()\n    assert audit_tools(tools, deny, canary, live_server.call) == []\n    assert any(t.name == 'search' for t in tools)  # an empty list must not pass",
+  "steps": [
+   {
+    "do": "Write deny.toml with the first patterns",
+    "done_when": "file loads with tomllib"
+   },
+   {
+    "do": "Write audit_tools over names, argument names and output field names",
+    "done_when": "unit test flags a fake tool named get_connector_settings"
+   },
+   {
+    "do": "Plant a canary secret in a test tenant config and a document",
+    "done_when": "canary is present in the test tenant"
+   },
+   {
+    "do": "Add the canary probe for read tools",
+    "done_when": "a fake tool that returns the config blob fails the audit"
+   },
+   {
+    "do": "Run the audit in CI as a blocking step",
+    "done_when": "a branch that adds a bad tool fails the pipeline"
+   },
+   {
+    "do": "Run the same audit at server start and refuse to boot on a hit",
+    "done_when": "server exits non-zero and pages when a bad tool is registered"
+   }
+  ],
+  "config": {
+   "DENY_PATTERNS": "secret,token,credential,password,key,config,setting,webhook,refresh // extend from incidents",
+   "EXCEPTIONS_REVIEWERS": "2 // required for any allowed entry",
+   "CANARY_LENGTH": "32 // random per run",
+   "BOOT_AUDIT": "on // fail closed at start-up"
+  },
+  "verify": [
+   "pytest tests/toolaudit -q  # 4 passed",
+   "python -m brain.mcp.boot_audit  # prints audit ok: 9 tools, 0 hits"
+  ],
+  "pitfalls": [
+   "Matching tool descriptions makes the audit noisy and gets it disabled: match names and schemas only",
+   "The RFC 8707 argument named resource looks harmless, but a tool named list_keys is not: keep exceptions reviewed and short",
+   "Run the audit against the live registry, not a hand-written list, or a runtime plugin slips past"
+  ]
+ },
+ "sc_scan": {
+  "milestone": "M2",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_pii"
+  ],
+  "stack": [
+   {
+    "part": "rules",
+    "pick": "gitleaks style TOML rules, loaded by our own small scanner (x_sec_gitleaks)",
+    "why": "gitleaks is maintenance only and its maintainer is moving to Betterleaks, so keep the rule file portable"
+   },
+   {
+    "part": "entropy",
+    "pick": "Shannon entropy in plain Python (math, collections.Counter)",
+    "why": "no dependency, easy to test"
+   },
+   {
+    "part": "masking",
+    "pick": "string replace by offsets from the end to the start",
+    "why": "keeps earlier offsets valid"
+   },
+   {
+    "part": "check current docs",
+    "pick": "Presidio and trufflehog",
+    "why": "not verified in research; not adopted yet"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a language model judge per chunk",
+    "why": "slow at index volume and the judge reads the secret"
+   }
+  ],
+  "install": [
+   "pip install pytest regex",
+   "mkdir -p brain/secrets rules",
+   "cp rules/secrets.toml rules/secrets.toml.bak"
+  ],
+  "layout": [
+   "rules/secrets.toml : rule ids, regexes, keywords, allow list",
+   "brain/secrets/scan.py : rules plus entropy",
+   "brain/secrets/mask.py : replace hits with [SECRET:rule_id]",
+   "tests/test_scan.py : known shape, entropy near keyword, clean prose, output block"
+  ],
+  "schema": "CREATE TABLE secret_finding (\n  tenant_id text NOT NULL,\n  source_id text NOT NULL,\n  rule_id text NOT NULL,\n  path text NOT NULL CHECK (path IN ('index','output')),\n  hit_count int NOT NULL,\n  at timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def scan(text: str, path: Literal['index','output']) -> ScanResult  # ScanResult(clean_text, findings[(rule_id,start,end)], block: bool)",
+  "code": "import math, re\nfrom collections import Counter\n\nTOKEN = re.compile(r'[A-Za-z0-9+/=_\\-]{20,}')\nKEYWORD = re.compile(r'(key|secret|token|password)\\W{0,3}$', re.I)\nTHRESH = {'hex': 3.0, 'b64': 4.5}  # tune on labelled data\n\ndef entropy(s):\n    n = len(s)\n    return -sum(c / n * math.log2(c / n) for c in Counter(s).values())\n\ndef charset(s):\n    return 'hex' if re.fullmatch(r'[0-9a-fA-F]+', s) else 'b64'\n\ndef scan(text, path, rules):\n    hits = []\n    for r in rules:\n        for m in r.rx.finditer(text):\n            hits.append((r.id, m.start(), m.end()))\n    for m in TOKEN.finditer(text):\n        tok = m.group()\n        near = text[max(0, m.start() - 40):m.start()]\n        if KEYWORD.search(near) and entropy(tok) >= THRESH[charset(tok)]:\n            hits.append(('entropy', m.start(), m.end()))\n    out = text\n    for rid, a, b in sorted(hits, key=lambda h: -h[1]):  # tricky part: mask from the end\n        out = out[:a] + f'[SECRET:{rid}]' + out[b:]\n    return out, hits, (path == 'output' and bool(hits))",
+  "steps": [
+   {
+    "do": "Write the rule file with 5 known shapes and a private key block rule",
+    "done_when": "every rule has a positive and a negative test string"
+   },
+   {
+    "do": "Implement entropy and the keyword gate",
+    "done_when": "'abcdefghijklmnopqrst' scores 4.32 bits per character"
+   },
+   {
+    "do": "Implement masking and the finding record without secret text",
+    "done_when": "finding row has rule id and offsets only"
+   },
+   {
+    "do": "Wire it into the derive step before embedding",
+    "done_when": "a chunk with a planted key is indexed as [SECRET:...]"
+   },
+   {
+    "do": "Wire it into the result envelope for answers",
+    "done_when": "an answer echoing a planted canary key is withheld"
+   },
+   {
+    "do": "Label 500 chunks and set the thresholds",
+    "done_when": "recall 95% or better and false positives under 2% on the labelled set"
+   }
+  ],
+  "config": {
+   "MIN_TOKEN_LEN": "20 // tune between 16 and 32 on labelled data",
+   "ENTROPY_HEX": "3.0 // bits per character, tune",
+   "ENTROPY_B64": "4.5 // bits per character, tune",
+   "SCAN_TIMEOUT_MS": "50 // per 4 KB, a timeout counts as a hit",
+   "RULES_PATH": "rules/secrets.toml // shared with on-device redaction (cp_redact)"
+  },
+  "verify": [
+   "pytest tests/test_scan.py -q  # 4 passed",
+   "python -m brain.secrets.scan --file tests/fixtures/clean.md  # 0 findings on 1,000 clean chunks under 2% false positives"
+  ],
+  "pitfalls": [
+   "Entropy alone flags hashes and UUIDs: always gate on a nearby keyword or a rule",
+   "Replacing hits from the start shifts later offsets: symptom is half-masked secrets; mask from the end",
+   "Scanning only before indexing misses a secret the model composes: keep the output scan"
+  ]
+ },
+ "sc_scope": {
+  "milestone": "M5",
+  "effort_days": 8,
+  "depends_on": [
+   "pl_pol",
+   "ll_agent"
+  ],
+  "stack": [
+   {
+    "part": "policy engine",
+    "pick": "Open Policy Agent (Rego) as the named pick, Cedar as the alternative (r_opa)",
+    "why": "versioned rule files, evaluated before any agent action"
+   },
+   {
+    "part": "session state",
+    "pick": "Redis for session leg sets, keyed by task id",
+    "why": "legs must persist for the whole task, not one connection"
+   },
+   {
+    "part": "tool tags",
+    "pick": "a legs field in the tool manifest (reads_private, returns_untrusted, can_send_outbound)",
+    "why": "the guard reads declared legs"
+   },
+   {
+    "part": "stronger pattern",
+    "pick": "CaMeL style split for tasks that need all three legs (x_sec_camel)",
+    "why": "use for high-risk workflows only"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a prompt-injection classifier as the main control",
+    "why": "guardrail products are not a reliable fix (x_sec_trifecta)"
+   }
+  ],
+  "install": [
+   "brew install opa",
+   "pip install redis pytest",
+   "opa test policy/ -v"
+  ],
+  "layout": [
+   "policy/trifecta.rego : legs predicate and scope check",
+   "policy/trifecta_test.rego : the four test cases",
+   "brain/scope/session.py : leg accumulation in Redis",
+   "brain/tools/manifest.json : legs per tool",
+   "tests/test_scope.py : end to end through the policy engine"
+  ],
+  "schema": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"agent_scope\",\n  \"type\": \"object\",\n  \"required\": [\"agent_id\", \"owner\", \"tools\", \"zones\"],\n  \"properties\": {\n    \"agent_id\": {\"type\": \"string\"},\n    \"owner\": {\"type\": \"string\"},\n    \"tools\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"zones\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}\n  },\n  \"additionalProperties\": false\n}",
+  "interface": "POST /v1/policy/check  {agent_id, task_id, tool, zone, approval?: str}  ->  {decision: 'allow'|'deny'|'ask', rule_id: str, legs: ['P','U','O'...]}",
+  "code": "package brain.scope\n\nimport rego.v1\n\ndefault allow := false\n\nall_legs := {\"P\", \"U\", \"O\"}\n\n# legs the session already holds plus legs this tool adds\nnew_legs := object.get(data.session_legs, input.task_id, set()) | tool_legs\n\ntool_legs := {l | some l in data.tools[input.tool].legs}\n\n# tricky part: an untagged tool is treated as adding U and O\ntool_legs := {\"U\", \"O\"} if not data.tools[input.tool]\n\nin_scope if {\n    input.tool in data.agents[input.agent_id].tools\n    input.zone in data.agents[input.agent_id].zones\n}\n\ntrifecta if new_legs == all_legs\n\nallow if {\n    in_scope\n    not trifecta\n}\n\nallow if {\n    in_scope\n    trifecta\n    input.approval != \"\"\n}\n\ndeny_reason := \"trifecta\" if trifecta\ndeny_reason := \"out_of_scope\" if not in_scope",
+  "steps": [
+   {
+    "do": "Write tools manifest with legs for every shipped tool",
+    "done_when": "opa eval shows 100% of tools tagged"
+   },
+   {
+    "do": "Write the trifecta and scope rules in Rego",
+    "done_when": "opa test passes the four cases"
+   },
+   {
+    "do": "Add session leg accumulation keyed by task id",
+    "done_when": "two calls in one task show legs {P,U} in Redis"
+   },
+   {
+    "do": "Reject agent registration wider than the owner",
+    "done_when": "registering a scope with a tool the owner lacks returns 403"
+   },
+   {
+    "do": "Add the approval path with logging",
+    "done_when": "approved third-leg call is allowed once and logged"
+   },
+   {
+    "do": "Wire the check into the agent identity service (ll_agent) and policy engine (pl_pol)",
+    "done_when": "a denied call shows rule id trifecta in the audit log"
+   }
+  ],
+  "config": {
+   "MAX_LEGS": "2 // of three, per the lethal trifecta guidance",
+   "LEG_PERSISTENCE": "task // legs follow the task id not the session id",
+   "DEFAULT_UNTAGGED": "U+O // an untagged tool is treated as risky",
+   "APPROVAL_TTL": "one call // approval does not carry over"
+  },
+  "verify": [
+   "opa test policy/ -v  # 4 passed: two legs allowed, third leg denied, approval allowed, untagged denied",
+   "pytest tests/test_scope.py -q  # all passed"
+  ],
+  "pitfalls": [
+   "Legs reset when a new session opens mid-task: symptom is an exfiltration path that works on the second try; key by task id",
+   "A tool that returns web text but is not tagged U: the guard sees two legs and allows the third; default untagged to risky",
+   "Shared scratch stores let two agents together hold all three legs: tag shared state as P and U"
+  ]
+ },
+ "sc_egress": {
+  "milestone": "M5",
+  "effort_days": 5,
+  "depends_on": [
+   "ll_fmt",
+   "ag_write",
+   "sc_scope"
+  ],
+  "stack": [
+   {
+    "part": "markdown parser",
+    "pick": "markdown-it-py 3.x (Python)",
+    "why": "parse the full tree; a single regex misses reference-style images (EchoLeak bypass lesson, t_t52)"
+   },
+   {
+    "part": "HTML",
+    "pick": "drop all raw HTML nodes",
+    "why": "iframes and scripts must not reach clients"
+   },
+   {
+    "part": "egress proxy",
+    "pick": "an allowlist forward proxy such as Squid with exact host ACLs, check current docs",
+    "why": "one choke point for outbound calls from connectors and writers"
+   },
+   {
+    "part": "DNS",
+    "pick": "resolve once and pin the IP for the call",
+    "why": "blocks DNS rebinding"
+   },
+   {
+    "part": "do not pick",
+    "pick": "a wildcard allowlist",
+    "why": "an allowed host can be a relay; keep exact hosts"
+   }
+  ],
+  "install": [
+   "pip install markdown-it-py==3.* pytest",
+   "docker run -d --name brain-egress -p 3128:3128 ubuntu/squid",
+   "pytest --version"
+  ],
+  "layout": [
+   "brain/egress/sanitize.py : strip images, html, rewrite links",
+   "brain/egress/allow.py : host allowlist and private-range check",
+   "migrations/120_egress_allowlist.sql : allowlist table",
+   "tests/test_egress.py : image, reference image, lookalike host, private range"
+  ],
+  "schema": "CREATE TABLE egress_allowlist (\n  tenant_id text NOT NULL,\n  host text NOT NULL,\n  purpose text NOT NULL,\n  owner text NOT NULL,\n  added_at timestamptz NOT NULL DEFAULT now(),\n  expires_at timestamptz NOT NULL,\n  PRIMARY KEY (tenant_id, host)\n);",
+  "interface": "def sanitize_answer(markdown: str) -> str\ndef egress_allowed(tenant_id: str, url: str) -> bool  # False means refuse and log",
+  "code": "import ipaddress, socket\nfrom urllib.parse import urlsplit\nfrom markdown_it import MarkdownIt\n\nmd = MarkdownIt('commonmark', {'html': False})\n\ndef sanitize_answer(text):\n    tokens = md.parse(text)\n    out = []\n    for t in tokens:\n        for ch in (t.children or [t]):\n            if ch.type == 'image':\n                out.append(ch.content)  # keep alt text, drop the URL\n            elif ch.type in ('html_inline', 'html_block'):\n                continue  # drop raw html\n            elif ch.type == 'link_open':\n                out.append('')  # link text stays; the target is dropped\n            elif ch.type == 'link_close':\n                out.append(' (source: see pointer)')\n            elif ch.type in ('text', 'code_inline'):\n                out.append(ch.content.replace('http://', 'hxxp://').replace('https://', 'hxxps://'))\n            elif ch.type == 'softbreak':\n                out.append('\\n')\n    return ''.join(out)\n\ndef egress_allowed(allow, tenant, url):\n    u = urlsplit(url)\n    host = (u.hostname or '').encode('idna').decode().lower()\n    if u.scheme != 'https' or (u.port or 443) != 443 or host not in allow.hosts(tenant):\n        return False\n    ip = ipaddress.ip_address(socket.gethostbyname(host))  # tricky part: check the resolved address\n    return not (ip.is_private or ip.is_link_local or ip.is_loopback)",
+  "steps": [
+   {
+    "do": "Create the allowlist table and load the hosts of enabled connectors",
+    "done_when": "select count(*) matches the enabled connector hosts"
+   },
+   {
+    "do": "Write egress_allowed with idna normalisation and the private-range check",
+    "done_when": "lookalike host and 10.0.0.5 tests return False"
+   },
+   {
+    "do": "Write sanitize_answer over the markdown tree",
+    "done_when": "inline and reference-style images both leave 0 image nodes"
+   },
+   {
+    "do": "Apply sanitize_answer to title and snippet fields as well",
+    "done_when": "an injected image in a snippet is removed"
+   },
+   {
+    "do": "Route connector and writer calls through the egress proxy",
+    "done_when": "a call to a host off the list is refused and logged"
+   },
+   {
+    "do": "Add the 90-day allowlist review job",
+    "done_when": "job lists hosts with no traffic in 90 days"
+   }
+  ],
+  "config": {
+   "ALLOWED_PORTS": "443 // https only",
+   "DNS_CACHE_SECONDS": "60 // keeps lookups cheap",
+   "ALLOWLIST_REVIEW_DAYS": "90 // remove idle hosts",
+   "WILDCARDS": "off // exact hosts only"
+  },
+  "verify": [
+   "pytest tests/test_egress.py -q  # 4 passed",
+   "curl -x localhost:3128 https://not-on-list.example  # 403 from the proxy"
+  ],
+  "pitfalls": [
+   "A regex that removes ![..](..) misses reference-style images: parse the tree",
+   "Checking the name but not the resolved IP lets a rebinding name reach an internal service",
+   "Removing links with no replacement breaks citations: keep the source pointer text"
+  ]
+ }
+}

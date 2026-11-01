@@ -1,0 +1,1155 @@
+{
+ "group": {
+  "line": "Lineage-driven erasure with receipts, per-tenant envelope keys with region pinning, protected embeddings, tenant-keyed isolation with row policy, a vendor terms registry and a stop-then-purge kill switch.",
+  "dumb": "When data is deleted in an app, we delete everything we derived from it and keep a receipt. Each company has its own lock and region, and the number lists we keep are guarded like the documents. Each app's rules about what we may store are settings the code obeys, and an operator can stop and purge one connection or one company."
+ },
+ "comps": {
+  "gv_erase": {
+   "line": "Source delete to tombstone to purge of pointers, vectors, snippets, caches, traces, with a signed receipt\npurge_by = T_detect + T_purge (stated SLA)",
+   "dumb": "When a document is deleted in the app, it must disappear from the brain too. This component follows a lineage list of everything we derived from that document and removes each item. It then writes a receipt that says what was removed and when. If a step fails, the receipt stays open and someone is told.",
+   "inn": "Tombstone {tenant, uri, reason: source_delete|user_request|kill, at} from ch_tomb. Purge orders from gv_kill {tenant, connector, scope}. Lineage lookup from ix_ptr {uri, derived_ids[] by store}.",
+   "out": "Purge order {uri, derived_ids[]} to ix_gc; cache drop to qr_cache; trace redaction to op_trace; receipt {tenant, uri, steps[{store, state, at}], sig} to ac_audit.",
+   "store": "Erasure ledger {tenant, erasure_id, uri_hash, steps, opened_at, closed_at, receipt_sig}: one row per order, never deleted. Lineage itself lives in the pointer store, not here.",
+   "fail": "Each store step is retried at 1 min, 5 min, 30 min, 2 h, then the receipt is flagged open and the on-call is paged. A purge order is idempotent by erasure_id, so a duplicate does nothing. A verifier probes each store 24 h after close; a surviving item reopens the receipt. If the lineage row is missing, fall back to a scan by uri hash over each store and alert.",
+   "prop": "Proposal: a delete in the source must reach every derived copy, with proof, so the pointer index is never a hidden archive.",
+   "hard": "Hard-delete inside the vector index depends on the engine; soft-deleted vectors can remain in raw index files until compaction (t_t17, secondary source), so the time to real removal per engine is not yet measured. The stated SLA numbers are design targets.",
+   "deep": {
+    "purpose": "Make a source delete reach every place the brain derived something from that object: pointers, vectors, lexical entries, excerpts, cached answers and stored traces. Proof comes as a receipt per erasure. A new app needs no change here: its connector (so_sdk manifest) or MCP bridge (so_mcp) must emit delete events or be covered by the sweep, and every derived item is registered in lineage on write.",
+    "expected": [
+     "Deleting a document in the source removes it from every derived store within the stated time",
+     "Each erasure ends with a receipt listing each store and its state",
+     "A probe after compaction finds no vector, excerpt or cache entry for the object"
+    ],
+    "not_expected": [
+     "It never marks a purge done on a soft delete alone",
+     "It does not delete anything in the source app",
+     "It does not purge audit rows; those hold hashes only"
+    ],
+    "algorithm": {
+     "name": "Lineage-driven tombstone fan-out with per-store acknowledgement and verified close",
+     "formula": "purge_time = T_detect + max over stores(T_store); SLA holds if purge_time <= T_sla",
+     "steps": [
+      "Receive a tombstone or a kill purge order and open an erasure row with a new erasure_id",
+      "Read the lineage list {store, derived_id} for the uri from the pointer store",
+      "Send a purge order per store (vector, lexical, excerpt, graph, cache, trace) in parallel; each acknowledges only after a hard delete or crypto-shred of that item",
+      "Retry silent stores on the schedule; page after the last retry",
+      "Run a verifier 24 h after close that probes each store for the uri hash and derived ids",
+      "Sign and write the receipt to ac_audit"
+     ],
+     "params": {
+      "T_sla": "72 h end to end (design; the legal limit for the customer's region is set per tenant, not assumed here)",
+      "retry_schedule": "1 min, 5 min, 30 min, 2 h (design)",
+      "verify_delay": "24 h after close (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T_detect: time from the real delete to our tombstone",
+      "T_store: time for one store to hard-delete",
+      "T_sla: stated deadline",
+      "n: stores in lineage"
+     ],
+     "formula_full": "purge_time = T_detect + max_i(T_store_i), since stores run in parallel",
+     "derivation": "Stores are independent, so the slowest sets the finish time. Sequential purging would instead cost the sum of all T_store, so parallel fan-out keeps the bound short.",
+     "worked_example": "Event-driven app: T_detect 30 s. Stores: vector 10 min after compaction, lexical 2 min, excerpt 1 s, cache 1 s, trace 1 h batch. Parallel: 30 s + 1 h = about 1 h 0 min 30 s, inside the 72 h SLA. Poll-only app with a 5 min poll adds up to 5 min. Sequential would be 30 s + 10 + 2 + 0 + 0 + 60 min = about 72.5 min.",
+     "complexity": "O(n) orders for n derived items per object; O(1) per store acknowledgement.",
+     "failure_modes": [
+      "Compaction delay leaves vectors on disk: the receipt stays open until the probe confirms",
+      "Lineage gap for an older object: uri-hash scan fallback",
+      "Tombstone lost: the weekly reconciliation sweep finds the missing object and generates one (t_t55)"
+     ],
+     "calibration": "Measure each store's real hard-delete time monthly and set per-store timeouts at p99 plus margin; if p99 exceeds half of T_sla, change the engine setting or use crypto-shred."
+    },
+    "alternatives": [
+     {
+      "name": "Mark deleted and filter at query time",
+      "why_rejected": "Soft-deleted data stays on disk and in backups of the index; t_t17 warns of this for vectors."
+     },
+     {
+      "name": "Rebuild the whole index periodically to drop deletes",
+      "why_rejected": "Cost grows with corpus size and leaves a long window; per-object purge with a probe is cheaper and proves the result."
+     }
+    ],
+    "security": [
+     "Forged tombstone to erase a rival team's content: only the ch_tomb service identity can open an erasure and each is audited with the tenant",
+     "Resurrection by a delayed old sync event after a purge: the tombstone version blocks any write with a lower version",
+     "Purge leaves traces behind in logs: op_trace redaction runs as a step and is checked by the probe"
+    ],
+    "performance": {
+     "slo": "Fan-out started within 60 s of tombstone; 99% of erasures closed inside 4 h (design)",
+     "complexity": "O(n) orders per object",
+     "scaling": "At 10x deletes a mass delete can flood stores; batch by tenant and cap purge rate per store so live queries keep their latency."
+    },
+    "edge_cases": [
+     "Object with no derived items: receipt with zero steps",
+     "Duplicate tombstone: same erasure_id, no new work",
+     "Delete then recreate with the same uri: new version number, new lineage",
+     "Store offline during purge: step stays open, retried, page at the end",
+     "Very large object with 50,000 chunks: ids sent in batches of 1,000",
+     "A new connector's objects are registered in lineage by the same write path, so erasure covers them from day one",
+     "Legal hold on an object: purge blocked and logged until the hold is released"
+    ],
+    "tests": [
+     {
+      "name": "delete reaches every store",
+      "given": "object with 12 chunks is deleted in the source",
+      "expect": "no vector, lexical entry, excerpt, cache or trace item remains after the verifier"
+     },
+     {
+      "name": "receipt integrity",
+      "given": "a closed receipt",
+      "expect": "signature verifies and every store shows state = deleted"
+     },
+     {
+      "name": "stale resurrection",
+      "given": "older version arrives after the tombstone",
+      "expect": "write rejected"
+     },
+     {
+      "name": "store outage",
+      "given": "vector store down 3 h",
+      "expect": "receipt open, retries logged, page sent, closes after recovery"
+     }
+    ],
+    "cost_levers": [
+     "Batch purge orders per store and tenant",
+     "Crypto-shred of a tenant key for whole-tenant erasure instead of per-item deletes"
+    ],
+    "feedback_events": [
+     "A probe that finds a survivor adds that store and engine to the high-risk list and shortens its verify delay"
+    ],
+    "analytics_events": [
+     {
+      "name": "erase.opened",
+      "fields": [
+       "tenant_id",
+       "reason",
+       "n_derived"
+      ],
+      "when": "on tombstone"
+     },
+     {
+      "name": "erase.closed",
+      "fields": [
+       "tenant_id",
+       "erasure_id",
+       "hours",
+       "stores_ok"
+      ],
+      "when": "after the verifier passes"
+     },
+     {
+      "name": "erase.survivor",
+      "fields": [
+       "tenant_id",
+       "store"
+      ],
+      "when": "when a probe finds a leftover"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_embedding-inversion",
+      "key_idea": "Embeddings can be inverted to near-original text, so a deleted document's vector is still the document.",
+      "how": "The purge covers vectors as well as text, and the probe checks for them."
+     }
+    ],
+    "repos": [],
+    "industry": "EDPB Opinion 28/2024 says authorities can order erasure of unlawfully processed data (t_t16); we keep source-to-derived lineage so one delete reaches all of it. Dash stores protected content and metadata after ingest (t_t14); the same lineage idea applies.",
+    "refs": [
+     "t_t16",
+     "t_t17",
+     "t_t55",
+     "t_t14",
+     "p_embedding-inversion"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "gv_kms": {
+   "line": "Per-tenant data key wrapped by a tenant key (optional customer-held), region pinned; crypto-shred to erase\nDEK wrap = Enc(KEK, DEK)",
+   "dumb": "Each company gets its own lock for its stored data. A customer can keep the master key in their own key service, and if they turn it off, our copy becomes unreadable. Each company's data also stays in the region they pick.",
+   "inn": "Tenant settings {tenant, region, byok: yes|no, kek_ref}. Key requests from ix_vec, ix_snip, ix_lex and the ledgers {tenant, store, purpose}.",
+   "out": "Per-tenant data key (DEK), unwrapped in memory only, to ix_vec and ix_snip; key-use rows {tenant, kek_ref, op, at} to ac_audit; region route to the write path.",
+   "store": "Wrapped DEKs {tenant, store, dek_id, wrapped_dek, kek_ref, created_at, rotated_at, state}. KEKs stay in the cloud key service or the customer's key service and never in our stores.",
+   "fail": "Key service call timeout 500 ms, 3 retries at 100 ms, 400 ms, 1.6 s. DEKs are cached in memory for 5 min; if the key service stays down past that, reads of that tenant fail closed and queries return a notice. A customer-key revoke makes reads fail within the cache time and ends all writes. A write to a wrong region is rejected before it leaves the process.",
+   "prop": "Proposal: tenant isolation of data at rest needs a per-tenant key and a chosen region, so a leak or a customer exit can be answered by key control.",
+   "hard": "Not every search engine can encrypt a shard with a per-tenant key and still use fast scans; the speed cost and which engine supports it are open. The customer-held key option needs a contract and a support runbook.",
+   "deep": {
+    "purpose": "Give every tenant its own data key, wrapped by a key the tenant can own, and fix each tenant's region. Erasure of a whole tenant can then be a key destruction. No change is needed for new apps: their data is written through the same key-aware write path (so_sdk), and MCP-only apps keep nothing here because live results are not stored.",
+    "expected": [
+     "Every stored vector, excerpt and lexical entry of a tenant is encrypted under that tenant's key",
+     "Disabling a customer-held key makes the tenant's data unreadable within the cache time",
+     "No write of a tenant crosses its pinned region"
+    ],
+    "not_expected": [
+     "It never stores a plaintext key or a KEK",
+     "It never shares a DEK between tenants",
+     "It does not decide who may read; ac_filter and ac_live do"
+    ],
+    "algorithm": {
+     "name": "Envelope encryption with per-tenant DEK, optional customer KEK and region pinning",
+     "formula": "wrapped = Enc(KEK_t, DEK_t); data = Enc(DEK_t, plaintext); read needs Dec(KEK_t, wrapped)",
+     "steps": [
+      "On tenant setup, pick the region and create a DEK per store; wrap each with the tenant KEK (ours or the customer's)",
+      "On write, check region, fetch the unwrapped DEK from the cache or the key service, encrypt, and store with dek_id",
+      "On read, unwrap through the key service call; cache the DEK in memory for 5 min",
+      "Rotate DEKs on a schedule by writing new data under the new dek_id and re-encrypting old data in the background",
+      "On tenant exit or kill, destroy the wrapped DEKs and the KEK reference (crypto-shred), then confirm with a read probe"
+     ],
+     "params": {
+      "dek_cache_ttl": "5 min (design)",
+      "dek_rotation": "90 days (default; tune to the customer's policy)",
+      "key_call_timeout": "500 ms (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "R: data size to re-encrypt on rotation",
+      "B: re-encrypt bandwidth",
+      "T_cache: DEK cache time",
+      "calls: key service calls"
+     ],
+     "formula_full": "rotation_time = R / B; key calls per hour = reads_per_hour / (cache_hit_batch) bounded by tenants x (3600 / T_cache)",
+     "derivation": "With a cache time T_cache, each tenant-store pair asks the key service at most once per T_cache, so calls are bounded by tenants x stores x 3600 / T_cache regardless of query volume.",
+     "worked_example": "100 tenants, 3 stores, T_cache 300 s: at most 100 x 3 x 12 = 3,600 key calls per hour even at 1,000,000 queries per hour. Rotation of a 200 GB tenant at 100 MB/s takes 200,000 / 100 = 2,000 s, about 33 min, run in the background.",
+     "complexity": "O(tenants x stores) key calls per cache window; O(R) rotation.",
+     "failure_modes": [
+      "Key service outage: reads fail closed after the cache expires",
+      "Customer revokes key by mistake: data unreadable until they restore it; we do not hold a backup KEK",
+      "Region mismatch in a replica: write path checks region tag before storing"
+     ],
+     "calibration": "Choose T_cache to keep key calls under 20% of the key service quota while keeping a revoke effective within the stated time."
+    },
+    "alternatives": [
+     {
+      "name": "One shared key for all tenants",
+      "why_rejected": "A single compromise exposes every tenant, and a tenant exit cannot be answered by key destruction."
+     },
+     {
+      "name": "Application-level encryption of every field",
+      "why_rejected": "Breaks lexical and vector search over the data; envelope encryption at the store layer keeps search working."
+     }
+    ],
+    "security": [
+     "Insider reads a DEK from memory dumps: DEKs live only in process memory with short life and are never logged",
+     "Key confusion across tenants through a wrong dek_id: dek_id carries the tenant id and decryption fails on mismatch",
+     "Stolen backup of the store: ciphertext only, with keys held separately in the key service"
+    ],
+    "performance": {
+     "slo": "Key unwrap p95 under 20 ms when cached, under 150 ms uncached (design)",
+     "complexity": "O(1) per read via the cache",
+     "scaling": "At 10x tenants the key service call count rises linearly; batch unwraps and raise the cache time within the revoke-time limit."
+    },
+    "edge_cases": [
+     "Tenant with no customer key: our KEK, same flow",
+     "Region change request: treated as a new tenant migration, not an in-place change",
+     "Duplicate DEK creation on retry: idempotent by (tenant, store)",
+     "Key rotation in progress: reads accept both old and new dek_id",
+     "Customer key revoked mid-query: the in-flight query may finish from cache; the next fails closed",
+     "A new connector writes through the same path so its data gets the tenant key with no extra work"
+    ],
+    "tests": [
+     {
+      "name": "cross-tenant decrypt",
+      "given": "tenant A's ciphertext with tenant B's key",
+      "expect": "decryption fails"
+     },
+     {
+      "name": "customer key revoke",
+      "given": "customer disables the KEK",
+      "expect": "reads fail within 5 min, writes stop immediately"
+     },
+     {
+      "name": "region pin",
+      "given": "write for an EU tenant routed to a US node",
+      "expect": "rejected before storage"
+     },
+     {
+      "name": "crypto-shred",
+      "given": "wrapped DEKs destroyed",
+      "expect": "probe cannot read any chunk"
+     }
+    ],
+    "cost_levers": [
+     "DEK cache cuts key-service calls",
+     "Crypto-shred replaces per-item deletes for whole-tenant erasure"
+    ],
+    "feedback_events": [
+     "Key-service p99 above 150 ms triggers a cache-time review"
+    ],
+    "analytics_events": [
+     {
+      "name": "key.unwrap",
+      "fields": [
+       "tenant_id",
+       "store",
+       "cache_hit",
+       "ms"
+      ],
+      "when": "on each unwrap"
+     },
+     {
+      "name": "key.revoked",
+      "fields": [
+       "tenant_id"
+      ],
+      "when": "when a customer key stops working"
+     },
+     {
+      "name": "key.rotated",
+      "fields": [
+       "tenant_id",
+       "store",
+       "gb",
+       "minutes"
+      ],
+      "when": "when rotation finishes"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Tenant boundaries must be enforced in the retrieval layer as well as in access rules.",
+      "how": "Per-tenant keys give a second wall behind the filter."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_weaviate",
+      "name": "Weaviate",
+      "take": "Multi-tenancy by separate shards per tenant; fits per-tenant keys and per-tenant erasure."
+     },
+     {
+      "ref": "r_lancedb",
+      "name": "LanceDB",
+      "take": "Per-tenant indexes on object storage, which can carry a per-tenant bucket key."
+     }
+    ],
+    "industry": "turbopuffer and Pinecone use a namespace per tenant on object storage (t_t35, t_t38), which lets keys and deletes be scoped per tenant. Notion shards by workspace id (t_t43) for the same reason.",
+    "refs": [
+     "t_t35",
+     "t_t38",
+     "t_t43",
+     "p_multitenant-rag",
+     "r_weaviate",
+     "r_lancedb"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "gv_inv": {
+   "line": "Embeddings treated like source text: encrypted at rest, no export, rotated per tenant\nrisk = P(invert) x sensitivity",
+   "dumb": "A list of numbers that stands for a document can be turned back into most of the document's words. So we treat these number lists as secret as the documents themselves. They are encrypted, they cannot be downloaded, and each company's set is rebuilt on a schedule with a fresh key.",
+   "inn": "Vector write and read requests from ix_vec {tenant, op, caller}. Export requests from admin and API calls {tenant, caller, target}. Rotation schedule from gv_kms.",
+   "out": "Allow or deny decisions to ix_vec; denied exports to ac_audit; rotation orders {tenant, new_model_gen, new_dek_id} to the rebuild workflow.",
+   "store": "Policy table {tenant, export: deny, rotate_days, model_gen, last_rotated}. Vectors themselves are held by ix_vec under the tenant key.",
+   "fail": "Export call: always denied with a 403 and an audit row; no retry. Rotation job that fails midway keeps both generations side by side and retries from the checkpoint at 5 min, 30 min, 2 h; the old generation stays live until the new one passes a recall check (t_t58). Policy table unreadable: deny all exports and all non-service reads.",
+   "prop": "Proposal: vectors carry the same sensitivity as the text, so access, export and retention rules for vectors match those for text.",
+   "hard": "How much text an attacker recovers from our own vectors and models is not measured here; the 92% figure in t_t15 is for 32-token inputs on one model. Per-tenant model rotation cost is unknown.",
+   "deep": {
+    "purpose": "Close the false idea that vectors are anonymous. Researchers recover text from embeddings (t_t15, p_embedding-inversion), so vectors get the same permissions, encryption, retention and erasure as text. Access to vectors is only inside the search service; no API returns a raw vector. A new app's vectors are written by the same path and inherit this policy automatically.",
+    "expected": [
+     "No API, export or backup job returns raw vectors to a user",
+     "Vectors are encrypted at rest under the tenant key",
+     "Rotation rebuilds a tenant's vectors with a new generation and key and retires the old one"
+    ],
+    "not_expected": [
+     "It never treats vectors as anonymised data",
+     "It does not decide who may search; ac_filter does",
+     "It does not delete vectors on source delete; gv_erase does"
+    ],
+    "algorithm": {
+     "name": "Deny-by-default vector access policy with rotation by generation",
+     "formula": "allow(op) iff op in {search_inside_service} and caller is the index service; rotation due when now - last_rotated >= rotate_days",
+     "steps": [
+      "Intercept every vector read, export and snapshot request at the index service boundary",
+      "Allow only search calls from the index service identity; deny export, bulk read and direct nearest-neighbour calls from users, admins and agents",
+      "On the rotation date, create generation g+1 with a new DEK, re-embed or re-encrypt, and run a recall check against g",
+      "Switch queries to g+1 once recall is at or above the gate, then destroy g and its DEK",
+      "Log every denial with the caller and target"
+     ],
+     "params": {
+      "rotate_days": "180 days (default; tune to the customer's policy and model update cadence)",
+      "recall_gate": "recall@10 at or above 0.95 against the old generation (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "P(invert): chance a vector yields its text",
+      "s: sensitivity of the text",
+      "R: vectors per tenant",
+      "C_embed: cost per re-embed"
+     ],
+     "formula_full": "exposure = P(invert) x s; rotation cost = R x C_embed",
+     "derivation": "Risk is the chance of recovery times the harm if recovered. The Vec2Text result puts P(invert) near 0.92 for short inputs on one model (t_t15), so the rational control is to treat vectors as text, not to hope P is small.",
+     "worked_example": "A tenant with 5,000,000 vectors rotated with a re-embed at an assumed 0.02 dollars per 1,000 chunks costs 5,000 x 0.02 = 100 dollars per rotation, 200 dollars per year at 180 days. With a key-only rotation (re-encrypt, no re-embed) the cost is storage I/O only.",
+     "complexity": "O(R) per rotation; O(1) per policy check.",
+     "failure_modes": [
+      "Backup or snapshot copy leaks vectors: snapshots are encrypted under the tenant key and covered by the deny policy",
+      "Debug endpoints expose vectors: only the index service identity may read them",
+      "Old generation kept too long: a retention alarm at 14 days after the switch"
+     ],
+     "calibration": "Pick rotation by customer sensitivity class: 90 days for restricted data, 180 days default; revisit when a new inversion result is published."
+    },
+    "alternatives": [
+     {
+      "name": "Treat vectors as anonymous and skip protection",
+      "why_rejected": "Recovery results contradict it; EDPB also judges anonymity case by case (t_t16)."
+     },
+     {
+      "name": "Add noise to vectors to block inversion",
+      "why_rejected": "Lowers search quality and has no tested guarantee for our models; we do not rely on it."
+     }
+    ],
+    "security": [
+     "Model inversion by someone who gets a vector dump: dumps are denied and ciphertext only",
+     "Insider with admin rights exporting vectors for use elsewhere: admin role has no vector-read permission; attempts are audited",
+     "Nearest-neighbour probing through the search API to reconstruct text: rate limits and result caps per user, reviewed through the audit log"
+    ],
+    "performance": {
+     "slo": "Policy check under 1 ms; rotation of a 5,000,000-vector tenant completes in under 24 h without raising query p95 by more than 10% (design)",
+     "complexity": "O(1) per check",
+     "scaling": "At 10x tenants run rotations in a queue with a cap of concurrent rebuilds so live traffic is protected."
+    },
+    "edge_cases": [
+     "Tenant with no vectors yet: no-op",
+     "Rotation requested twice: second is ignored by generation id",
+     "Export request from the tenant's own admin: still denied; they may export source text from their apps",
+     "Query during switch-over: reads see one generation only",
+     "Unicode text: no effect, vectors are numeric",
+     "A connector with its own vector store is not allowed; all vectors pass through ix_vec"
+    ],
+    "tests": [
+     {
+      "name": "export denied",
+      "given": "admin calls a vector export",
+      "expect": "403 and an audit row"
+     },
+     {
+      "name": "direct read denied",
+      "given": "agent identity asks for the raw vector of a chunk",
+      "expect": "denied"
+     },
+     {
+      "name": "rotation recall",
+      "given": "new generation built",
+      "expect": "recall@10 >= 0.95 vs old before switch"
+     },
+     {
+      "name": "old key destroyed",
+      "given": "rotation finished",
+      "expect": "old generation unreadable"
+     }
+    ],
+    "cost_levers": [
+     "Key-only rotation when the model has not changed",
+     "Rotation windows in off-peak hours"
+    ],
+    "feedback_events": [
+     "Denied exports by user feed the audit review for insider-risk patterns"
+    ],
+    "analytics_events": [
+     {
+      "name": "vec.export_denied",
+      "fields": [
+       "tenant_id",
+       "caller",
+       "target"
+      ],
+      "when": "each denied request"
+     },
+     {
+      "name": "vec.rotated",
+      "fields": [
+       "tenant_id",
+       "generation",
+       "recall"
+      ],
+      "when": "when a rotation switches"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_embedding-inversion",
+      "key_idea": "Iterative correction recovers text from embeddings, so embeddings are not anonymised data.",
+      "how": "We apply the same access, encryption and retention rules to vectors as to text."
+     }
+    ],
+    "repos": [],
+    "industry": "Notion and Dash both keep protected content and metadata in the index (t_t14, t_t44) and treat the index as a data store. EDPB judges model anonymity case by case (t_t16).",
+    "refs": [
+     "t_t15",
+     "t_t16",
+     "t_t58",
+     "t_t14",
+     "p_embedding-inversion"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "gv_tenant": {
+   "line": "Tenant id in every key, shard and cache key; database row-level policy as a second check\nP(leak) = P(app bug) x P(policy miss)",
+   "dumb": "Every record and every search carries the company's id, so one company can never see another's data by accident. A second guard inside the data store also checks the company id, so a bug in one guard does not open the door.",
+   "inn": "Tenant context from qr_id and so_oauth {tenant}. Key builders from ix_ptr, ix_vec, ix_lex, qr_cache {tenant, id}.",
+   "out": "Tenant-scoped key and shard route to every store; policy-check failures to ac_audit and op_leak.",
+   "store": "Row-level policy rules in each data store (tenant = session tenant); a shard map {tenant, shard, generation}. No data of its own.",
+   "fail": "A request with no tenant context is rejected with a 400 and an audit row, never defaulted. If the policy engine is unavailable the store denies all reads for that session. A cross-tenant canary query that returns anything pages the on-call at once. No retry on a policy denial.",
+   "prop": "Proposal: one tenant must never read another's data, and two independent checks make a single bug harmless.",
+   "hard": "The cost of row-level policy on the chosen vector engine is unmeasured, and some engines have no row-level policy for vector queries, which would leave the key prefix as the only wall.",
+   "deep": {
+    "purpose": "Make cross-tenant reads structurally impossible: the tenant id is part of every key and shard name, and the store applies a second rule that the session tenant must equal the row tenant. Per-tenant namespaces and per-tenant keys back it up. A new app connects under a tenant-scoped credential through so_sdk or so_mcp and inherits both checks with no extra work.",
+    "expected": [
+     "A query in tenant A returns no row of tenant B even with a wrong filter",
+     "Every key, cache key and shard route contains the tenant id",
+     "A request without tenant context fails closed"
+    ],
+    "not_expected": [
+     "It never trusts a tenant id passed in a request body over the session's",
+     "It does not do user-level access; ac_filter and ac_live do",
+     "It does not default to a tenant when none is given"
+    ],
+    "algorithm": {
+     "name": "Tenant-prefixed keys with store-level row policy as a second independent check",
+     "formula": "key = tenant_id || ':' || object_id; allow(row) iff row.tenant = session.tenant; leak needs both checks to fail",
+     "steps": [
+      "Take the tenant from the authenticated session, never from user input",
+      "Build every key, shard route and cache key through one function that prefixes the tenant",
+      "Set the tenant on the store session; the row policy filters on it for every statement",
+      "Reject any request with missing or conflicting tenant",
+      "Run cross-tenant canary queries every 5 min and on every deploy"
+     ],
+     "params": {
+      "canary_interval": "5 min (design)",
+      "namespace_per_tenant": "on for vectors and lexical shards (default; large tenants get own shards)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "p1: chance the application key layer has a bug",
+      "p2: chance the row policy misses",
+      "P(leak): both fail on the same request"
+     ],
+     "formula_full": "P(leak) = p1 x p2 when the checks are independent",
+     "derivation": "A leak needs both guards to fail on the same request. With independent failures the joint chance is the product, so two imperfect guards beat one.",
+     "worked_example": "p1 = 1 in 10,000 requests and p2 = 1 in 10,000 gives P(leak) = 1 in 100,000,000. At 1,000,000 requests per day that is one leak every 100 days if the guesses held, which is why the canary and the leak tests also exist and why the numbers are a design assumption, not a measurement.",
+     "complexity": "O(1) per key build and per policy check.",
+     "failure_modes": [
+      "Shared code path bypasses the key builder: lint rule and the t_t56 style silent-skip test",
+      "Policy and key layer fail together because of one shared bug: canary queries from a separate service identity",
+      "Cache key missing tenant: key builder is the only way to make cache keys"
+     ],
+     "calibration": "Measure real policy-miss rate with planted cross-tenant documents run through op_leak; adjust canary frequency to the observed rate."
+    },
+    "alternatives": [
+     {
+      "name": "A filter in application code only",
+      "why_rejected": "One missed filter leaks everything; t_t56 notes a client without user context silently skips filters."
+     },
+     {
+      "name": "One database per tenant",
+      "why_rejected": "Operational cost grows with tenants; namespaces plus row policy give isolation at lower cost, with separate shards for the largest tenants."
+     }
+    ],
+    "security": [
+     "IDOR where a user sends another tenant's id in the request: the tenant comes from the session only",
+     "Shared cache leaks across tenants: tenant id is in every cache key",
+     "Noisy neighbour reads timing differences: per-tenant rate limits and shards"
+    ],
+    "performance": {
+     "slo": "Isolation checks add under 1 ms p95; canary detects a breach within 5 min (design)",
+     "complexity": "O(1)",
+     "scaling": "At 10x tenants namespaces grow; shard by tenant id with generation routing (t_t43)."
+    },
+    "edge_cases": [
+     "Tenant id missing: 400",
+     "Two tenant ids in one request: reject",
+     "Tenant deleted: its keys return not-found and canary excludes it",
+     "Duplicate tenant ids in a migration: blocked by a unique constraint",
+     "Unicode in tenant names: ids are opaque ASCII",
+     "Agent acting for a user in tenant A cannot reach tenant B even with a valid token for B; the session binds one tenant"
+    ],
+    "tests": [
+     {
+      "name": "cross-tenant query",
+      "given": "tenant A session queries a planted tenant B document",
+      "expect": "zero rows"
+     },
+     {
+      "name": "missing tenant",
+      "given": "request without tenant context",
+      "expect": "400 and audit row"
+     },
+     {
+      "name": "policy down",
+      "given": "row-policy engine unavailable",
+      "expect": "all reads denied for the session"
+     },
+     {
+      "name": "cache isolation",
+      "given": "same query text in tenants A and B",
+      "expect": "different cache keys"
+     }
+    ],
+    "cost_levers": [
+     "Namespace per tenant keeps query cost scaled to tenant size (t_t39)"
+    ],
+    "feedback_events": [
+     "Any canary hit opens a severity-one review and a new regression test"
+    ],
+    "analytics_events": [
+     {
+      "name": "tenant.denied",
+      "fields": [
+       "tenant_id",
+       "reason"
+      ],
+      "when": "on each reject"
+     },
+     {
+      "name": "tenant.canary",
+      "fields": [
+       "result",
+       "ms"
+      ],
+      "when": "each canary run"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Multi-tenant retrieval must enforce tenant boundaries and authorization inside retrieval.",
+      "how": "We apply tenant id in keys plus a second store-level policy."
+     },
+     {
+      "ref": "p_filtered-stale",
+      "key_idea": "Filtered multi-tenant graph indexes under updates need recall bounds.",
+      "how": "Read as a design reference for per-tenant namespaces under live writes (new single-author preprint)."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_weaviate",
+      "name": "Weaviate",
+      "take": "Multi-tenancy with separate shards per tenant."
+     },
+     {
+      "ref": "r_lancedb",
+      "name": "LanceDB",
+      "take": "Per-tenant indexes kept on object storage."
+     }
+    ],
+    "industry": "turbopuffer and Pinecone use namespaces per tenant (t_t35, t_t38); Notion shards by workspace id (t_t43). Practitioners advise adversarial cross-tenant tests (t_t56).",
+    "refs": [
+     "t_t35",
+     "t_t38",
+     "t_t39",
+     "t_t43",
+     "t_t56",
+     "p_multitenant-rag",
+     "p_filtered-stale",
+     "r_weaviate",
+     "r_lancedb"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "gv_tos": {
+   "line": "Registry row per app: cache time, training ban, rate ceiling, enforced by config at write and read\nmin(app_ttl, tenant_ttl)",
+   "dumb": "Each app has rules about what we may keep and for how long. We write those rules down as settings, and the code reads them before it stores or reuses anything. Slack's rules say we may not keep copies, so Slack is only ever asked live.",
+   "inn": "Per-app terms from legal review {app, store_allowed, max_ttl_s, training_allowed, rate_ceiling, reviewed_at, source_doc_ref}. Tenant overrides {tenant, app, stricter ttl}.",
+   "out": "Effective policy {app, tenant, store: none|metadata|excerpt, ttl_s, training: false, rate_per_min} to so_sdk, ix_snip and so_rate; changes to ac_audit.",
+   "store": "Registry table {app, version, rules, reviewed_at, reviewer}; every change is a new version, never an edit in place.",
+   "fail": "Registry unreadable: use the last cached version for up to 1 h, then switch every app to store: none and live fetch only. An app with no registry row defaults to store: none, live only. A rule change that shortens a TTL triggers an immediate purge order to gv_erase for older items. Review dates older than 180 days raise a warning.",
+   "prop": "Proposal: what we may store from each app is a written, versioned setting, so a new app cannot be indexed more deeply than its terms allow.",
+   "hard": "The legal reading of each vendor's terms is a human review, not code. The terms change over time. Research t_t07 gives Slack terms dates of 2025-05-29 (new apps) and 2025-06-30 (old apps), and other sources may give later dates, so the Slack row needs legal confirmation.",
+   "deep": {
+    "purpose": "Turn each vendor's terms of use into settings the code must obey: whether to store, for how long, whether data may train models, and how fast to call. Slack's terms limit storing and sharing data from its APIs (t_t07), and its real-time search API is built to query without storing (t_t13), so the Slack row says live only. A new app joins by declaring its row in the so_sdk manifest, reviewed before first sync; an MCP-only app (so_mcp) defaults to live only.",
+    "expected": [
+     "An app with no row is live only, nothing stored",
+     "A TTL change purges items older than the new limit",
+     "No app row ever allows training on tenant data"
+    ],
+    "not_expected": [
+     "It never lets a tenant override loosen an app's terms",
+     "It does not interpret legal text; a person writes each row",
+     "It does not authorise access to data; ac_filter and ac_live do"
+    ],
+    "algorithm": {
+     "name": "Versioned per-app policy registry, minimum of app and tenant rule, default deny",
+     "formula": "effective_ttl = min(app_ttl, tenant_ttl); store = none if no row; rate = min(app_ceiling, tenant_share of quota)",
+     "steps": [
+      "Look up the app row at connector start and on every write; a missing row means live only",
+      "Compute the effective policy as the stricter of app and tenant rules",
+      "Reject writes that exceed the allowed store level or TTL",
+      "Send the rate ceiling to so_rate as the bucket size",
+      "When a row is edited, compute items older than the new TTL and order a purge",
+      "Write each change as a new version to ac_audit"
+     ],
+     "params": {
+      "default_policy": "store: none, live only (design)",
+      "registry_cache": "1 h (design)",
+      "review_interval": "180 days (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "app_ttl: longest life the app allows",
+      "tenant_ttl: tenant's own limit",
+      "q_app: rate ceiling per app",
+      "share: connector's slice of the quota"
+     ],
+     "formula_full": "effective_ttl = min(app_ttl, tenant_ttl); calls per hour <= q_app x share",
+     "derivation": "Two limits apply at once, and obeying both means taking the smaller. The rate is a hard ceiling times the share this connector may use, so live sync keeps a reserve (t_t06 suggests a pacing share).",
+     "worked_example": "App allows 24 h excerpts, tenant sets 6 h: effective 6 h. Jira example: 100,000 points per hour, connector share 50% (the estimate in t_t06) gives 50,000 points, and at 2 points per read that is 25,000 reads per hour. Slack non-Marketplace history: 1 request per minute with 15 objects per page (t_t07) gives at most 900 objects per hour, so a bulk copy is not planned.",
+     "complexity": "O(1) lookup per write; O(items) for a TTL purge.",
+     "failure_modes": [
+      "Vendor changes terms: review reminders and a registry version bump with purge",
+      "Row missing for a new app: defaults to live only",
+      "Tenant tries a looser TTL: min() ignores it"
+     ],
+     "calibration": "Re-read each vendor's terms every 180 days or on a notice; record the reviewer and source document; compare the real call rate to the ceiling and adjust share."
+    },
+    "alternatives": [
+     {
+      "name": "Hard-code limits per connector",
+      "why_rejected": "Terms change and each change would need a code release; a registry makes the change a config edit with a purge."
+     },
+     {
+      "name": "Store everything and rely on legal after the fact",
+      "why_rejected": "Slack terms already bar bulk copies for many apps (t_t07, pr_slack-ai); a breach would force a purge of live data."
+     }
+    ],
+    "security": [
+     "A tenant admin loosens a cache TTL to keep data the vendor bans: min() rule and audited changes",
+     "A connector writes past its allowed store level through a bug: the write path checks the policy and rejects",
+     "Forged registry edit: edits need a reviewer identity and create a new signed version"
+    ],
+    "performance": {
+     "slo": "Policy lookup under 1 ms from cache; TTL purge started within 5 min of a rule change",
+     "complexity": "O(1) lookup",
+     "scaling": "At 10x apps the registry stays a small table; reviews, not compute, are the limit."
+    },
+    "edge_cases": [
+     "App with no row: live only",
+     "Registry empty at start: all apps live only",
+     "Duplicate rows for one app: highest version wins",
+     "Tenant override stricter than the app: tenant wins",
+     "A row with ttl 0: nothing is stored, only a pointer where terms allow",
+     "New MCP-only app: live only by default, and its tool list is read from so_mcp",
+     "Terms ban storing even metadata: store: none and no pointer; query is by live search"
+    ],
+    "tests": [
+     {
+      "name": "default deny",
+      "given": "new app with no registry row",
+      "expect": "no content stored; live fetch only"
+     },
+     {
+      "name": "stricter wins",
+      "given": "app ttl 24 h, tenant 6 h",
+      "expect": "items expire at 6 h"
+     },
+     {
+      "name": "purge on change",
+      "given": "app ttl cut from 24 h to 1 h",
+      "expect": "older items purged within the SLA"
+     },
+     {
+      "name": "training ban",
+      "given": "any registry row",
+      "expect": "training = false in the effective policy"
+     }
+    ],
+    "cost_levers": [
+     "Live-only apps store no vectors or excerpts, saving storage",
+     "Rate ceilings keep us inside free quotas"
+    ],
+    "feedback_events": [
+     "Vendor notices and 429s feed the 180-day review early"
+    ],
+    "analytics_events": [
+     {
+      "name": "tos.violation_blocked",
+      "fields": [
+       "tenant_id",
+       "app",
+       "rule"
+      ],
+      "when": "when a write is rejected"
+     },
+     {
+      "name": "tos.rule_changed",
+      "fields": [
+       "app",
+       "version"
+      ],
+      "when": "on registry edit"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "r_nango",
+      "name": "Nango",
+      "take": "Syncs can emit only metadata if configured, which matches a store: metadata row."
+     }
+    ],
+    "industry": "Slack's real-time search API retrieves Slack data without bulk download or third-party storage (pr_slack-ai, t_t13). Glean and Microsoft run live and synced modes per connector (pr_glean, t_t12).",
+    "refs": [
+     "t_t06",
+     "t_t07",
+     "t_t12",
+     "t_t13",
+     "pr_slack-ai",
+     "pr_glean",
+     "r_nango"
+    ]
+   },
+   "req": "Proposal: a per-app terms register. Source for Slack limits: research t_t07 (Slack API limits and terms)."
+  },
+  "gv_kill": {
+   "line": "Per-connector and per-tenant kill switch: stop sync, revoke tokens, order purge; two-person for tenant purge\nT_stop = T_flag + T_drain",
+   "dumb": "If something goes wrong with one app connection or one company, an operator can press a switch. Syncing stops, the saved login tokens are cancelled, and a purge starts for everything we derived. Stopping is instant; purging is slower and needs a second person to agree.",
+   "inn": "Operator or automatic trigger {scope: connector|tenant, id, reason, actor}; leak alarm from op_leak; tenant exit request. Second approver for a tenant purge.",
+   "out": "Stop order to ch_wf; token revoke to so_oauth; purge order to gv_erase {tenant, connector, scope}; kill record to ac_audit.",
+   "store": "Kill state {scope, id, state: paused|purging|purged, started_at, actor, approver}; sticky until a named person lifts it.",
+   "fail": "Stop is written first to a flag that every worker reads at the start of each step; in-flight steps finish within 60 s drain time and then halt. If the flag store is down, workers halt after 30 s without a heartbeat from the flag service. Purge is queued to gv_erase with its retries. Token revoke failure retries at 30 s, 2 min, 10 min, then pages the on-call.",
+   "prop": "Proposal: an operator needs one reliable control that stops a bad connector or a tenant at once and removes what we derived.",
+   "hard": "Who may press the switch, which alarms may press it automatically, and the two-person rule for tenant purge are policy choices not yet settled; false trips on a noisy alarm would take a tenant offline.",
+   "deep": {
+    "purpose": "Give operators and automatic alarms a fast, safe stop for one connector or one tenant, then a controlled purge. Pause is cheap and reversible; purge is destructive and needs two people. A new app joins with its own switch because connectors are keyed by id in so_sdk, and an MCP-only app (so_mcp) is stopped by dropping its bridge registration and revoking its token.",
+    "expected": [
+     "After a stop, no worker starts a new sync step for that scope within the drain time",
+     "Tokens for the scope are revoked",
+     "A purge order reaches gv_erase and ends with a receipt"
+    ],
+    "not_expected": [
+     "It never purges on one person's click for a whole tenant",
+     "It never lifts itself; a named person must lift a pause",
+     "It does not delete source data in the app"
+    ],
+    "algorithm": {
+     "name": "Flag-first stop, token revoke, then gated purge",
+     "formula": "T_stop = T_flag + T_drain; purge needs approvals >= 2 for scope = tenant",
+     "steps": [
+      "Record the kill state as paused and write the stop flag to the shared flag store",
+      "Workers check the flag at the start of every step and halt when set; in-flight steps drain for up to 60 s",
+      "Revoke the tokens for the scope through so_oauth",
+      "For a purge request, require a second approver for tenant scope, then move to purging and send the order to gv_erase",
+      "On the receipt from gv_erase, set purged and write the record to ac_audit",
+      "Lift only by a named person, which clears the flag and logs it"
+     ],
+     "params": {
+      "drain_time": "60 s (design)",
+      "heartbeat_timeout": "30 s (design)",
+      "approvals_for_tenant_purge": "2 (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T_flag: time for the flag to reach workers",
+      "T_drain: time to finish in-flight steps",
+      "T_stop: total time to quiet"
+     ],
+     "formula_full": "T_stop = T_flag + T_drain, worst case when the flag service is down: T_heartbeat + T_drain",
+     "derivation": "Workers see the flag at their next step start, so the flag time is at most one step length. Then the in-flight step finishes within the drain time. If the flag store is down, the heartbeat timeout replaces the flag time.",
+     "worked_example": "Flag read at each step with steps of 10 s: T_flag up to 10 s, drain 60 s, so T_stop up to 70 s. Flag store down: 30 + 60 = 90 s worst case.",
+     "complexity": "O(workers) flag reads, O(1) per scope write.",
+     "failure_modes": [
+      "Flag store down: heartbeat timeout halts workers",
+      "Token revoke fails: retries then page; the stop still holds",
+      "Accidental tenant kill: pause is reversible; purge needs a second person"
+     ],
+     "calibration": "Run a stop drill each quarter on a test tenant and compare real T_stop against the stated bound."
+    },
+    "alternatives": [
+     {
+      "name": "Stop by deleting the connector config",
+      "why_rejected": "Loses state and does not stop in-flight work or revoke tokens."
+     },
+     {
+      "name": "One-click tenant purge",
+      "why_rejected": "A mis-click would destroy the tenant's whole index; two people are required for the destructive step."
+     }
+    ],
+    "security": [
+     "Attacker or insider presses kill to deny service: only named operator roles may; every press is audited with actor",
+     "Replay of an old kill command to re-pause a healthy tenant: each command carries a nonce and timestamp",
+     "Purge used to hide evidence: gv_erase keeps hashed receipts and ac_audit rows are not purged"
+    ],
+    "performance": {
+     "slo": "Quiet within 70 s of the click; purge started within 5 min of the second approval (design)",
+     "complexity": "O(workers)",
+     "scaling": "At 10x workers the flag poll rate rises; use push notification with the heartbeat as the safety net."
+    },
+    "edge_cases": [
+     "Kill on a scope with no running work: state set, flag set, nothing drains",
+     "Duplicate kill: idempotent",
+     "Kill during a backfill: backfill lane halts as well",
+     "Concurrent kills of connector and tenant: tenant scope wins",
+     "Unknown scope id: rejected",
+     "A new app is covered because its connector id exists in the registry before first sync",
+     "Lift while purge is running: blocked until purged or cancelled by two people"
+    ],
+    "tests": [
+     {
+      "name": "quiet within bound",
+      "given": "kill on a connector with 3 running syncs",
+      "expect": "no new steps after 70 s"
+     },
+     {
+      "name": "token revoke",
+      "given": "kill",
+      "expect": "so_oauth shows no valid token for the scope"
+     },
+     {
+      "name": "two-person rule",
+      "given": "single approver on a tenant purge",
+      "expect": "purge not started"
+     },
+     {
+      "name": "audit",
+      "given": "any kill",
+      "expect": "record with actor and reason"
+     }
+    ],
+    "cost_levers": [
+     "Stopping a runaway connector ends its quota burn and compute"
+    ],
+    "feedback_events": [
+     "Every kill gets a short review and may add an alarm or a runbook line"
+    ],
+    "analytics_events": [
+     {
+      "name": "kill.pressed",
+      "fields": [
+       "scope",
+       "id",
+       "actor",
+       "reason"
+      ],
+      "when": "on any kill"
+     },
+     {
+      "name": "kill.quiet",
+      "fields": [
+       "scope",
+       "id",
+       "seconds"
+      ],
+      "when": "when workers halt"
+     },
+     {
+      "name": "kill.purged",
+      "fields": [
+       "scope",
+       "id",
+       "hours"
+      ],
+      "when": "when gv_erase closes"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Anthropic runs agent work with resume-from-checkpoint and regular checkpoints (t_t10), which is why stop flags are read at step starts. Webhook and subscription loss are normal (t_t54), so a stop cannot depend on events alone.",
+    "refs": [
+     "t_t10",
+     "t_t54",
+     "t_t56"
+    ]
+   },
+   "req": "Requirement: 'Enforce who may do what; isolate tenants; keep an unalterable log of every action'"
+  },
+  "gv_line": {
+   "line": "Pointers, filters, 300-char excerpt by default\nnotes only with sources and an owner",
+   "dumb": "A brain that only points can still fail: the app may be down, or a thing may have been edited since. So we draw a line. By default we keep pointers, filter fields and a short excerpt. We keep a derived note only when it lists its sources and has an owner.",
+   "inn": "From gv_tos: what each app allows us to keep. From the design: the object classes the brain handles.",
+   "out": "Rules to ix_snip (excerpt length) and cp_lib (when a derived note may be stored).",
+   "store": "A small policy table per tenant: object class, what may be stored, how long, who owns it.",
+   "fail": "If a class has no rule the brain stores only the pointer. A rule can narrow storage for one app but never widen it past the vendor terms.",
+   "req": "DevX proposal, from the 2026 company-brain paper review (batch 2)",
+   "prop": "Proposal: make the stored-versus-pointed boundary an explicit table, and test pointer-only against pointer plus derived notes on one golden set.",
+   "hard": "No source tests this boundary on a pointer index. The golden-set test (pointer only vs stored derived notes) decides where the line sits; until then the default is pointer only.",
+   "deep": {
+    "purpose": "A pointer index is enough for knowledge that lives in apps. It is weak for tacit knowledge, source outages, apps with no search API, deleted history and questions that need several documents. This rule says where we store a little and where we do not.",
+    "expected": [
+     "Default class stores a pointer, filters and a 300-character excerpt",
+     "A derived note is accepted only with a source list and an owner"
+    ],
+    "not_expected": [
+     "It does not widen storage past vendor terms",
+     "It does not store full text by default"
+    ],
+    "algorithm": {
+     "name": "Store-or-point table",
+     "formula": "allowed(class) = pointer + filters + excerpt<=300 chars; derived note only if sources[] and owner are set",
+     "steps": [
+      "Classify the object",
+      "Look up the class rule",
+      "Apply the vendor terms as a ceiling",
+      "Store only what the rule allows"
+     ],
+     "params": {
+      "excerpt_cap": "300 characters",
+      "default": "pointer only"
+     }
+    },
+    "security": [
+     "Excerpts and notes are encrypted under the tenant key",
+     "The rule table is audited on change"
+    ],
+    "performance": {
+     "slo": "under 1 ms per lookup",
+     "complexity": "table lookup",
+     "scaling": "Cache the table per tenant."
+    },
+    "edge_cases": [
+     "Vendor terms change: the ceiling drops and stored excerpts are re-cut",
+     "Tenant asks to store more than the terms allow: refused with the clause shown",
+     "Object class added later: stays pointer-only until a rule is set"
+    ],
+    "tests": [
+     {
+      "name": "default_rule",
+      "given": "Object with no rule",
+      "expect": "only the pointer is stored"
+     },
+     {
+      "name": "terms_ceiling",
+      "given": "Rule asks for more than the vendor allows",
+      "expect": "the vendor terms win"
+     },
+     {
+      "name": "excerpt_cap",
+      "given": "Excerpt of 900 characters",
+      "expect": "cut to 300"
+     }
+    ],
+    "cost_levers": [
+     "Smaller excerpts cost less to store and encrypt"
+    ],
+    "feedback_events": [
+     "Questions that failed because the source was down"
+    ],
+    "analytics_events": [
+     {
+      "name": "store_rule_applied",
+      "fields": [
+       "class",
+       "stored",
+       "terms"
+      ],
+      "when": "on ingest"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26b_akasic",
+      "key_idea": "Derived memory must carry its sources",
+      "how": "gv_line requires a source list for any stored note"
+     },
+     {
+      "ref": "p26b_acm",
+      "key_idea": "Retrieval quality is limited by the weakest of extraction, retrieval and reasoning",
+      "how": "the golden-set test checks pointer-only against stored notes"
+     }
+    ],
+    "refs": [
+     "p26b_akasic",
+     "p26b_acm"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "gv_erase",
+   "b": "ac_audit",
+   "l": "erasure receipt",
+   "k": "d",
+   "d": "Receipt {tenant, erasure_id, steps[], sig}",
+   "x": 1
+  },
+  {
+   "a": "gv_kms",
+   "b": "ac_audit",
+   "l": "key use",
+   "k": "d",
+   "d": "Row {tenant, kek_ref, op, at}",
+   "x": 1
+  },
+  {
+   "a": "gv_inv",
+   "b": "ac_audit",
+   "l": "export denied",
+   "k": "d",
+   "d": "Row {tenant, caller, target}",
+   "x": 1
+  },
+  {
+   "a": "gv_tenant",
+   "b": "ix_vec",
+   "l": "row policy",
+   "k": "s",
+   "d": "Session tenant check {tenant} on every vector query",
+   "x": 1
+  },
+  {
+   "a": "gv_tenant",
+   "b": "qr_cache",
+   "l": "cache key prefix",
+   "k": "s",
+   "d": "Tenant prefix {tenant} on every cache key",
+   "x": 1
+  },
+  {
+   "a": "gv_tenant",
+   "b": "ac_audit",
+   "l": "tenant denial",
+   "k": "d",
+   "d": "Row {tenant, reason, caller}",
+   "x": 1
+  },
+  {
+   "a": "gv_tos",
+   "b": "so_rate",
+   "l": "rate ceiling",
+   "k": "s",
+   "d": "Ceiling {app, rate_per_min, share}",
+   "x": 1
+  },
+  {
+   "a": "gv_tos",
+   "b": "ac_audit",
+   "l": "registry change",
+   "k": "d",
+   "d": "Version {app, version, reviewer}",
+   "x": 1
+  },
+  {
+   "a": "gv_tos",
+   "b": "gv_erase",
+   "l": "ttl purge",
+   "k": "s",
+   "d": "Order {tenant, app, older_than}",
+   "x": 1
+  },
+  {
+   "a": "gv_kill",
+   "b": "so_oauth",
+   "l": "revoke tokens",
+   "k": "s",
+   "d": "Revoke {tenant, connector}",
+   "x": 1
+  },
+  {
+   "a": "gv_kill",
+   "b": "ac_audit",
+   "l": "kill record",
+   "k": "d",
+   "d": "Row {scope, id, actor, approver, reason}",
+   "x": 1
+  }
+ ]
+}

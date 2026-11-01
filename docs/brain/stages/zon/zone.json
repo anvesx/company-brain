@@ -1,0 +1,924 @@
+{
+ "group": {
+  "line": "Personal, team, department and company zones with a preview-and-approve step before anything moves outward.",
+  "dumb": "Your things stay yours. Before anything moves to a wider group, you see the exact text and audience and say yes."
+ },
+ "comps": {
+  "zn_tag": {
+   "line": "Zone = lookup on the source's own sharing fields (no model)\nzone in {company, team, personal}; unknown = personal, no owner",
+   "dumb": "Every app already says who can see an item: a public channel, a private channel, a direct message, a My Drive file or a shared drive file. We copy that answer into two fields on the pointer: zone and owner id. A model never guesses it. If the app gives no answer, the item is marked personal with no owner, so nobody sees it until the next sweep fixes it.",
+   "inn": "From so_norm: normalised object {uri, source_kind, sharing{is_public, drive_type, members[], owner_id, link_scope}, version}. From zn_promote: zone change {uri, from, to, by, at}. From cf_norm: personal chat messages {uri, owner}.",
+   "out": "To ix_ptr: {uri, zone, owner_id, zone_reason, zone_version}. To zn_key: each personal row {uri, owner_id} so its chunks use the owner's data key. To zn_taint: the zone label of every pointer, so derived data can inherit it.",
+   "store": "Reads the per-source_kind rule table (a versioned file in the repo). Writes zone, owner_id, zone_reason and zone_version on the pointer row in ix_ptr. Keeps no copy of content.",
+   "fail": "Sharing field missing or rule not found: tag personal with owner null (matches no user), raise a retag job and alert after 3 such rows per connector in 10 minutes. Rule table fails to load: refuse to start (0 rows tagged on a guess). A tag write that loses a compare-and-set on zone_version is dropped and re-read once, at most 2 tries.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: the zone must come from the source's sharing setting so a model error can never turn a private item into a company one.",
+   "hard": "Vendor sharing fields differ per app; the exact field names for Slack, Drive, Notion and Jira are not in our research, so each rule says check current docs until a connector test proves it.",
+   "deep": {
+    "purpose": "Give every pointer a zone and an owner id taken from the source app's own sharing setting. Later stages (the owner filter, the per-user key, the taint check) read these two fields and nothing else. A new app joins by adding one rule for its sharing fields to the connector manifest (so_sdk) or by returning the fields through the MCP bridge (so_mcp); with no rule, its items default to personal with no owner.",
+    "expected": [
+     "A private channel, a direct message and a My Drive file with no other viewer all become personal or team from the source field, never from the text",
+     "An item whose sharing field is missing is tagged personal with owner null",
+     "Re-running the tagger on the same object gives the same zone and bumps no version"
+    ],
+    "not_expected": [
+     "It never calls a model or reads the item body to decide a zone",
+     "It does not decide who may see a team item; ac_store holds that access list",
+     "It does not move an item to a wider zone on its own; that is zn_promote"
+    ],
+    "algorithm": {
+     "name": "Source-sharing lookup with fail-closed default",
+     "formula": "zone(o) = rule[o.source_kind](o.sharing) if both exist else personal with owner null; owner_id set only when zone = personal",
+     "steps": [
+      "Read source_kind and the raw sharing object from the normalised envelope",
+      "Find the rule for source_kind in the versioned rule table; no rule means fail closed",
+      "Run the rule as a pure function over sharing fields such as is_public, drive_type and members",
+      "Validate the result is one of company, team, personal; a personal result needs an owner id taken from the source's owner field",
+      "Write {zone, owner_id, zone_reason, zone_version} with compare-and-set on zone_version"
+     ],
+     "params": {
+      "zones": "company, team, personal (design)",
+      "unknown_default": "personal, owner null (design, fail closed)",
+      "retag_alert": "3 unknown rows per connector in 10 minutes (design, tune on real volume)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Classifier model reads the text",
+      "why_rejected": "A wrong guess exposes private text company-wide; a source field is a fact, a model output is a probability."
+     },
+     {
+      "name": "One zone per connector",
+      "why_rejected": "One Drive holds My Drive and shared drive items; a connector-level zone would mislabel one of them."
+     }
+    ],
+    "security": [
+     "Privilege escalation by a model or a prompt-injected document deciding its own zone: the tagger has no model call and never reads the body, so injected text cannot change a zone",
+     "Stale tag after the owner makes a file private again: a sweep re-reads sharing fields and bumps zone_version, and a narrowing change is applied at once while a widening change goes to zn_promote",
+     "Spoofed owner id in a forged webhook: owner_id comes only from the fetched source object, never from the webhook payload"
+    ],
+    "performance": {
+     "slo": "Tag p95 under 2 ms per object (design target); 0 model calls",
+     "complexity": "O(1) per object, one table lookup and one function call",
+     "scaling": "At 10x objects the cost is the pointer write in ix_ptr, not the rule; the rule table is read once into memory and the tagger is stateless, so it scales by adding workers."
+    },
+    "edge_cases": [
+     "Object has two conflicting sharing signals (public link and private folder): the narrower zone wins",
+     "Sharing field arrives null: personal with owner null and a retag job",
+     "Unicode or very long owner id: stored as an exact byte string, max 256 bytes, longer is rejected and tagged unknown",
+     "Object moved from shared drive to My Drive: the sweep sees the new drive_type and the pointer narrows at once",
+     "Same event delivered twice: zone_version compare-and-set makes the second a no-op",
+     "A brand new app with no rule: all its items are personal with no owner, so it is invisible until a rule ships"
+    ],
+    "tests": [
+     {
+      "name": "private channel is not company",
+      "given": "channel with is_public false and 40 members",
+      "expect": "zone team, owner_id null, zone_reason rule:slack.channel"
+     },
+     {
+      "name": "missing sharing",
+      "given": "object with sharing null",
+      "expect": "zone personal, owner_id null, retag job queued"
+     },
+     {
+      "name": "owner from source only",
+      "given": "webhook says owner u9 but fetched object says owner u3",
+      "expect": "owner_id u3"
+     },
+     {
+      "name": "idempotent",
+      "given": "same object tagged twice",
+      "expect": "second write returns no change and zone_version unchanged"
+     }
+    ],
+    "cost_levers": [
+     "No model call, so the cost is one table lookup per object"
+    ],
+    "feedback_events": [
+     "Rows tagged unknown that an admin later corrects feed the rule table as new test cases"
+    ],
+    "analytics_events": [
+     {
+      "name": "zone.tagged",
+      "fields": [
+       "tenant_id",
+       "source_kind",
+       "zone",
+       "reason"
+      ],
+      "when": "after every tag write"
+     },
+     {
+      "name": "zone.unknown",
+      "fields": [
+       "tenant_id",
+       "connector",
+       "source_kind"
+      ],
+      "when": "when the fail-closed default is used"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_facts-rag",
+      "key_idea": "Access control is a first-class design input for enterprise retrieval, not an add-on.",
+      "how": "Zone and owner become columns on the pointer from the first write, not a later patch."
+     },
+     {
+      "ref": "p_multitenant-rag",
+      "key_idea": "Authorization is a filter inside retrieval, evaluated per query.",
+      "how": "The tagger supplies the two fields that the in-query owner filter and the access filter need."
+     }
+    ],
+    "repos": [],
+    "industry": "Glean mirrors source ACLs (x_sec_glean-perms, snippet, third-party view, unverified). Microsoft Purview notes that Teams chat labels and container labels are not inherited by items (x_sec_purview-copilot), which is why we read the sharing field on each item and do not inherit a zone from a container.",
+    "refs": [
+     "p_facts-rag",
+     "p_multitenant-rag",
+     "x_sec_purview-copilot",
+     "x_sec_glean-perms",
+     "t_t49",
+     "t_t47"
+    ]
+   }
+  },
+  "zn_scope": {
+   "line": "owner_id = $asker is a required term inside the ANN and BM25 query for every personal row\nset repeated at hydrate",
+   "dumb": "Search finds matches in two ways: by meaning (ANN, short for approximate nearest neighbour search) and by words (BM25, a keyword ranking). For personal rows, we add a rule inside both searches: the row's owner must be the person asking. We check the same rule again when the real text is fetched. So a personal item never even becomes a candidate for anyone else.",
+   "inn": "From ag_collect and the request context: {tenant, user_id, agent_scope}. From ix_ptr and the index rows: zone and owner_id per row. From qr_hyd: the pointer about to be fetched.",
+   "out": "To ac_filter: owner term {zone: personal, owner_id: user_id} to AND into the filter. To qr_hyd: owner recheck {uri, owner_id, user_id} before any live fetch. To ac_audit: a deny record when a recheck fails.",
+   "store": "Stateless. Reads the zone and owner_id columns on the index rows. Postgres row-level security carries the same predicate as a second line.",
+   "fail": "No user id in the request: the term matches no row and the query returns 0 personal rows, flagged degraded. Recheck finds owner mismatch: drop the result and write 1 audit row, no retry. Search engine rejects the term: 1 retry after 100 ms, then fail closed.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: private rows must be filtered by owner inside the search itself, because ranking first and filtering after leaks candidates and starves results.",
+   "hard": "The cost of the owner term on a shared vector index at 10,000 users is unmeasured; per-user partitions are the fallback and are described in zn_key.",
+   "deep": {
+    "purpose": "Make 'only the owner' a term of the search query, not a cleanup step. The query becomes: rows with zone company or team that pass the access filter, plus rows with zone personal whose owner_id equals the asker. The same check runs again when qr_hyd fetches the text, so a bug in one gate is caught by the other. An agent acting for a user carries the same owner id, never a wider one.",
+    "expected": [
+     "A personal row is a candidate only when owner_id equals the asker's id",
+     "With 2,000 users and equal personal rows, a user still gets k personal results, not k divided by 2,000",
+     "The hydrate recheck rejects a pointer whose owner differs from the asker even if search returned it"
+    ],
+    "not_expected": [
+     "It does not filter after ranking as the only control",
+     "It does not apply to company or team rows; ac_filter handles those",
+     "It never lets the admin or an app-only job match another user's personal row"
+    ],
+    "algorithm": {
+     "name": "Mandatory owner term in ANN and BM25, rechecked at hydrate",
+     "formula": "visible(r) iff (r.zone != personal and allow(r) intersect P(u)) or (r.zone = personal and r.owner_id = u); candidates needed by post-filter = k / s",
+     "steps": [
+      "Take user id u from the verified request context, never from the request body",
+      "Build the term owner_id = u and AND it into the personal branch of the filter given to ac_filter",
+      "Pass the identical predicate to the ANN query and the BM25 query",
+      "At hydrate, load the pointer row and compare owner_id to u again before any fetch",
+      "If u is missing, build a term that matches nothing"
+     ],
+     "params": {
+      "term_form": "equality on a single indexed column owner_id (design)",
+      "recheck": "always on at hydrate, no off switch (design)",
+      "fallback_partition": "one partition per user above 10,000 personal rows per user (default, tune on measured latency)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "k: results wanted",
+      "s: fraction of personal rows one user owns",
+      "U: users in the tenant",
+      "N: candidates a post-filter must fetch"
+     ],
+     "formula_full": "Post-filter needs N = k / s; with equal rows s = 1 / U so N = k x U; an in-query owner term needs N = k",
+     "derivation": "If each candidate belongs to the asker with probability s, the expected owned count from N candidates is N x s. Setting that to k gives N = k / s. The owner term removes the other users' rows before ranking, so N = k.",
+     "worked_example": "U = 2,000 and k = 20. A post-filter must fetch 20 x 2,000 = 40,000 candidates to expect 20 owned ones. At a 1,000 candidate cap it expects 1,000 x (1 / 2,000) = 0.5 owned rows. The in-query term returns all 20.",
+     "complexity": "Equality on an indexed column adds O(1) per candidate check; partitioned search costs O(log n_u) where n_u is that user's row count.",
+     "failure_modes": [
+      "Filter selectivity so low that graph search disconnects: fall back to exact scan of the user's partition",
+      "Request path that skips the term: the search client refuses a query with no filter object",
+      "Owner id compared as text with different case: ids are stored and compared as exact bytes"
+     ],
+     "calibration": "Run the planted-row canary nightly: 5 synthetic users each own 10 rows; every user queries for the others' phrases and must get 0 of them back."
+    },
+    "alternatives": [
+     {
+      "name": "Post-filter by owner after ranking",
+      "why_rejected": "Needs k x U candidates and leaks other users' rows to later stages (p_acorn, t_t22)."
+     },
+     {
+      "name": "Separate index per user only",
+      "why_rejected": "Right for scale later but costs a rebuild per user at start; kept as the fallback, not the first build."
+     }
+    ],
+    "security": [
+     "Query that bypasses the user context and so skips the filter (the silent-skip bug in t_t56): the search client refuses any query without a filter object and fails closed",
+     "Confused deputy, where an app-only job runs a query as admin and sees personal rows: the personal branch has no admin override, only equality with the asker",
+     "Cross-user result cache hit: the cache key includes the owner term, so user A's personal hits never serve user B",
+     "Aggregation across private zones: a personal-view query that reads the asker's own rows plus every private channel they belong to can join facts no single zone shows, and Supermemory's DM reads work this way. Each zone is queried under its own filter, and a combined answer carries the highest zone of its inputs (zn_taint) and an audit row that lists every zone used (r_supermemory-cb)."
+    ],
+    "performance": {
+     "slo": "Owner term adds under 1 ms p95 to query planning and under 10 percent to search latency (design target)",
+     "complexity": "O(1) predicate per candidate; O(log n_u) on a per-user partition",
+     "scaling": "At 10x users the shared index loses recall on selective filters; switch the personal branch to per-user partitions with exact scan, because one user's rows are small."
+    },
+    "edge_cases": [
+     "Empty user id: matches nothing",
+     "A user with 0 personal rows: the personal branch returns 0 and the company branch still answers",
+     "Two users with ids that differ only in case: treated as different (exact bytes)",
+     "Owner id changes after an account rename: owner_id is an immutable internal id, not an email",
+     "Query races with a leave event: the key is gone, so decrypt fails and the row is skipped",
+     "A row whose owner_id is null: matches no user"
+    ],
+    "tests": [
+     {
+      "name": "owner only",
+      "given": "user u1 asks for a phrase that appears only in a personal row of u2",
+      "expect": "0 results from that row"
+     },
+     {
+      "name": "sparse owner",
+      "given": "2,000 users, u1 owns 0.05 percent of personal rows, k = 20",
+      "expect": "20 results, all owner u1"
+     },
+     {
+      "name": "hydrate recheck",
+      "given": "pointer of u2 injected into u1's candidate list",
+      "expect": "dropped, 1 audit row, no live fetch"
+     },
+     {
+      "name": "fail closed",
+      "given": "request without user id",
+      "expect": "0 personal rows and degraded true"
+     },
+     {
+      "name": "no silent join",
+      "given": "u1 belongs to private channels A and B and the answer needs one row from each",
+      "expect": "answer labelled with both zones, personal view only, 0 company cache writes, 1 audit row naming both zones"
+     }
+    ],
+    "cost_levers": [
+     "An equality term costs almost nothing, and fewer candidates reach the reranker"
+    ],
+    "feedback_events": [
+     "Dropped-at-hydrate counts show a gate bug; any non-zero value pages the owner of the search service"
+    ],
+    "analytics_events": [
+     {
+      "name": "owner.term_applied",
+      "fields": [
+       "tenant_id",
+       "user_hash",
+       "personal_rows_considered",
+       "ms"
+      ],
+      "when": "for every query that includes the personal branch"
+     },
+     {
+      "name": "owner.recheck_denied",
+      "fields": [
+       "tenant_id",
+       "uri_hash"
+      ],
+      "when": "when hydrate drops a pointer"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_acorn",
+      "key_idea": "Permission and source filters must run inside the ANN search, not after it.",
+      "how": "The owner term is an equality predicate pushed into the search, with exact scan as the fallback."
+     },
+     {
+      "ref": "p_filtered-stale",
+      "key_idea": "Filtered multi-tenant graphs under live updates need recall bounds.",
+      "how": "Used as a design reference for measuring recall on the personal branch (new single-author preprint, our inference for fit)."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_pgvector",
+      "name": "pgvector",
+      "take": "Vectors, owner column and row-level security sit in one Postgres, so the owner term is a normal SQL predicate."
+     }
+    ],
+    "industry": "Practitioner consensus is to filter inside the vector query (t_t22). OWASP lists shared vector stores that leak one group's embeddings to another as a named risk and recommends permission-aware stores and logical partitioning (x_sec_owasp-llm08).",
+    "refs": [
+     "p_acorn",
+     "p_filtered-stale",
+     "p_multitenant-rag",
+     "t_t22",
+     "t_t56",
+     "x_sec_owasp-llm08",
+     "r_pgvector",
+     "r_supermemory-cb"
+    ]
+   }
+  },
+  "zn_key": {
+   "line": "Envelope encryption: one data key per user, wrapped by the tenant KMS key; delete the wrapped key to shred\ncipher = AES-256-GCM (design)",
+   "dumb": "Each person's personal rows are locked with their own key. That key is itself locked by a master key held in the cloud's key service (KMS, short for key management service). When someone leaves, we delete their locked key. Without it, their personal zone is unreadable noise, even in old backups.",
+   "inn": "From zn_tag: personal rows {uri, owner_id, chunk bytes, vector}. From the request context at query time: {tenant, user_id}. From a leave event: {tenant, user_id, reason}.",
+   "out": "To ix_vec: encrypted vector and chunk payload plus key_id for each personal row. At query time: the user's data key held in memory for one request. On leave: a shred receipt {user_id, key_id, at} to ac_audit.",
+   "store": "Writes one wrapped data key per user in a key table {tenant_id, user_id, key_id, wrapped_key, state}. The wrapping key stays in the KMS and never leaves it. Reads the key table at query time.",
+   "fail": "KMS unreachable for over 2 s: personal rows are skipped for that query (company rows still answer) and the call is retried at most 3 times with 200 ms, 400 ms, 800 ms backoff. Unwrap error on a row: skip that row and count it. Shred request fails midway: key state stays deleting and the job repeats every 5 minutes until the wrapped key is gone.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: personal data sits under the owner's own key so that leaving the company can erase it by deleting one key, and so a database dump alone shows nothing.",
+   "hard": "Search over encrypted vectors is our design inference and is untested: the plan is to decrypt one user's small partition in memory per query and scan it exactly, and its latency at 50,000 rows per user is unmeasured.",
+   "deep": {
+    "purpose": "Hold each person's personal-zone rows under a key that belongs to that person. A leaver's data becomes unreadable the moment the wrapped key is deleted, which gives a clean erasure path without rewriting the index. Embeddings count as text here: published work recovers most short inputs from their embeddings (x_sec_vec2text, from a search summary), so vectors are encrypted too.",
+    "expected": [
+     "Two users get two different data keys",
+     "Deleting a user's wrapped key makes all their personal rows undecryptable",
+     "Company and team rows are not encrypted under a user key"
+    ],
+    "not_expected": [
+     "It does not protect against a user's own session being hijacked while the key is in memory",
+     "It does not erase company copies of anything the user shared; those are not personal rows",
+     "It does not claim legal erasure is complete; backups and legal holds need a policy (x_sa_erasure)"
+    ],
+    "algorithm": {
+     "name": "Envelope encryption with per-user data key and crypto-shredding",
+     "formula": "ciphertext = AES-256-GCM(DEK_u, nonce, plaintext, aad = tenant|user|uri); stored = (key_id, wrap(KEK_tenant, DEK_u), nonce, ciphertext); shred = delete wrap(KEK_tenant, DEK_u)",
+     "steps": [
+      "On the first personal write for a user, generate a random 256-bit data key and ask the KMS to wrap it with the tenant key",
+      "Store only the wrapped key and its key_id; keep the plain key in memory while a job or query runs",
+      "Encrypt each personal chunk payload and vector with a fresh 96-bit nonce and an authenticated data string of tenant, user and uri",
+      "At query time unwrap the user's key once, decrypt that user's candidate rows in memory, score them, and drop the key at the end of the request",
+      "On leave, mark the key deleting, delete the wrapped key, write a shred receipt, then confirm a test decrypt fails"
+     ],
+     "params": {
+      "data_key": "256-bit random, one per user (design)",
+      "nonce": "96-bit, random per row, never reused with the same key (design)",
+      "key_cache": "plain key held for one request only, 0 s beyond it (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "DEK_u: data key of user u",
+      "KEK: tenant key held in the KMS",
+      "n_u: personal rows of user u",
+      "d: vector dimension",
+      "w: wrapped key length"
+     ],
+     "formula_full": "unwrap calls per request = 1 per user; exact scan cost = n_u x d multiply-adds; storage overhead per row = 12 bytes nonce + 16 bytes tag",
+     "derivation": "One data key per user means one KMS call per user request instead of one per row. The exact scan touches every personal row once, so cost is linear in n_u times d.",
+     "worked_example": "A user has n_u = 50,000 rows and d = 1,024: 50,000 x 1,024 = 51,200,000 multiply-adds, in the tens of milliseconds on one core (estimate, to be measured). Overhead = 50,000 x 28 bytes = 1,400,000 bytes, about 1.4 MB.",
+     "complexity": "O(1) KMS calls per request; O(n_u x d) scan; shred is O(1) because it deletes one wrapped key.",
+     "failure_modes": [
+      "Nonce reuse with one key breaks GCM secrecy: nonces are random 96-bit and counted per key, rotate the key before 2^32 writes (a published GCM limit; check current docs)",
+      "Cached plain key outlives the request: the key lives in a request-scoped object only",
+      "Backups hold the wrapped key: the shred must also purge wrapped keys from backups on their retention schedule"
+     ],
+     "calibration": "Measure scan latency at 10,000, 50,000 and 200,000 rows per user; if p95 passes 150 ms, build a per-user ANN partition decrypted into memory instead of an exact scan. (design)"
+    },
+    "alternatives": [
+     {
+      "name": "One tenant key for all personal rows",
+      "why_rejected": "A leaver cannot be erased without rewriting rows, and one key exposes everyone's personal zone at once."
+     },
+     {
+      "name": "Per-row keys",
+      "why_rejected": "One KMS call per row makes scans too slow and too costly."
+     }
+    ],
+    "security": [
+     "Embedding inversion: an attacker with a vector dump recovers the text (x_sec_vec2text, snippet): personal vectors are stored only as ciphertext",
+     "Key theft from process memory by a same-user session: the key lives for one request and decrypts only that user's rows; same-user malware is out of scope and said so",
+     "Cross-user key misuse through a bug that wraps rows with the wrong key: the authenticated data string binds tenant, user and uri so a wrong key fails to decrypt"
+    ],
+    "performance": {
+     "slo": "Key unwrap p95 under 20 ms with the KMS in the same region (design target, vendor latency unverified: check current docs)",
+     "complexity": "O(1) KMS calls and O(n_u x d) per personal search",
+     "scaling": "At 10x rows per user the exact scan misses its budget; move that user's rows to a decrypted-in-memory ANN partition."
+    },
+    "edge_cases": [
+     "User with 0 rows: no key is created until the first write",
+     "Two writes for a new user at once: the key table has a unique key on (tenant_id, user_id) and the loser reads the winner's key",
+     "Leave and restore on the same day: shredded keys are not recoverable by design, restore needs a re-index from the source",
+     "KMS key rotation: new wraps use the new KEK, old wrapped keys are re-wrapped in the background, 1,000 users per minute (tune)",
+     "Empty plaintext: still encrypted with a nonce, zero-length payload accepted",
+     "Unicode in uri: bound as UTF-8 bytes in the authenticated data"
+    ],
+    "tests": [
+     {
+      "name": "two keys",
+      "given": "users u1 and u2 each write a personal row",
+      "expect": "two key_ids, rows not decryptable with the other key"
+     },
+     {
+      "name": "shred",
+      "given": "delete wrapped key of u1, then read a u1 row",
+      "expect": "decrypt fails, row counted as unreadable"
+     },
+     {
+      "name": "tamper",
+      "given": "swap the uri in a stored row's authenticated data",
+      "expect": "GCM tag check fails, row skipped"
+     },
+     {
+      "name": "kms outage",
+      "given": "KMS times out for 2 s",
+      "expect": "personal rows skipped, company rows still returned, degraded true"
+     }
+    ],
+    "cost_levers": [
+     "Cache nothing, so the main cost is one KMS call per personal query; the exact scan avoids a per-user ANN build until n_u grows"
+    ],
+    "feedback_events": [
+     "Leaver tickets that report a missing result after shred confirm the erasure worked; a result that still appears pages security"
+    ],
+    "analytics_events": [
+     {
+      "name": "key.created",
+      "fields": [
+       "tenant_id",
+       "user_hash",
+       "key_id"
+      ],
+      "when": "on first personal write"
+     },
+     {
+      "name": "key.shredded",
+      "fields": [
+       "tenant_id",
+       "user_hash",
+       "key_id",
+       "test_decrypt_failed"
+      ],
+      "when": "after the wrapped key is deleted"
+     },
+     {
+      "name": "key.unwrap",
+      "fields": [
+       "tenant_id",
+       "ms",
+       "ok"
+      ],
+      "when": "on every unwrap"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_embedding-inversion",
+      "key_idea": "Embeddings are not safe to treat as anonymized.",
+      "how": "Personal vectors get the same encryption as personal text."
+     },
+     {
+      "ref": "p_rag-privacy",
+      "key_idea": "Enforce access checks before content reaches the model.",
+      "how": "The key is released only to a request whose verified user id matches the row's user."
+     }
+    ],
+    "repos": [],
+    "industry": "Microsoft's Recall stores snapshots and its vector database under TPM-protected keys (x_sec_recall-ms), a device-side example of keeping personal vectors encrypted. Glean offers customer-managed keys only per a job posting (x_sa_glean-cmk, unverified), so we do not cite it as a shipped feature.",
+    "refs": [
+     "p_embedding-inversion",
+     "p_rag-privacy",
+     "x_sec_vec2text",
+     "x_sec_owasp-llm08",
+     "x_sec_recall-ms",
+     "x_sa_erasure",
+     "x_sa_glean-cmk"
+    ]
+   }
+  },
+  "zn_promote": {
+   "line": "Zone only widens on a source sharing change or an owner click; a model never promotes\ndecision table, 2 triggers",
+   "dumb": "Sometimes a personal item should become shared, like a note the owner chooses to publish to a team. There are only two ways: the owner changes the sharing in the app itself, or the owner clicks yes on a prompt from us. A model can suggest, but only a person can approve. Every move is logged.",
+   "inn": "From zn_tag: sharing change seen at the source {uri, old_zone, new_zone, source_actor}. From the owner prompt: {uri, owner_id, to_zone, confirmed, at}.",
+   "out": "To zn_tag: zone change {uri, from, to, by, at}. To ac_audit: promotion record {uri_hash, from, to, by, trigger, at}.",
+   "store": "Writes a promotion log row per change {tenant_id, uri, from_zone, to_zone, trigger, actor, at} and a pending prompt row with a 14-day expiry (design). Reads the pointer's current zone.",
+   "fail": "Prompt not answered in 14 days: it expires and the item stays personal; no reminder after the second one. Audit write fails: the promotion is not applied (0 changes without a log row), retried 3 times with 1 s, 2 s, 4 s backoff. Owner confirms but the source sharing still says private: the item is promoted only inside the brain's view if policy allows, otherwise rejected; see hard.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: data leaves the personal zone only by a human decision or by the source's own sharing change, so nothing private becomes company knowledge by accident or by model output.",
+   "hard": "If the owner confirms promotion but the source app still shows the item as private, whether the brain may widen it anyway is a product and legal decision that is not made yet; the safe default is to reject.",
+   "deep": {
+    "purpose": "Control the only door out of the personal zone. The door opens in two cases: the source app itself now shares the item more widely (the owner changed it there), or the owner confirms a prompt that names the item and the target zone. A model may propose a prompt but never answers it. Narrowing is the opposite and is applied at once with no prompt.",
+    "expected": [
+     "A source sharing change from private to shared widens the zone and writes one log row",
+     "An owner click on a prompt widens the zone only to the zone named in the prompt",
+     "A narrowing change applies immediately without a prompt"
+    ],
+    "not_expected": [
+     "A model output, a tool call or an admin action never widens a personal item",
+     "It does not copy derived data to company stores; zn_taint rejects those",
+     "It does not delete or re-encrypt rows; zn_key does that when an item moves to a team zone"
+    ],
+    "algorithm": {
+     "name": "Two-trigger promotion gate with fail-closed default",
+     "formula": "promote(item, to) iff (source_sharing(item) implies zone >= to) or (owner confirmed prompt(item, to) within 14 days); else deny; narrow(item) always allowed",
+     "steps": [
+      "Receive a candidate change from zn_tag (source trigger) or from the owner prompt (owner trigger)",
+      "Check the actor: for the source trigger it must be an observed sharing field on the fetched object; for the owner trigger it must be the verified owner session",
+      "Reject any request whose actor is a model, an agent or a service account",
+      "If the item has derived data, record that it stays at the old zone, never copy it up",
+      "Write the promotion log row, then send the zone change to zn_tag in the same transaction"
+     ],
+     "params": {
+      "prompt_expiry": "14 days (design)",
+      "triggers": "source sharing change, owner confirm (the two named in the pin)",
+      "narrowing": "immediate, no prompt (design)"
+     }
+    },
+    "alternatives": [
+     {
+      "name": "Admin can promote on behalf of the owner",
+      "why_rejected": "The admin cannot see private data by design, so the admin cannot judge what to share."
+     },
+     {
+      "name": "Model decides with a sensitivity classifier",
+      "why_rejected": "A wrong guess publishes private text; OWASP lists excessive agency as a root cause of harm (x_sec_owasp-llm06)."
+     }
+    ],
+    "security": [
+     "A prompt-injected document asks the agent to 'share this with the team': the gate rejects any actor that is a model or agent, so an injected request cannot widen anything",
+     "Approval fatigue, where the owner clicks yes on every prompt: prompts are rate limited to 5 per user per day (design) and each names one item and one target zone",
+     "Forged confirm by another user: the confirm must come from the verified owner session and the owner_id must match the pointer"
+    ],
+    "performance": {
+     "slo": "Zone change applied under 5 s after the trigger p95 (design target)",
+     "complexity": "O(1) per change; one log write",
+     "scaling": "At 10x users the cost is prompt volume, so batch prompts into one daily digest per owner."
+    },
+    "edge_cases": [
+     "Owner confirms an item that was deleted meanwhile: the confirm is dropped because the pointer carries a tombstone",
+     "Two triggers arrive at once: the log row key is (uri, zone_version) so one wins",
+     "Item moved to a team zone, then owner leaves: team items stay with the team ACL; only personal rows are shredded",
+     "Prompt for 10,000 items: grouped by folder or channel, max 50 items per prompt (design)",
+     "Source widens sharing then narrows within 1 minute: the narrowing wins and the log shows both",
+     "Owner deactivated before answering: the prompt expires, nothing is promoted"
+    ],
+    "tests": [
+     {
+      "name": "source trigger",
+      "given": "owner shares a My Drive file with a team in the app",
+      "expect": "zone team, log row trigger source_sharing"
+     },
+     {
+      "name": "model blocked",
+      "given": "agent calls promote on its own",
+      "expect": "denied, log row actor agent, 0 zone change"
+     },
+     {
+      "name": "expiry",
+      "given": "prompt unanswered for 14 days",
+      "expect": "prompt expired, item still personal"
+     },
+     {
+      "name": "narrow is instant",
+      "given": "owner sets a shared file to private",
+      "expect": "zone personal in under 5 s with no prompt"
+     }
+    ],
+    "cost_levers": [
+     "Digest prompts keep human attention cost low; the gate itself costs one log write"
+    ],
+    "feedback_events": [
+     "Declined prompts feed a per-user suppression list so the same item is not offered again for 90 days (design)"
+    ],
+    "analytics_events": [
+     {
+      "name": "promote.applied",
+      "fields": [
+       "tenant_id",
+       "from",
+       "to",
+       "trigger"
+      ],
+      "when": "after a zone change"
+     },
+     {
+      "name": "promote.denied",
+      "fields": [
+       "tenant_id",
+       "actor_kind",
+       "reason"
+      ],
+      "when": "when a request is rejected"
+     },
+     {
+      "name": "promote.prompt",
+      "fields": [
+       "tenant_id",
+       "answered",
+       "age_hours"
+      ],
+      "when": "when a prompt is answered or expires"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_participant-acl",
+      "key_idea": "Authorize against all people in the session, not only the asker.",
+      "how": "A promotion names the owner and the target zone, so the people who gain access are explicit."
+     }
+    ],
+    "repos": [],
+    "industry": "Microsoft's Purview notes that Copilot honors usage rights and that DLP can block summarizing labeled files (x_sec_purview-copilot); our gate applies the same idea one step earlier, to who may widen a zone.",
+    "refs": [
+     "p_participant-acl",
+     "x_sec_owasp-llm06",
+     "x_sec_purview-copilot",
+     "x_sec_trifecta"
+    ]
+   }
+  },
+  "zn_taint": {
+   "line": "Derived data carries the highest zone of its inputs; a company-level store rejects a personal label\ntaint = max over inputs",
+   "dumb": "If an answer, a summary or a lesson was made from even one personal item, it counts as personal too. We stamp it with the strictest label of everything that went into it. Shared stores, like the company answer cache or the lessons store, refuse anything stamped personal. This stops private facts leaking out through copies.",
+   "inn": "From zn_tag: zone labels per pointer. From every writer to a derived store: {store, inputs[uri, zone], output_kind} where kind is cache entry, entity, lesson, trace or agent output.",
+   "out": "To qr_cache, ix_ent, pl_mem and op_trace: a taint label {zone, owner_id} per write. A reject {store, reason} back to the writer when the store's ceiling is below the taint.",
+   "store": "Keeps no data of its own beyond a ceiling table {store, max_zone} (company stores 0, team stores 1, personal stores 2) and a rejection counter. The label lives on the derived row itself.",
+   "fail": "An input with no label: treated as personal (fail closed). A writer that sends no inputs list: the write is rejected, 0 rows stored. Label service not reachable for 2 s: the write is refused and retried 3 times at 100 ms, 200 ms, 400 ms; a cache write is simply skipped.",
+   "req": "Requirement: 'answer with citations; respect source permissions'",
+   "prop": "Proposal: a cache, an entity merge, a lesson or a trace made from personal data would carry that data into shared stores, so each derived item must inherit the strictest zone of its inputs.",
+   "hard": "A label says where the data came from, not whether text was copied or paraphrased; deciding when a summary is safe enough to relabel is open and is handled only by owner confirmation through zn_promote.",
+   "deep": {
+    "purpose": "Stop personal data from escaping through derived copies. Five stores hold derived data: the answer cache (qr_cache), the entity resolver (ix_ent), the lessons store (pl_mem), the query trace store (op_trace) and any agent that writes to a company tool such as Jira. Each write names its inputs, the label is the strictest input zone, and a company-level store has a ceiling that rejects personal labels. A new derived store joins by registering its ceiling in the ceiling table.",
+    "expected": [
+     "A cache entry built from 2 company chunks and 1 personal chunk gets zone personal",
+     "A company-level store rejects a personal-labeled write and counts it",
+     "A personal-labeled entry is stored only under its owner id and served only to that owner"
+    ],
+    "not_expected": [
+     "It does not judge content or look for sensitive words",
+     "It does not downgrade a label; only zn_promote changes a source zone, and derived rows stay at their label",
+     "It does not block personal data from reaching the model for its owner's own question"
+    ],
+    "algorithm": {
+     "name": "Join over an ordered zone lattice with store ceilings",
+     "formula": "taint(out) = max over i in inputs of rank(zone_i), rank: company 0 < team 1 < personal 2; accept iff taint(out) <= ceiling(store)",
+     "steps": [
+      "Collect the zone of every input pointer or derived row used to make the output",
+      "Compute the maximum rank; an input with no label counts as personal",
+      "Look up the target store's ceiling; a company-level store has ceiling 0",
+      "If the taint is above the ceiling, reject and return the reason; otherwise write the row with its label and, for personal, the owner id",
+      "Serve a personal-labeled row only where owner_id equals the asker"
+     ],
+     "params": {
+      "rank": "company 0, team 1, personal 2 (design)",
+      "ceilings": "company stores 0, team stores 1, personal stores 2 (design)",
+      "unlabeled": "personal (design, fail closed)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "zone_i: label of input i",
+      "rank(z): 0 company, 1 team, 2 personal",
+      "n: number of inputs",
+      "ceiling(s): highest rank store s accepts"
+     ],
+     "formula_full": "taint = max_{i=1..n} rank(zone_i); allowed(s) = [taint <= ceiling(s)]",
+     "derivation": "Zones form a chain, so the least upper bound of a set of labels is its maximum. Taking the maximum means an output is never labeled looser than any single input, which is the only safe rule when we cannot tell which input shaped which word.",
+     "worked_example": "An answer uses chunks with zones company, company, personal (owner u7). rank = 0, 0, 2 so taint = 2, personal. The company answer cache has ceiling 0, so the write is rejected; the personal cache for u7 has ceiling 2 and accepts it. If the answer used 3 company chunks, taint = 0 and the company cache accepts it.",
+     "complexity": "O(n) in the number of inputs, usually under 20; no model call.",
+     "failure_modes": [
+      "A writer forgets to list an input: the store rejects writes without an inputs list, and a nightly canary plants a personal fact and checks that no company store holds a trace of it",
+      "Taint grows too high too often and the cache never hits: measure the share of writes at each rank before adding exceptions",
+      "Entity merge links a personal name to a company entity: ix_ent merges only inside one zone"
+     ],
+     "calibration": "Seed a canary: 20 planted personal facts; after each nightly run every company store is scanned for them and any hit pages security."
+    },
+    "alternatives": [
+     {
+      "name": "Strip personal text with a redaction model",
+      "why_rejected": "Redaction is a guess; a miss leaks. A label is exact about origin and costs nothing."
+     },
+     {
+      "name": "Keep personal answers out of all caches",
+      "why_rejected": "Works but loses speed for the owner; a personal cache per owner keeps the benefit."
+     }
+    ],
+    "security": [
+     "Laundering through a summary: a model summarizes a personal doc and the summary is written to the company lessons store: the label is the max of inputs, so the summary is personal and the store rejects it",
+     "Trace leakage through query logs that hold text: traces carry the answer's zone and a company dashboard sees counts only, never text",
+     "Entity-resolution join across zones, so a personal contact is merged into a company person record: merges are allowed only within one zone"
+    ],
+    "performance": {
+     "slo": "Label join under 1 ms per write p95 (design target)",
+     "complexity": "O(n) for n inputs",
+     "scaling": "At 10x writes the cost is the extra label column on each store, not the join; the ceiling table is tiny and cached in memory."
+    },
+    "edge_cases": [
+     "Empty inputs list: reject",
+     "An input pointer deleted meanwhile: label read from the tombstone; if gone, personal",
+     "Two inputs from different owners (a shared personal doc): label is personal with both owner ids, served only to a user who owns all of them (design)",
+     "Output from a company agent that read no personal data: label company, accepted everywhere",
+     "Label with an unknown zone name: treated as personal",
+     "Same entry written twice with different inputs: the higher label wins"
+    ],
+    "tests": [
+     {
+      "name": "max rule",
+      "given": "inputs company, company, personal",
+      "expect": "taint personal, company cache rejects, personal cache accepts"
+     },
+     {
+      "name": "unlabeled input",
+      "given": "input with no zone",
+      "expect": "taint personal"
+     },
+     {
+      "name": "trace zone",
+      "given": "answer used a personal chunk",
+      "expect": "trace row carries zone personal and the company dashboard shows a count only"
+     },
+     {
+      "name": "canary",
+      "given": "planted personal fact asked about",
+      "expect": "scan of every company store finds 0 matches"
+     }
+    ],
+    "cost_levers": [
+     "A label join is arithmetic on a small integer, so it adds no model cost"
+    ],
+    "feedback_events": [
+     "Rejected-write counts by store show which writer is closest to leaking; a rising count opens a ticket for that writer's owner"
+    ],
+    "analytics_events": [
+     {
+      "name": "taint.assigned",
+      "fields": [
+       "tenant_id",
+       "store",
+       "rank",
+       "n_inputs"
+      ],
+      "when": "on every derived write"
+     },
+     {
+      "name": "taint.rejected",
+      "fields": [
+       "tenant_id",
+       "store",
+       "rank",
+       "ceiling"
+      ],
+      "when": "when a write is refused"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_rag-privacy",
+      "key_idea": "Enforce access checks before content reaches the model; output filtering alone will leak.",
+      "how": "The label travels with every derived row, so a store enforces the zone without reading text."
+     },
+     {
+      "ref": "p_mem0",
+      "key_idea": "Store distilled facts with provenance rather than full transcripts.",
+      "how": "Every lesson keeps its provenance as zone labels, so personal lessons stay with their owner."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_mem0",
+      "name": "Mem0",
+      "take": "Memory is per user; we keep that scoping and add a ceiling so no personal memory enters a company store."
+     },
+     {
+      "ref": "r_letta",
+      "name": "Letta",
+      "take": "Agent memory is separate from documents; we add the label so agent memory cannot carry personal facts into a shared one."
+     }
+    ],
+    "industry": "OWASP names sensitive information disclosure and excessive agency among LLM risks (x_sec_owasp-llm, x_sec_owasp-llm06), and the lethal trifecta warns against combining private data, untrusted content and outbound writes in one agent (x_sec_trifecta). The label is how we keep the first leg out of shared stores.",
+    "refs": [
+     "p_rag-privacy",
+     "p_mem0",
+     "r_mem0",
+     "r_letta",
+     "x_sec_owasp-llm",
+     "x_sec_owasp-llm06",
+     "x_sec_trifecta"
+    ]
+   }
+  },
+  "zn_review": {
+   "line": "The owner sees the exact text and audience, edits and approves before anything leaves the zone\nnothing moves without a yes",
+   "dumb": "Sharing what you know is a choice. Before any card moves out of your private space, you see exactly what will be shared and with whom. You can edit it, remove names or lines, or say no. Nothing moves until you say yes, and a no is remembered.",
+   "inn": "From cp_exp: a draft {fields, citations, proposed audience, library}; owner identity; zone policy.",
+   "out": "Decision {approve, edit, reject} with the edited card and audience to zn_promote.",
+   "store": "Stores the decision and the diff between draft and approved text; the draft itself stays in the personal zone.",
+   "fail": "If the owner does not respond in 14 days the draft is archived, not promoted; if the audience is wider than policy allows the request is refused with the reason; a failed save keeps the draft and asks again.",
+   "req": "DevX proposal, from the 2026 company-brain paper review",
+   "prop": "Proposal: show the owner the exact card and audience, allow edits, and promote only on an explicit yes.",
+   "hard": "How many drafts owners accept unchanged is not known; the first release records accept, edit and reject rates.",
+   "deep": {
+    "purpose": "People share more when they control it. A preview of the exact content and audience, with edit and refusal, makes sharing a decision the owner can see rather than a side effect.",
+    "expected": [
+     "The owner sees the card text, the sources it cites and the audience 'Team Atlas', removes a customer name, and approves",
+     "A reject is stored and the same card is not asked again"
+    ],
+    "not_expected": [
+     "It does not promote anything itself",
+     "It cannot widen the audience beyond policy"
+    ],
+    "algorithm": {
+     "name": "Preview, edit and approve gate",
+     "formula": "promote(card) iff owner approves the exact text and audience shown; audience <= policy(owner)",
+     "steps": [
+      "Show the owner the draft, its citations and the proposed audience",
+      "Let the owner edit text, remove lines and narrow the audience",
+      "Check the audience is within policy",
+      "Record the decision and the diff",
+      "Pass the approved card to zn_promote"
+     ],
+     "params": {
+      "timeout_days": "14 (design)",
+      "audience_options": "me only, my team, my department, company"
+     }
+    },
+    "security": [
+     "Over-sharing: the audience is capped by policy and shown in full",
+     "Coerced approval: the owner's identity and decision are logged and cannot be made by another person"
+    ],
+    "performance": {
+     "slo": "n/a, human step; the page loads in under 300 ms",
+     "complexity": "O(1) per decision",
+     "scaling": "Batch review view for owners with many drafts."
+    },
+    "edge_cases": [
+     "Owner edits after approval: edit starts a new review",
+     "Owner leaves mid-review: draft is archived",
+     "Edit removes all content: treated as reject",
+     "Audience narrowed to 'me only': stays in the personal zone, no promotion",
+     "Draft source access removed by the time of approval: card is blocked until the owner re-confirms"
+    ],
+    "tests": [
+     {
+      "name": "exact_preview",
+      "given": "Draft with 3 citations",
+      "expect": "preview shows full text, citations and audience"
+     },
+     {
+      "name": "no_silent_promote",
+      "given": "Owner does not answer for 14 days",
+      "expect": "draft is archived and nothing is promoted"
+     },
+     {
+      "name": "policy_cap",
+      "given": "Owner picks 'company' when policy allows 'department'",
+      "expect": "request is refused with the reason"
+     }
+    ],
+    "cost_levers": [
+     "Pure code; no model"
+    ],
+    "feedback_events": [
+     "Accept, edit and reject rates",
+     "Time to decision"
+    ],
+    "analytics_events": [
+     {
+      "name": "review_decision",
+      "fields": [
+       "card_id",
+       "decision",
+       "audience",
+       "edited"
+      ],
+      "when": "per decision"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p26_myskill",
+      "key_idea": "Workers share expertise when they keep control of what is shared and with whom",
+      "how": "zn_review is the preview-and-correct step"
+     },
+     {
+      "ref": "p26_aquillm",
+      "key_idea": "Capture works when contributors see what is captured",
+      "how": "the owner sees the exact card before it moves"
+     }
+    ],
+    "refs": [
+     "p26_myskill",
+     "p26_aquillm"
+    ]
+   }
+  }
+ },
+ "edges": [
+  {
+   "a": "zn_tag",
+   "b": "zn_promote",
+   "l": "sharing change seen",
+   "k": "s",
+   "d": "Candidate zone change {uri, old_zone, new_zone, source_actor} when a sweep sees the source sharing widen."
+  },
+  {
+   "a": "zn_tag",
+   "b": "zn_taint",
+   "l": "zone labels",
+   "k": "s",
+   "d": "Zone and owner_id per pointer so derived writers can compute the highest zone of their inputs."
+  },
+  {
+   "a": "zn_key",
+   "b": "ac_audit",
+   "l": "shred receipt",
+   "k": "d",
+   "d": "Record {tenant, user_hash, key_id, test_decrypt_failed, at} when a leaver's wrapped key is deleted."
+  }
+ ]
+}

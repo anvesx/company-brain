@@ -1,0 +1,543 @@
+{
+ "ix_ptr": {
+  "milestone": "M0",
+  "effort_days": 3,
+  "depends_on": [],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "one row per pointer, joins with ACL and vector tables later (pgvector fits per research/repos.md)"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3.2",
+    "why": "async and pipeline mode"
+   },
+   {
+    "part": "tenant isolation",
+    "pick": "Postgres row-level security on tenant_id",
+    "why": "the policy is enforced by the database, not by every query author"
+   },
+   {
+    "part": "not this",
+    "pick": "A document or search store as the registry",
+    "why": "the registry must be able to reject a body column; a schema-less store cannot"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "docker run -d --name regdb -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16",
+   "psql postgresql://postgres:dev@localhost:5432/postgres -f migrations/001_pointer.sql"
+  ],
+  "layout": [
+   "brain/index/pointer.py : upsert_pointer(), soft_delete(), get_pointer()",
+   "migrations/001_pointer.sql : pointer table, row-level policy, no-body check",
+   "tests/test_pointer.py : stale, equal, newer, delete and tenant tests"
+  ],
+  "schema": "CREATE TABLE pointer (\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  app text NOT NULL,\n  source_id text NOT NULL,\n  version_seq bigint NOT NULL,\n  etag text,\n  content_hash text NOT NULL,\n  title text,\n  owner_id text,\n  created_at timestamptz,\n  modified_at timestamptz,\n  acl_ref text NOT NULL,\n  vector_ids text[] NOT NULL DEFAULT '{}',\n  last_verified timestamptz NOT NULL DEFAULT now(),\n  deleted_at timestamptz,\n  PRIMARY KEY (tenant_id, uri),\n  UNIQUE (tenant_id, app, source_id),\n  CONSTRAINT row_small CHECK (pg_column_size(pointer.*) < 4096)\n);\nALTER TABLE pointer ENABLE ROW LEVEL SECURITY;\nCREATE POLICY tenant_only ON pointer USING (tenant_id = current_setting('brain.tenant_id'));",
+  "interface": "def upsert_pointer(conn, p: Pointer) -> str  # 'inserted' | 'updated' | 'verified' | 'stale'\ndef soft_delete(conn, tenant_id: str, uri: str) -> bool\ndef get_pointer(conn, tenant_id: str, uri: str) -> Pointer | None",
+  "code": "def upsert_pointer(conn, p):\n    conn.execute(\"SELECT set_config('brain.tenant_id', %s, true)\", (p.tenant_id,))\n    with conn.transaction():\n        row = conn.execute(\n            \"SELECT version_seq, content_hash FROM pointer\"\n            \" WHERE tenant_id=%s AND uri=%s FOR UPDATE\", (p.tenant_id, p.uri)).fetchone()\n        if row is None:\n            conn.execute(\n                \"INSERT INTO pointer(tenant_id,uri,app,source_id,version_seq,etag,content_hash,\"\n                \"title,owner_id,created_at,modified_at,acl_ref) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)\",\n                (p.tenant_id,p.uri,p.app,p.source_id,p.version_seq,p.etag,p.content_hash,\n                 p.title,p.owner_id,p.created_at,p.modified_at,p.acl_ref))\n            return \"inserted\"\n        stored_v, stored_h = row\n        newer = p.version_seq > stored_v or (p.version_seq == stored_v and p.content_hash != stored_h)\n        if not newer:\n            if p.version_seq == stored_v:  # same version, same hash: only prove it is still fresh\n                conn.execute(\"UPDATE pointer SET last_verified=now() WHERE tenant_id=%s AND uri=%s\",\n                             (p.tenant_id, p.uri))\n                return \"verified\"\n            return \"stale\"  # older: no-op, counted, never an error\n        conn.execute(\n            \"UPDATE pointer SET version_seq=%s, etag=%s, content_hash=%s, title=%s, owner_id=%s,\"\n            \" modified_at=%s, acl_ref=%s, last_verified=now() WHERE tenant_id=%s AND uri=%s\",\n            (p.version_seq,p.etag,p.content_hash,p.title,p.owner_id,p.modified_at,p.acl_ref,\n             p.tenant_id,p.uri))\n        return \"updated\"",
+  "steps": [
+   {
+    "do": "Create the table, policy and size check",
+    "done_when": "\\d pointer lists 15 columns and the row_small check"
+   },
+   {
+    "do": "Write upsert_pointer with the compare-and-set",
+    "done_when": "unit test inserts one row"
+   },
+   {
+    "do": "Send an older version",
+    "done_when": "returns 'stale' and the row is unchanged"
+   },
+   {
+    "do": "Send the same version and hash 100 times",
+    "done_when": "one row, returns 'verified', last_verified advances"
+   },
+   {
+    "do": "Send a newer version",
+    "done_when": "returns 'updated' and version_seq bumps"
+   },
+   {
+    "do": "Write soft_delete and read as another tenant",
+    "done_when": "deleted_at is set; a query under another tenant id returns 0 rows"
+   },
+   {
+    "do": "Try to insert a 10 KB title",
+    "done_when": "the row_small check rejects the insert"
+   }
+  ],
+  "config": {
+   "POINTER_DB_URL": "postgres://... // one registry database per tenant group",
+   "POOL_SIZE": "10 // start small",
+   "STMT_TIMEOUT_MS": "2000 // fail fast",
+   "WRITE_RETRY_MS": "50,200,800 // three tries on a write conflict, then back to ch_wf",
+   "TOMBSTONE_RETENTION_DAYS": "7 // after ix_gc confirms, covers a delayed redelivery"
+  },
+  "verify": [
+   "pytest tests/test_pointer.py -q  # all pass",
+   "psql -c \"select count(*) from pointer\"  # matches the fixture count; no body column in \\d pointer"
+  ],
+  "pitfalls": [
+   "Versions held as strings compare badly (\"10\" < \"9\"). Keep a numeric version_seq and keep the raw etag separate.",
+   "Updating without SELECT FOR UPDATE lets two workers interleave and an older version win.",
+   "Never add a text, content or excerpt column. The size check is there to make that fail loudly.",
+   "Forgetting set_config on the connection makes the row-level policy return 0 rows with no error."
+  ]
+ },
+ "ix_meta": {
+  "milestone": "M2",
+  "effort_days": 4,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "columns",
+    "pick": "Postgres 16 typed columns with btree and BRIN indexes",
+    "why": "filter columns live next to the pointer, so a filter and a join are one query"
+   },
+   {
+    "part": "stats",
+    "pick": "Postgres pg_stats plus a bounded count query",
+    "why": "gives a selectivity estimate without a separate statistics service"
+   },
+   {
+    "part": "engine payload",
+    "pick": "Copy the same attributes as payload into the vector and lexical engines",
+    "why": "each engine then filters inside its own search; check the chosen engine's docs for in-search filtering"
+   },
+   {
+    "part": "not this",
+    "pick": "Post-filtering the top K results",
+    "why": "a narrow filter then returns fewer than K hits or none, and starves recall (research/techniques.md decision 7)"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/002_attr.sql"
+  ],
+  "layout": [
+   "brain/index/attr.py : upsert_attr(), plan_filter()",
+   "migrations/002_attr.sql : attr table and indexes",
+   "tests/test_attr.py : plan choice and payload reconcile tests"
+  ],
+  "schema": "CREATE TABLE attr (\n  tenant_id text NOT NULL,\n  uri text NOT NULL,\n  app text NOT NULL,\n  type text NOT NULL,\n  owner_id text,\n  modified_at bigint NOT NULL,\n  space_id text,\n  sensitivity smallint NOT NULL DEFAULT 0,\n  acl_ref text NOT NULL,\n  PRIMARY KEY (tenant_id, uri),\n  FOREIGN KEY (tenant_id, uri) REFERENCES pointer (tenant_id, uri) ON DELETE CASCADE\n);\nCREATE INDEX attr_owner ON attr (tenant_id, owner_id);\nCREATE INDEX attr_space ON attr (tenant_id, space_id);\nCREATE INDEX attr_modified ON attr (tenant_id, modified_at);\nCREATE INDEX attr_app_type ON attr (tenant_id, app, type);",
+  "interface": "def plan_filter(conn, tenant_id: str, where_sql: str, params: list, T: int = 10_000) -> dict  # {'plan': 'exact' | 'filtered_ann', 'est': int, 'uris': list | None}",
+  "code": "import time\n\ndef plan_filter(conn, tenant_id, where_sql, params, T=10_000):\n    # bounded count: stops after T+1 matches, so it is cheap even for a broad filter\n    # where_sql comes from ac_filter's allow-listed column builder, never from user text\n    est = conn.execute(\n        f\"SELECT count(*) FROM (SELECT 1 FROM attr WHERE tenant_id=%s AND ({where_sql}) LIMIT %s) q\",\n        [tenant_id, *params, T + 1]).fetchone()[0]\n    if est <= T:\n        rows = conn.execute(\n            f\"SELECT uri FROM attr WHERE tenant_id=%s AND ({where_sql})\",\n            [tenant_id, *params]).fetchall()\n        return {\"plan\": \"exact\", \"est\": est, \"uris\": [r[0] for r in rows]}\n    return {\"plan\": \"filtered_ann\", \"est\": est, \"uris\": None}\n\ndef record_plan(conn, tenant_id, plan, est, actual, ms):\n    conn.execute(\"INSERT INTO filter_plan_log(tenant_id,plan,est,actual,ms,at)\"\n                 \" VALUES (%s,%s,%s,%s,%s,now())\", (tenant_id, plan, est, actual, ms))\n\ndef tune_T(conn, tenant_id, T):\n    p95 = conn.execute(\"SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) FROM filter_plan_log\"\n                       \" WHERE tenant_id=%s AND plan='exact' AND at > now() - interval '1 day'\",\n                       (tenant_id,)).fetchone()[0]\n    if p95 is not None and p95 < 20:\n        return min(T * 2, 200_000)  # exact scans are still cheap: raise the threshold\n    return T",
+  "steps": [
+   {
+    "do": "Create attr with the four indexes",
+    "done_when": "\\d attr lists 9 columns and 4 secondary indexes"
+   },
+   {
+    "do": "Fill attr from pointer rows with a trigger or the row-changed event",
+    "done_when": "count(attr) equals count(pointer) on the fixture"
+   },
+   {
+    "do": "Write plan_filter",
+    "done_when": "a filter matching 50 rows returns plan 'exact'; one matching 50,000 returns 'filtered_ann'"
+   },
+   {
+    "do": "Add filter_plan_log and record each plan",
+    "done_when": "one log row per query"
+   },
+   {
+    "do": "Run the 15 minute payload reconcile against the vector and lexical engines",
+    "done_when": "a deliberately wrong payload is corrected within one cycle"
+   },
+   {
+    "do": "Check exact scan p95 at T = 10,000",
+    "done_when": "below 20 ms, otherwise lower T"
+   }
+  ],
+  "config": {
+   "FILTER_EXACT_THRESHOLD": "10000 // matches at or below this are scored exactly",
+   "STATS_REFRESH": "1,000,000 writes or 1 hour // whichever first",
+   "PAYLOAD_RECONCILE_MIN": "15 // repairs drift between attr and engine payload"
+  },
+  "verify": [
+   "pytest tests/test_attr.py -q  # plan choice tests pass",
+   "psql -c \"explain analyze select uri from attr where tenant_id='t1' and app='drive' and owner_id='u9'\"  # uses an index scan, not a seq scan"
+  ],
+  "pitfalls": [
+   "Building where_sql from request text is an injection hole. Use an allow-listed column and operator builder with bound parameters.",
+   "Payload in the engines drifts from attr after a missed event: the reconcile job is not optional.",
+   "A high-cardinality column in a dictionary encoding bloats memory. Keep dictionary encoding for app, type and sensitivity only."
+  ]
+ },
+ "ix_ent": {
+  "milestone": "M3",
+  "effort_days": 10,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "matching",
+    "pick": "Own Fellegi-Sunter scorer in Python, about 100 lines",
+    "why": "small and testable; Splink is a published implementation of the same model, check current docs before adopting it"
+   },
+   {
+    "part": "string similarity",
+    "pick": "Python difflib.SequenceMatcher at M3, a faster library later",
+    "why": "stdlib has no install risk; swap if profiling shows it is the bottleneck"
+   },
+   {
+    "part": "store",
+    "pick": "Postgres 16: entity, mention and merge_log tables",
+    "why": "append-only log in the same database as the pointers"
+   },
+   {
+    "part": "directory input",
+    "pick": "SCIM feed from the OIDC provider (Keycloak or Ory)",
+    "why": "gives verified emails and names, which are the strongest match fields"
+   },
+   {
+    "part": "not this",
+    "pick": "Merging on name alone",
+    "why": "two people called Sam Lee in different teams merge, and one of them then sees the other's documents through the entity link"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/003_entity.sql"
+  ],
+  "layout": [
+   "brain/index/entity.py : block_keys(), score_pair(), resolve()",
+   "migrations/003_entity.sql : mention, entity, merge_log",
+   "tests/test_entity.py : labelled pair fixture with precision and recall asserts"
+  ],
+  "schema": "CREATE TABLE mention (\n  tenant_id text NOT NULL,\n  mention_id text NOT NULL,\n  kind text NOT NULL CHECK (kind IN ('person','project','team')),\n  display_name text,\n  email text,\n  handle text,\n  app text NOT NULL,\n  org_domain text,\n  entity_id text,\n  PRIMARY KEY (tenant_id, mention_id)\n);\nCREATE TABLE entity (\n  tenant_id text NOT NULL,\n  entity_id text NOT NULL,\n  kind text NOT NULL,\n  canonical_name text NOT NULL,\n  PRIMARY KEY (tenant_id, entity_id)\n);\nCREATE TABLE merge_log (\n  merge_id bigserial PRIMARY KEY,\n  tenant_id text NOT NULL,\n  entity_ids text[] NOT NULL,\n  field_weights jsonb NOT NULL,\n  total_weight real NOT NULL,\n  decided_by text NOT NULL CHECK (decided_by IN ('rule','adjudicator','human')),\n  ts timestamptz NOT NULL DEFAULT now()\n);",
+  "interface": "def resolve(conn, tenant_id: str, mention_ids: list[str]) -> list[dict]  # [{'entity_id', 'decision': 'merge'|'apart'|'review', 'weight': float}]",
+  "code": "import math\nfrom difflib import SequenceMatcher\n\n# m = P(field agrees | same entity), u = P(field agrees | different entities); tune on labelled pairs\nFIELDS = {\"email\": (0.95, 0.001), \"name\": (0.90, 0.01), \"org_domain\": (0.98, 0.20)}\nUPPER, LOWER, NAME_SIM = 10.0, 0.0, 0.92\n\ndef norm_email(e):\n    return e.strip().lower() if e else None\n\ndef block_keys(m):\n    keys = []\n    if m[\"email\"]:\n        keys.append((\"email\", norm_email(m[\"email\"])))\n    toks = sorted((m[\"display_name\"] or \"\").lower().split())\n    if toks and m[\"org_domain\"]:\n        keys.append((\"dom_name\", m[\"org_domain\"], \"\".join(t[:3] for t in toks)))\n    return keys\n\ndef agree(field, a, b):\n    if a is None or b is None:\n        return None  # missing is neither agree nor disagree: contributes 0\n    if field == \"name\":\n        return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= NAME_SIM\n    return a == b\n\ndef score_pair(a, b):\n    vals = {\"email\": (norm_email(a[\"email\"]), norm_email(b[\"email\"])),\n            \"name\": (a[\"display_name\"], b[\"display_name\"]),\n            \"org_domain\": (a[\"org_domain\"], b[\"org_domain\"])}\n    w, parts = 0.0, {}\n    for f, (x, y) in vals.items():\n        ag = agree(f, x, y)\n        if ag is None:\n            continue\n        m, u = FIELDS[f]\n        parts[f] = math.log2(m / u) if ag else math.log2((1 - m) / (1 - u))\n        w += parts[f]\n    decision = \"merge\" if w >= UPPER else \"apart\" if w < LOWER else \"review\"\n    return decision, w, parts",
+  "steps": [
+   {
+    "do": "Create mention, entity and merge_log",
+    "done_when": "\\dt lists the three tables"
+   },
+   {
+    "do": "Write block_keys and test it",
+    "done_when": "two mentions with the same email in different case share a block"
+   },
+   {
+    "do": "Write score_pair with the Fellegi-Sunter weights",
+    "done_when": "same email and name scores above 10 bits; different email and name scores below 0"
+   },
+   {
+    "do": "Build a labelled fixture of 200 pairs and measure",
+    "done_when": "precision at the merge threshold is at least 0.99 on the fixture"
+   },
+   {
+    "do": "Write resolve() that only compares pairs inside a block and writes merge_log for each merge",
+    "done_when": "merge_log has one row per merge with the field weights"
+   },
+   {
+    "do": "Send gray-zone pairs to the adjudicator queue and never auto-merge them",
+    "done_when": "a pair with weight 5 shows decision 'review' and no merge row"
+   }
+  ],
+  "config": {
+   "UPPER_BITS": "10 // merge at or above; tune on labelled pairs",
+   "LOWER_BITS": "0 // keep apart below; between the two goes to review",
+   "NAME_SIMILARITY": "0.92 // name agreement cutoff",
+   "MAX_BLOCK_SIZE": "1000 // a bigger block is skipped and logged, to stop quadratic pair counts"
+  },
+  "verify": [
+   "pytest tests/test_entity.py -q  # precision and recall asserts pass",
+   "psql -c \"select decided_by, count(*) from merge_log group by 1\"  # rule rows present, human rows only after review"
+  ],
+  "pitfalls": [
+   "A block on first name only makes giant blocks (every Sam) and the pair count explodes. Cap block size and add the domain to the key.",
+   "Missing fields must contribute zero, not a disagreement penalty, or sparse mentions never merge.",
+   "Names and emails are personal data: encrypt the columns with the tenant key and include them in the erasure path.",
+   "Merges must be reversible: keep merge_log complete enough to split an entity again."
+  ]
+ },
+ "ix_link": {
+  "milestone": "M3",
+  "effort_days": 6,
+  "depends_on": [
+   "ix_ent",
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16 edge table with two indexes",
+    "why": "precomputed adjacency lists in the same database, as in research/techniques.md decision 10; no graph database"
+   },
+   {
+    "part": "traversal",
+    "pick": "Plain SQL, one query per hop",
+    "why": "two hops with a fan-out cap is at most 50 + 2,500 nodes, small enough for SQL"
+   },
+   {
+    "part": "not this",
+    "pick": "Neo4j or another graph database at M3",
+    "why": "one more system to run, secure and keep in sync; revisit only if eval shows three or more hops are needed"
+   },
+   {
+    "part": "incremental graph",
+    "pick": "Graphiti is a candidate later, check current docs",
+    "why": "it costs an LLM call per ingest (research/repos.md), so it is not a default"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/004_edge.sql"
+  ],
+  "layout": [
+   "brain/index/link.py : upsert_edges(), neighbours()",
+   "migrations/004_edge.sql : edge table and reverse index",
+   "tests/test_link.py : fan-out cap, ACL filter and expiry tests"
+  ],
+  "schema": "CREATE TABLE edge (\n  tenant_id text NOT NULL,\n  src text NOT NULL,\n  type text NOT NULL,\n  dst text NOT NULL,\n  weight smallint NOT NULL DEFAULT 1 CHECK (weight BETWEEN 1 AND 20),\n  valid_from timestamptz NOT NULL DEFAULT now(),\n  valid_to timestamptz,\n  source_uri text NOT NULL,\n  acl_ref text NOT NULL,\n  PRIMARY KEY (tenant_id, src, type, dst)\n);\nCREATE INDEX edge_reverse ON edge (tenant_id, dst, type);",
+  "interface": "def neighbours(conn, tenant_id: str, node_ids: list[str], edge_types: list[str], allowed_acl: list[str], hops: int = 2, cap: int = 50) -> list[dict]  # [{'node_id', 'edge_type', 'weight', 'source_uri', 'hop'}]",
+  "code": "def neighbours(conn, tenant_id, node_ids, edge_types, allowed_acl, hops=2, cap=50):\n    seen = set(node_ids)\n    frontier = list(node_ids)\n    out = []\n    for hop in range(1, hops + 1):\n        nxt = []\n        for node in frontier:\n            # ACL filter is inside the read: an unreadable edge is never fetched\n            rows = conn.execute(\n                \"SELECT dst, type, weight, source_uri FROM edge\"\n                \" WHERE tenant_id=%s AND src=%s AND type = ANY(%s)\"\n                \" AND (valid_to IS NULL OR valid_to > now()) AND acl_ref = ANY(%s)\"\n                \" ORDER BY weight DESC LIMIT %s\",\n                (tenant_id, node, edge_types, allowed_acl, cap)).fetchall()\n            for dst, etype, weight, src_uri in rows:\n                if dst in seen:\n                    continue  # dedupe by node id across hops\n                seen.add(dst)\n                nxt.append(dst)\n                out.append({\"node_id\": dst, \"edge_type\": etype, \"weight\": weight,\n                            \"source_uri\": src_uri, \"hop\": hop})\n        frontier = nxt\n    return out\n\ndef expire_for_tombstone(conn, tenant_id, uri):\n    # a deleted document stops contributing edges at once; the purge removes the rows later\n    conn.execute(\"UPDATE edge SET valid_to = now() WHERE tenant_id=%s AND source_uri=%s\"\n                 \" AND valid_to IS NULL\", (tenant_id, uri))",
+  "steps": [
+   {
+    "do": "Create edge and the reverse index",
+    "done_when": "\\d edge shows both indexes"
+   },
+   {
+    "do": "Write upsert_edges that adds weight by supporting document and caps it at 20",
+    "done_when": "20 supporting documents give weight 20, the 21st leaves it at 20"
+   },
+   {
+    "do": "Write neighbours with the cap and ACL filter",
+    "done_when": "a node with 200 edges returns at most 50 per hop"
+   },
+   {
+    "do": "Insert an edge with an acl_ref the caller lacks",
+    "done_when": "it never appears in the result"
+   },
+   {
+    "do": "Call expire_for_tombstone",
+    "done_when": "edges sourced from that document no longer appear"
+   },
+   {
+    "do": "Time two hops with cap 50 on 1,000,000 edges",
+    "done_when": "p95 under 100 ms, otherwise add a covering index"
+   }
+  ],
+  "config": {
+   "FAN_OUT_CAP": "50 // per node per hop",
+   "MAX_HOPS": "2 // three only behind an eval win",
+   "EDGE_WEIGHT_CAP": "20 // count of supporting documents, capped"
+  },
+  "verify": [
+   "pytest tests/test_link.py -q  # cap, ACL and expiry tests pass",
+   "psql -c \"explain select dst from edge where tenant_id='t1' and src='p1' and type='authored' order by weight desc limit 50\"  # index scan on the primary key"
+  ],
+  "pitfalls": [
+   "Filtering by ACL after the read still reads edges the caller must not see, which leaks through timing and counts. Filter in the query.",
+   "No fan-out cap lets one popular node (a company-wide doc) explode a two hop walk.",
+   "Edges that outlive their source document keep it discoverable. Expire them on tombstone."
+  ]
+ },
+ "ix_fresh": {
+  "milestone": "M1",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Two columns on the pointer row plus a lag_hist table in Postgres 16",
+    "why": "no new service; the stamp travels with the row"
+   },
+   {
+    "part": "aggregation",
+    "pick": "A Postgres materialised view or a one-minute SQL job",
+    "why": "histograms per (tenant, app) are cheap to recompute"
+   },
+   {
+    "part": "metrics",
+    "pick": "OpenTelemetry gauge for p50, p95 and max staleness per app",
+    "why": "feeds the lag dashboard and alerts without custom code"
+   },
+   {
+    "part": "not this",
+    "pick": "Trusting the source's modified time as proof of freshness",
+    "why": "it shows when the object changed, not when the brain last checked it; clock skew also breaks it. Use the brain's own clock for last_verified"
+   }
+  ],
+  "install": [
+   "pip install 'psycopg[binary]==3.2.*'",
+   "psql $POINTER_DB_URL -f migrations/005_fresh.sql"
+  ],
+  "layout": [
+   "brain/index/fresh.py : observe(), is_stale(), refresh_lag_hist()",
+   "migrations/005_fresh.sql : last_changed column and lag_hist table",
+   "tests/test_fresh.py : stale ceiling and version change tests"
+  ],
+  "schema": "ALTER TABLE pointer ADD COLUMN IF NOT EXISTS last_changed timestamptz NOT NULL DEFAULT now();\nCREATE TABLE app_ceiling (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  ceiling_s int NOT NULL,\n  PRIMARY KEY (tenant_id, app)\n);\nCREATE TABLE lag_hist (\n  tenant_id text NOT NULL,\n  app text NOT NULL,\n  at timestamptz NOT NULL DEFAULT now(),\n  p50_s real,\n  p95_s real,\n  max_s real,\n  PRIMARY KEY (tenant_id, app, at)\n);",
+  "interface": "def observe(conn, tenant_id: str, uri: str, observed_version: int) -> str  # 'confirmed' | 'changed'; 'changed' also queues re-derivation\ndef is_stale(last_verified, ceiling_s: int, now=None) -> bool",
+  "code": "import time\n\ndef observe(conn, tenant_id, uri, observed_version):\n    # last_verified comes from the brain's own clock (now()), never from the source\n    row = conn.execute(\"SELECT version_seq FROM pointer WHERE tenant_id=%s AND uri=%s\"\n                       \" FOR UPDATE\", (tenant_id, uri)).fetchone()\n    if row is None:\n        return \"confirmed\"\n    if observed_version != row[0]:\n        conn.execute(\"UPDATE pointer SET version_seq=%s, last_changed=now(), last_verified=now()\"\n                     \" WHERE tenant_id=%s AND uri=%s AND version_seq < %s\",\n                     (observed_version, tenant_id, uri, observed_version))\n        queue_rederive(conn, tenant_id, uri, observed_version)\n        return \"changed\"\n    conn.execute(\"UPDATE pointer SET last_verified=now() WHERE tenant_id=%s AND uri=%s\",\n                 (tenant_id, uri))\n    return \"confirmed\"\n\ndef is_stale(last_verified, ceiling_s, now=None):\n    now = now or time.time()\n    return (now - last_verified.timestamp()) > ceiling_s\n\ndef refresh_lag_hist(conn):\n    conn.execute(\n        \"INSERT INTO lag_hist(tenant_id, app, p50_s, p95_s, max_s)\"\n        \" SELECT tenant_id, app,\"\n        \"  percentile_cont(0.5)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM now() - last_verified)),\"\n        \"  percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM now() - last_verified)),\"\n        \"  max(EXTRACT(EPOCH FROM now() - last_verified))\"\n        \" FROM pointer WHERE deleted_at IS NULL GROUP BY tenant_id, app\")",
+  "steps": [
+   {
+    "do": "Add last_changed and create app_ceiling and lag_hist",
+    "done_when": "\\d pointer shows last_changed; both tables exist"
+   },
+   {
+    "do": "Write observe()",
+    "done_when": "confirming the same version moves last_verified forward and leaves version_seq alone"
+   },
+   {
+    "do": "Observe a newer version",
+    "done_when": "returns 'changed', last_changed moves and a re-derive job is queued"
+   },
+   {
+    "do": "Set ceilings per app (webhook apps 15 min, poll-only apps 2x the poll interval, sweep-only apps the sweep period)",
+    "done_when": "app_ceiling has one row per connected app"
+   },
+   {
+    "do": "Run refresh_lag_hist every minute",
+    "done_when": "lag_hist gains one row per (tenant, app) per minute"
+   },
+   {
+    "do": "Age a row's last_verified by 20 minutes on a webhook app",
+    "done_when": "is_stale returns True and the query path marks it for a live ETag check"
+   }
+  ],
+  "config": {
+   "CEILING_WEBHOOK_S": "900 // 15 minutes; tune by measured webhook lag",
+   "CEILING_POLL_FACTOR": "2 // times the poll interval for poll-only apps",
+   "LAG_REFRESH_S": "60 // histogram refresh period"
+  },
+  "verify": [
+   "pytest tests/test_fresh.py -q  # all pass",
+   "psql -c \"select app, p95_s from lag_hist order by at desc limit 3\"  # p95 below the app ceiling in a healthy system"
+  ],
+  "pitfalls": [
+   "Using the source modified_at as last_verified reports old documents as stale even when the brain checked them a moment ago, and hides a stalled connector for documents that rarely change.",
+   "Comparing times across machines with skewed clocks gives negative staleness. Take now() from the database.",
+   "Marking stale pointers for a live check on every query floods the source API. Cap the live checks per query, as in research/techniques.md decision 7."
+  ]
+ },
+ "ix_def": {
+  "milestone": "M3",
+  "effort_days": 3,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres table with validity ranges (tstzrange)",
+    "why": "Exclusion constraint stops overlapping versions of the same term"
+   },
+   {
+    "part": "do not pick",
+    "pick": "free-text glossary pages",
+    "why": "A definition needs an owner, a validity window and a version, not a page"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]",
+   "psql brain_dev -c 'create extension if not exists btree_gist'"
+  ],
+  "layout": [
+   "brain/index/definitions.py : lookup by term and date",
+   "tests/test_definitions.py : windows and overlap"
+  ],
+  "schema": "{\"term\":\"str\",\"version\":\"int\",\"owner\":\"str\",\"valid\":\"tstzrange\",\"source_pointer\":\"str\",\"text\":\"str\"}",
+  "interface": "def definition(term: str, at: date) -> Definition | None  # the version valid at the date, or None",
+  "code": "def definition(db, tenant, term, at):\n    row = db.one(\"select * from defs where tenant=%s and term=%s and valid @> %s::date order by version desc limit 1\", (tenant, term, at))\n    return Definition(**row) if row else None",
+  "steps": [
+   {
+    "do": "Create the table with an exclusion constraint",
+    "done_when": "overlapping windows are rejected"
+   },
+   {
+    "do": "Add lookup by date",
+    "done_when": "two dates give two versions"
+   },
+   {
+    "do": "Link each definition to its source pointer",
+    "done_when": "unresolved source flags the entry"
+   },
+   {
+    "do": "Expose to qr_rw and qr_life",
+    "done_when": "planner trace shows the definition used"
+   }
+  ],
+  "config": {
+   "DEFAULT_AT": "today // date used when the question has none",
+   "REQUIRE_OWNER": "true // a definition without an owner is rejected",
+   "SOURCE_REQUIRED": "true // every version links to a source pointer"
+  },
+  "verify": [
+   "pytest tests/test_definitions.py -q  # all passed",
+   "psql brain_dev -c \"insert into defs ... overlapping window\"  # fails with an exclusion violation"
+  ],
+  "pitfalls": [
+   "Letting two versions overlap makes answers depend on row order",
+   "Taking the definition from document text instead of an owned entry"
+  ]
+ },
+ "ix_att": {
+  "milestone": "M3",
+  "effort_days": 5,
+  "depends_on": [
+   "ix_ptr"
+  ],
+  "stack": [
+   {
+    "part": "store",
+    "pick": "Postgres 16",
+    "why": "claim and attestation tables"
+   },
+   {
+    "part": "driver",
+    "pick": "psycopg 3",
+    "why": "plain SQL"
+   }
+  ],
+  "install": [
+   "pip install psycopg[binary]==3.2.*",
+   "pip install pytest"
+  ],
+  "layout": [
+   "brain/index/claims.py",
+   "migrations/012_claims.sql"
+  ],
+  "schema": "CREATE TABLE claim (claim_id text PRIMARY KEY, tenant_id text NOT NULL, meaning text NOT NULL, status text NOT NULL DEFAULT 'live');\nCREATE TABLE attestation (att_id text PRIMARY KEY, claim_id text REFERENCES claim, locator text NOT NULL, content_hash text NOT NULL, author text, observed_at timestamptz, valid_from timestamptz, valid_to timestamptz, indexed_at timestamptz DEFAULT now(), expired_at timestamptz);",
+  "interface": "def claim_view(conn, claim_ids, now) -> list[ClaimView]",
+  "code": "def claim_view(conn, ids, now):\n    rows = conn.execute('''SELECT c.claim_id, a.locator, a.author, a.observed_at\n        FROM claim c JOIN attestation a USING (claim_id)\n        WHERE c.claim_id = ANY(%s) AND a.expired_at IS NULL\n          AND (a.valid_to IS NULL OR a.valid_to > %s)''', (ids, now)).fetchall()\n    return build_views(rows)   # strength computed here, not stored",
+  "steps": [
+   {
+    "do": "Create the two tables",
+    "done_when": "\\d lists both"
+   },
+   {
+    "do": "Write claim_view",
+    "done_when": "live attestations only"
+   },
+   {
+    "do": "Expire all sources",
+    "done_when": "claim reads as dormant"
+   },
+   {
+    "do": "Return conflicts beside each claim",
+    "done_when": "two opposed claims come back with an edge"
+   }
+  ],
+  "config": {
+   "STRENGTH_FN": "corroboration, authority, recency, validity // set per tenant",
+   "DORMANT": "keep // never delete",
+   "STORE_TEXT": "false // locator and hash only"
+  },
+  "verify": [
+   "pytest -q  # all passed",
+   "psql -c \"select count(*) from attestation where locator is null\"  # 0"
+  ],
+  "pitfalls": [
+   "Storing the strength",
+   "Storing source text"
+  ]
+ }
+}

