@@ -136,6 +136,15 @@ importers:
         specifier: workspace:*
         version: link:../core-types
 
+  services/audit-service:
+    dependencies:
+      '@brain/audit-chain':
+        specifier: workspace:*
+        version: link:../../features/audit-chain
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   tools/structure-lint: {}
 
 packages:
