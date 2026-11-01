@@ -9,7 +9,7 @@ const allowed: Record<Tier, readonly Tier[]> = {
   service: ["feature"],
   module: ["service", "feature"],
   app: ["module", "service", "feature"],
-  tool: [],
+  tool: ["module", "service", "feature"],
 };
 
 const readManifest = (dir: string): Manifest => {

@@ -1,0 +1,69 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { createAuditChain } from "@brain/audit-chain";
+import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
+import { createCursorStore } from "@brain/change-cursor";
+import { chunkText } from "@brain/chunker";
+import type { Pointer, Principal } from "@brain/core-types";
+import { createGovernance } from "@brain/governance";
+import { createSearchIndex } from "@brain/hybrid-search";
+import { createIndexService } from "@brain/index-service";
+import { createIngestion, type IngestionCounts } from "@brain/ingestion";
+import { createRegistry } from "@brain/pointer-registry";
+import { createQueryService } from "@brain/query-service";
+import type { Source } from "./source.js";
+
+export type StackOptions = { clock?: () => number; maxAttempts?: number; auditKey?: string };
+
+const EMBEDDING = [1, 0];
+
+/** Every real package wired over the files in `dir`; reopening the same `dir` resumes. No app, no MCP. */
+export function openStack(dir: string, sources: Record<string, Source>, opts: StackOptions = {}) {
+  mkdirSync(dir, { recursive: true });
+  const clock = opts.clock ?? (() => 1000);
+  const registry = createRegistry(join(dir, "registry.db"));
+  const index = createSearchIndex(join(dir, "search.db"), EMBEDDING.length);
+  const cursors = createCursorStore(join(dir, "cursors.db"), clock);
+  const auditDbPath = join(dir, "audit.db");
+  const audit = createAuditService({
+    chain: createAuditChain(auditDbPath),
+    anchorStore: createFileAnchorStore(join(dir, "anchors.log")),
+    clock: () => new Date(clock()),
+  });
+  const query = createQueryService({ index, registry });
+  const governance = createGovernance({ audit, query, auditKey: opts.auditKey ?? "integration-audit-key" });
+  const fetchText = async (p: Pointer) => (await sources[p.tenantId]!.fetch(p.address, { token: "t" })).text;
+  const indexService = createIndexService({
+    registry,
+    index,
+    fetchText,
+    embed: async (texts) => texts.map(() => EMBEDDING),
+    chunk: async (docId, text) => chunkText(docId, text),
+  });
+  const live = (tenantId: string): string[] =>
+    registry
+      .list({ tenantId, limit: 1000 })
+      .filter((p) => p.deletedAt === null)
+      .map((p) => p.id);
+  const ingestion = createIngestion({
+    runtime: { cursors, clock, ...(opts.maxAttempts !== undefined && { maxAttempts: opts.maxAttempts }) },
+    connectorFor: (tenantId) => sources[tenantId],
+    tokenFor: (tenantId) => (sources[tenantId] ? "t" : undefined),
+    known: live,
+    indexService,
+  });
+  return {
+    registry,
+    cursors,
+    auditDbPath,
+    registryPath: join(dir, "registry.db"),
+    ingest: (tenantId: string): Promise<IngestionCounts> => ingestion.runOnce(tenantId),
+    search: (who: Principal, text: string, limit?: number): Promise<Pointer[]> =>
+      governance.search({ query: text, principal: who, embedding: EMBEDDING, ...(limit !== undefined && { limit }) }),
+    verify: governance.verify,
+    checkpoint: governance.checkpoint,
+    close: () => registry.close(),
+  };
+}
+
+export type Stack = ReturnType<typeof openStack>;

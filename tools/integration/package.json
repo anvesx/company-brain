@@ -1,0 +1,30 @@
+{
+  "name": "@brain/integration",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "integration": "vitest run"
+  },
+  "dependencies": {
+    "@brain/audit-chain": "workspace:*",
+    "@brain/audit-service": "workspace:*",
+    "@brain/change-cursor": "workspace:*",
+    "@brain/chunker": "workspace:*",
+    "@brain/connector-kit": "workspace:*",
+    "@brain/connector-runtime": "workspace:*",
+    "@brain/core-types": "workspace:*",
+    "@brain/governance": "workspace:*",
+    "@brain/hybrid-search": "workspace:*",
+    "@brain/index-service": "workspace:*",
+    "@brain/ingestion": "workspace:*",
+    "@brain/pointer-registry": "workspace:*",
+    "@brain/query-service": "workspace:*",
+    "@brain/retrieval": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}
