@@ -1,0 +1,37 @@
+import type { Chunk } from "@brain/chunker";
+import type { Pointer } from "@brain/core-types";
+import { type IndexDeps, type IndexErrorCode, IndexServiceError } from "../types.js";
+
+export type Row = { chunk: Chunk; embedding: number[] };
+type Deps = Pick<IndexDeps, "chunk" | "embed" | "fetchText">;
+
+async function step<T>(code: IndexErrorCode, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    throw new IndexServiceError(code, error);
+  }
+}
+
+const isVector = (v: unknown): v is number[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "number" && Number.isFinite(x));
+
+function checkEmbeddings(vectors: unknown, count: number): number[][] {
+  if (!Array.isArray(vectors) || vectors.length !== count || !vectors.every(isVector)) throw new IndexServiceError("EMBED_INVALID");
+  const dim = vectors[0]?.length;
+  if (!vectors.every((v) => v.length === dim)) throw new IndexServiceError("EMBED_INVALID");
+  return vectors;
+}
+
+/** Fetch, chunk and embed one document. Touches no stored state, so a throw leaves everything intact. */
+export async function prepare(deps: Deps, pointer: Pointer): Promise<Row[]> {
+  const text = await step("FETCH_FAILED", async () => {
+    const t = await deps.fetchText(pointer);
+    if (typeof t !== "string") throw new TypeError("fetchText must return a string");
+    return t;
+  });
+  const chunks = await step("CHUNK_FAILED", () => deps.chunk(pointer.id, text));
+  if (chunks.length === 0) return [];
+  const raw = await step("EMBED_FAILED", () => deps.embed(chunks.map((c) => c.text)));
+  const vectors = checkEmbeddings(raw, chunks.length);
+  return chunks.map((chunk, i) => ({ chunk, embedding: vectors[i] as number[] }));
+}
