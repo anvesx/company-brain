@@ -16,13 +16,6 @@ describe("auditedOutcome", () => {
     expect(f.rows[0]?.event).toMatchObject({ actor: "alice", action: "search", detail: { count: 2 } });
   });
 
-  it("leaves no row for a LIVE_ACL failure and returns it", async () => {
-    const f = fakeAudit();
-    const failed: Outcome = { ok: false, code: "LIVE_ACL" };
-    expect(await auditedOutcome(async () => failed, f.audit, auditKey)(ask)).toBe(failed);
-    expect(f.rows).toEqual([]);
-  });
-
   it("rejects with AUDIT and returns nothing when the row cannot be written", async () => {
     const f = fakeAudit();
     f.audit.failWith = new Error("disk");

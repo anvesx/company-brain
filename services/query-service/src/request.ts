@@ -1,5 +1,5 @@
 import { type Pointer, type Principal, PrincipalSchema } from "@brain/core-types";
-import type { SearchIndex, SearchQuery } from "@brain/hybrid-search";
+import type { SearchIndex } from "@brain/hybrid-search";
 import type { Registry } from "@brain/pointer-registry";
 import { QueryError } from "./errors.js";
 import type { LiveAcl, Timer } from "./paging/live.js";
@@ -10,8 +10,7 @@ export const MAX_LIMIT = 100;
 export const DEFAULT_LIVE_TIMEOUT_MS = 2000;
 export type SearchRequest = { query: string; principal: Principal; embedding: number[]; limit?: number };
 
-/** The index contract paging needs. NOTE: today's SearchIndex has no `offset`; see README. */
-export type PagedIndex = { search(query: SearchQuery & { offset?: number }): ReturnType<SearchIndex["search"]> };
+export type PagedIndex = Pick<SearchIndex, "search">;
 export type QueryDeps = {
   index: PagedIndex;
   registry: Pick<Registry, "get">;

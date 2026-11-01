@@ -10,15 +10,17 @@ export type ListedDoc = {
 };
 
 export type FakeDoc = ListedDoc & { text: string };
-export type ConnectorErrorCode = "NOT_FOUND" | "DUPLICATE" | "PATH_ESCAPE" | "BAD_CURSOR";
+export type ConnectorErrorCode = "NOT_FOUND" | "DUPLICATE" | "PATH_ESCAPE" | "BAD_CURSOR" | "FORBIDDEN";
 
 export interface Connector {
   id: string;
+  /** True only when `fetch` really checks `context.token` against the source. A live ACL is meaningless without it. */
+  enforcesUserToken?: boolean;
   list(query: { cursor?: string; limit: number }): Promise<{
     items: ListedDoc[];
     nextCursor?: string;
   }>;
-  fetch(address: string, context: { token: string }): Promise<{ text: string; version: string }>;
+  fetch(address: string, context: { token: string; signal?: AbortSignal }): Promise<{ text: string; version: string }>;
 }
 
 export class ConnectorError extends Error {

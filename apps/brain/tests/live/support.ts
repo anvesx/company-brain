@@ -13,6 +13,7 @@ export function guarded(grants: Grants, hang: Set<string> = new Set(), broken: S
   const calls: Array<[string, string]> = [];
   return {
     id: inner.id,
+    enforcesUserToken: true,
     calls,
     list: (query) => inner.list(query),
     async fetch(address, { token }) {

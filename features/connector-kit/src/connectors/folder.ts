@@ -12,6 +12,7 @@ export const createFolderConnector = (id: string, rootDir: string): Connector =>
   const walks: Walks = new Map();
   return {
     id,
+    enforcesUserToken: false,
     async list(query) {
       return pageWalk(walks, async () => scan(await realpath(rootDir)), query);
     },

@@ -5,12 +5,12 @@ import { createConnectorLiveAcl } from "../../src/index.js";
 
 const alice: Principal = { id: "alice", tenantId: "t1", groups: [] };
 const pointer = (id: string) => ({ id, address: `addr-${id}` }) as Pointer;
-
 /** Answers per address: a reader list, "boom" (generic failure) or a thrown non-Error. Records (address, token) per call. */
 function source(rules: Record<string, string[] | "boom" | "odd">) {
   const calls: Array<[string, string]> = [];
   const connector: Connector = {
     id: "s",
+    enforcesUserToken: true,
     list: async () => ({ items: [] }),
     async fetch(address, { token }) {
       calls.push([address, token]);

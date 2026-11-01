@@ -36,7 +36,7 @@ describe("toOutcomeFn", () => {
 
   it("returns ok with the pointers and the truncated and live counters", async () => {
     const full = result({ truncated: true, scanned: 1000, liveDenied: 2, liveUnverified: 3 });
-    await expect(make(vi.fn(async () => full)).fn(ask)).resolves.toEqual({ ok: true, ...full });
+    await expect(make(vi.fn(async () => full)).fn(ask)).resolves.toEqual({ ok: true, degraded: true, ...full });
   });
 
   it("fails closed with LIVE_ACL when nothing was returned and something was unverified", async () => {

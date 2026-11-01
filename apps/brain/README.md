@@ -38,7 +38,7 @@ await app.close(); // idempotent, frees the port
 
 ## Live ACL
 
-Set `userTokenFor(principal)` (the user's own credential at the source) and every search re-checks each hit at the source: the connector fetches the document with the user's token (`createConnectorLiveAcl` from `@brain/retrieval`). A read that succeeds keeps the hit; `NOT_FOUND` drops it; any other error, a missing token, an unknown tenant or a timeout fails closed. If nothing can be verified, `app.search` rejects with `RetrievalError` code `LIVE_ACL` and MCP clients see `Search failed`; no audit row is written. Successful live searches write the same audit rows as governed ones, built through `@brain/retrieval`. Without `userTokenFor`, search uses the cached ACL and governance as before.
+Set `userTokenFor(principal)` (the user's own credential at the source) and every search re-checks each hit at the source: the connector fetches the document with the user's token (`createConnectorLiveAcl` from `@brain/retrieval`). A read that succeeds keeps the hit; `NOT_FOUND` drops it; any other error, a missing token, an unknown tenant or a timeout fails closed. If nothing can be verified, `app.search` rejects with `RetrievalError` code `LIVE_ACL` and MCP clients see `Search failed`; one failure audit row is written (count 0). Successful live searches write the same audit rows as governed ones, built through `@brain/retrieval`. Without `userTokenFor`, search uses the cached ACL and governance as before.
 
 Cost: the check fetches the full document for each hit. Fine for a handful of hits per search, expensive for large documents.
 

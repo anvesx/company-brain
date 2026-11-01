@@ -13,6 +13,7 @@ export const createFakeConnector = (id: string, docs: FakeDoc[]): Connector => {
   const listed: ListedDoc[] = stored.map(({ text: _text, ...metadata }) => metadata);
   return {
     id,
+    enforcesUserToken: false,
     async list(query) {
       return pageItems(listed, query);
     },

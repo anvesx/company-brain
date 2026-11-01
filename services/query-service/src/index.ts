@@ -11,5 +11,6 @@ export {
   type QueryService,
   type SearchRequest,
   type SearchResult,
+  validate,
 } from "./request.js";
 export { createQueryService } from "./service.js";

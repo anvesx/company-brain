@@ -10,6 +10,8 @@ export type ScanInput = {
   visible(docId: string): Pointer | undefined;
   limit: number;
   maxCandidates: number;
+  /** Checked before each page; true ends the scan early (reported as truncated). */
+  halt?: () => boolean;
 };
 export const ids = (batch: Pointer[]) => new Set(batch.map((p) => p.id));
 export type ScanResult = { pointers: Pointer[]; truncated: boolean; scanned: number };
@@ -25,7 +27,7 @@ export function* scan(input: ScanInput): Generator<Pointer[], ScanResult, Set<st
   const pointers: Pointer[] = [];
   let scanned = 0;
   while (pointers.length < limit) {
-    if (scanned >= maxCandidates) return { pointers, truncated: true, scanned };
+    if (scanned >= maxCandidates || input.halt?.()) return { pointers, truncated: true, scanned };
     const size = Math.min(PAGE_SIZE, maxCandidates - scanned);
     const hits = fetch(scanned, size);
     scanned += hits.length;

@@ -33,7 +33,7 @@ describe("retrieval with live ACL and paging", () => {
     await expect(h.search(ask)).resolves.toMatchObject({ ok: true, liveDenied: 1, truncated: false });
   });
 
-  it("fails closed on a verifier timeout: typed LIVE_ACL, MCP error, no audit row", async () => {
+  it("fails closed on a verifier timeout: typed LIVE_ACL, MCP error, one failure audit row", async () => {
     const r = rig();
     r.seed("a", ["alice"]);
     const h = await start(r, { liveAcl: () => new Promise(() => undefined), liveAclTimeoutMs: 10 });
@@ -41,7 +41,10 @@ describe("retrieval with live ACL and paging", () => {
     const res = await viaMcp(h.port);
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text).toBe("Search failed");
-    expect(r.rows).toEqual([]);
+    expect(r.rows.map((row) => row.event.detail)).toEqual([
+      { count: 0, outcome: "failure", code: "LIVE_ACL" },
+      { count: 0, outcome: "failure", code: "LIVE_ACL" },
+    ]);
   });
 
   it("surfaces truncated when the candidate cap stops the scan", async () => {
