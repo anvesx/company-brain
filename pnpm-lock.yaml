@@ -136,6 +136,21 @@ importers:
         specifier: workspace:*
         version: link:../core-types
 
+  services/index-service:
+    dependencies:
+      '@brain/chunker':
+        specifier: workspace:*
+        version: link:../../features/chunker
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+      '@brain/hybrid-search':
+        specifier: workspace:*
+        version: link:../../features/hybrid-search
+      '@brain/pointer-registry':
+        specifier: workspace:*
+        version: link:../../features/pointer-registry
+
   tools/structure-lint: {}
 
 packages:
