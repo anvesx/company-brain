@@ -18,20 +18,23 @@ describe("resume and change detection", () => {
       setup(five, dbPath),
       failingOn("d", delivered, () => true),
     );
-    await expect(crashing.runOnce("t1")).rejects.toThrow();
+    expect((await crashing.runOnce("t1")).failures).toHaveLength(1);
     const resumed = setup(five, dbPath);
     await resumed.runtime.runOnce("t1");
-    expect([...delivered, ...resumed.events.map((e) => e.address)]).toEqual(["a", "b", "c", "d", "e"]);
+    expect([...delivered, ...resumed.events.map((e) => e.address)].sort()).toEqual(["a", "b", "c", "d", "e"]);
     expect(resumed.cursors.getCursor("t1", "fake")).toBe("");
   });
 
   it("resume starts at the persisted cursor, not at the beginning", async () => {
     const dbPath = tmpDb();
-    const crashing = withSink(
-      setup(five, dbPath),
-      failingOn("c", [], () => true),
-    );
-    await expect(crashing.runOnce("t1")).rejects.toThrow();
+    const crashing = setup(five, dbPath);
+    const realList = crashing.connector.list.bind(crashing.connector);
+    let calls = 0;
+    crashing.connector.list = async (q) => {
+      if (++calls === 2) throw new Error("connection lost");
+      return realList(q);
+    };
+    await expect(crashing.runtime.runOnce("t1")).rejects.toThrow("connection lost");
     const second = setup(five, dbPath);
     const expected = await firstPageCursor(second.connector);
     const requested: Array<string | undefined> = [];

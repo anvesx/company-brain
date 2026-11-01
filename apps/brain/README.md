@@ -4,7 +4,8 @@ The runnable Devx Brain server. Spec: `docs/specs/app/brain.md`. It composes ing
 
 ```ts
 const app = await createBrainApp({
-  connector,
+  connectorFor: (tenantId) => connectors.get(tenantId), // undefined for an unknown tenant
+  tokenFor: (tenantId) => tokens.get(tenantId),
   cursors,
   clock,
   embed,
@@ -16,7 +17,7 @@ const app = await createBrainApp({
   transport: "http",
   port: 0,
 });
-await app.ingest("tenant-1"); // connector -> index
+const { failures, quarantined } = await app.ingest("tenant-1"); // tenant connector -> index; check failures
 await app.search({ query, principal }); // audited, same path as MCP
 await app.verify("tenant-1"); // audit chain check
 await app.checkpoint("tenant-1"); // anchor, so truncation is detectable

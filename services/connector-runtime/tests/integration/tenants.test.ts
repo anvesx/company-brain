@@ -18,7 +18,7 @@ describe("tenant isolation", () => {
       if (e.tenantId === "t1" && e.address === "b") throw new Error("t1 down");
       delivered.push(`${e.tenantId}:${e.address}`);
     });
-    await expect(rt.runOnce("t1")).rejects.toThrow();
+    expect((await rt.runOnce("t1")).failures).toHaveLength(1);
     await rt.runOnce("t2");
     expect(delivered.filter((d) => d.startsWith("t2:"))).toHaveLength(5);
     expect(s.cursors.getCursor("t2", "fake")).toBe("");

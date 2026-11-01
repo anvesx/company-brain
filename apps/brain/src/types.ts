@@ -6,7 +6,10 @@ import type { Governance } from "@brain/governance";
 import type { IngestionCounts } from "@brain/ingestion";
 
 export type BrainDeps = {
-  connector: Connector;
+  /** The connector bound to a tenant, or undefined for an unknown tenant. Never one connector for several tenants. */
+  connectorFor: (tenantId: string) => Connector | undefined;
+  /** The credential bound to a tenant, or undefined for an unknown tenant. */
+  tokenFor: (tenantId: string) => string | undefined;
   cursors: CursorStore;
   /** Milliseconds. Drives ingestion cursors and audit timestamps. */
   clock: () => number;

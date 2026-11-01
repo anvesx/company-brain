@@ -31,13 +31,16 @@ const demoDoc = (address: string, text: string): FakeDoc => ({
   text,
 });
 
+/** The one tenant the demo connector belongs to. */
+export const DEMO_TENANT = "acme";
 const BEARER = /^Bearer ([^:]+):(.+)$/;
 
-/** Everything except the file paths and transport: an in-memory connector and toy embeddings. */
+/** Everything except the file paths and transport: an in-memory connector bound to the demo tenant and toy embeddings. */
 export function demoDeps(): Omit<BrainDeps, "auditDbPath" | "anchorPath" | "transport" | "port"> {
   const connector = createFakeConnector("demo", [demoDoc("welcome", "Welcome to the Devx Brain demo."), demoDoc("faq", "Ask the brain a question.")]);
   return {
-    connector,
+    connectorFor: (tenantId) => (tenantId === DEMO_TENANT ? connector : undefined),
+    tokenFor: (tenantId) => (tenantId === DEMO_TENANT ? "demo" : undefined),
     cursors: createCursorStore(":memory:", Date.now),
     clock: Date.now,
     embed: async (texts) => texts.map(embedText),

@@ -36,7 +36,9 @@ export async function createBrainApp(deps: BrainDeps): Promise<BrainApp> {
     chunk: async (docId, text) => chunkText(docId, text),
   });
   const ingestion = createIngestion({
-    runtime: { connector: deps.connector, cursors: deps.cursors, clock: deps.clock },
+    runtime: { cursors: deps.cursors, clock: deps.clock },
+    connectorFor: deps.connectorFor,
+    tokenFor: deps.tokenFor,
     indexService,
   });
   const search: BrainApp["search"] = async ({ query: text, principal, limit }) =>

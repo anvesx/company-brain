@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { failingOn, firstPageCursor, five, setup, withSink } from "../helpers.js";
+import { failingOn, five, setup, withSink } from "../helpers.js";
 
 describe("sink failure", () => {
-  it("keeps the cursor at the last good page and retries the item, not losing it", async () => {
+  it("restarts the scan from the first page and retries the item, not losing it", async () => {
     const s = setup(five);
     let fail = true;
     const delivered: string[] = [];
@@ -10,12 +10,13 @@ describe("sink failure", () => {
       s,
       failingOn("c", delivered, () => fail),
     );
-    await expect(rt.runOnce("t1")).rejects.toMatchObject({ code: "SINK_FAILED" });
-    expect(s.cursors.getCursor("t1", "fake")).toBe(await firstPageCursor(s.connector));
-    expect(delivered).toEqual(["a", "b"]);
+    const first = await rt.runOnce("t1");
+    expect(first.failures).toEqual([{ address: "c", error: "boom" }]);
+    expect(s.cursors.getCursor("t1", "fake")).toBe("");
+    expect(delivered).toEqual(["a", "b", "d", "e"]);
     fail = false;
     await rt.runOnce("t1");
-    expect(delivered).toEqual(["a", "b", "c", "d", "e"]);
+    expect(delivered).toEqual(["a", "b", "d", "e", "c"]);
   });
 
   it("on the first page leaves no cursor", async () => {
@@ -24,15 +25,16 @@ describe("sink failure", () => {
       s,
       failingOn("a", [], () => true),
     );
-    await expect(rt.runOnce("t1")).rejects.toMatchObject({ code: "SINK_FAILED" });
+    expect((await rt.runOnce("t1")).failures).toHaveLength(1);
     expect(s.cursors.getCursor("t1", "fake") ?? "").toBe("");
   });
 
-  it("async rejection is also SINK_FAILED and keeps the cause", async () => {
-    const cause = new Error("async boom");
+  it("async rejection is collected as a failure with its message", async () => {
     const rt = withSink(setup(five), async () => {
-      throw cause;
+      throw new Error("async boom");
     });
-    await expect(rt.runOnce("t1")).rejects.toMatchObject({ code: "SINK_FAILED", cause });
+    const result = await rt.runOnce("t1");
+    expect(result.failures).toHaveLength(5);
+    expect(result.failures[0]).toEqual({ address: "a", error: "async boom" });
   });
 });

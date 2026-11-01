@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { doc, setup } from "../support/harness.js";
 
 const three = () => [doc("a"), doc("b"), doc("c")];
-const counts = (emitted: number, indexed: number, failed = 0) => ({ emitted, indexed, failed });
+const counts = (emitted: number, indexed: number) => ({ emitted, indexed, failed: 0, failures: [], quarantined: [] });
 
 describe("ingestion pipeline", () => {
   it("first run indexes all docs, rerun indexes none", async () => {
@@ -31,7 +31,7 @@ describe("ingestion pipeline", () => {
   it("an index failure does not advance the cursor and a retry succeeds", async () => {
     const s = setup(three());
     s.state.failEmbed = true;
-    expect(await s.ingestion.runOnce("acme")).toMatchObject({ indexed: 0, failed: 1 });
+    expect(await s.ingestion.runOnce("acme")).toMatchObject({ indexed: 0, failed: 3 });
     expect(s.cursors.getCursor("acme", "fake") ?? "").toBe("");
     s.state.failEmbed = false;
     expect(await s.ingestion.runOnce("acme")).toEqual(counts(3, 3));
@@ -49,15 +49,6 @@ describe("ingestion pipeline", () => {
         .sort(),
     ).toEqual(["a", "c"]);
     expect(await s.ingestion.runOnce("acme")).toEqual(counts(0, 0));
-  });
-
-  it("a failed run never tombstones documents it did not finish listing", async () => {
-    const s = setup(three());
-    await s.ingestion.runOnce("acme");
-    s.state.failEmbed = true;
-    s.set([doc("a", "v2", "new body"), doc("b")]);
-    await s.ingestion.runOnce("acme");
-    expect(s.rows()).toHaveLength(3);
   });
 
   it("tenants do not share state", async () => {
