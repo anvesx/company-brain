@@ -8,7 +8,7 @@ const allowed: Record<Tier, readonly Tier[]> = {
   feature: [],
   service: ["feature"],
   module: ["service", "feature"],
-  app: ["module"],
+  app: ["module", "service", "feature"],
   tool: [],
 };
 

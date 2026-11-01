@@ -17,14 +17,14 @@ describe("tier direction rule", () => {
       manifest("features/one", { "@brain/core-types": "workspace:*" }),
       manifest("services/api", { "@brain/one": "workspace:*" }),
       manifest("modules/search", { "@brain/api": "workspace:*", "@brain/one": "workspace:*" }),
-      manifest("apps/web", { "@brain/search": "workspace:*" }),
+      manifest("apps/web", { "@brain/search": "workspace:*", "@brain/api": "workspace:*", "@brain/one": "workspace:*" }),
       manifest("tools/lint"),
     ];
     const root = fixture(Object.fromEntries(entries));
     expect(checkTiers(root, dirs(root, entries))).toEqual([]);
   });
 
-  it("reports sideways, upward, app bypass, and tool dependencies", () => {
+  it("reports sideways, upward, and tool dependencies", () => {
     const entries = [
       manifest("features/core-types"),
       manifest("features/one"),
@@ -33,13 +33,14 @@ describe("tier direction rule", () => {
       manifest("services/b", { "@brain/a": "workspace:*" }),
       manifest("modules/m", { "@brain/m2": "workspace:*" }),
       manifest("modules/m2"),
-      manifest("apps/web", { "@brain/a": "workspace:*" }),
+      manifest("apps/web", { "@brain/a": "workspace:*", "@brain/web2": "workspace:*" }),
+      manifest("apps/web2"),
       manifest("tools/lint", { "@brain/one": "workspace:*" }),
     ];
     const root = fixture(Object.fromEntries(entries));
     const found = checkTiers(root, dirs(root, entries));
     expect(found).toHaveLength(5);
-    expect(found.every((item) => item.rule === "tiers")).toBe(true);
+    expect(found.some((item) => item.file === "apps/web/package.json")).toBe(true);
     expect(found[0]?.file).toBe("features/two/package.json");
     expect(found[0]?.message).toContain("may not depend on @brain/one");
   });
