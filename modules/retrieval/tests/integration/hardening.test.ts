@@ -9,6 +9,7 @@ const alice: Principal = { id: "alice", tenantId: "t1", groups: [] };
 const verdictFor = async (failure: unknown) => {
   const connector: Connector = {
     id: "s",
+    enforcesUserToken: true,
     list: async () => ({ items: [] }),
     fetch: async () => {
       throw failure;

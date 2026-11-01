@@ -13,6 +13,7 @@ export function guarded(behaviour: Map<string, Behaviour>): Source {
   const source = createSource([doc("a", ["alice"]), doc("b", ["alice"]), doc("c", ["alice"])]);
   return {
     ...source,
+    enforcesUserToken: true,
     async fetch(address, opts) {
       const how = opts.token.startsWith("user-") ? (behaviour.get(address) ?? "allow") : "allow";
       if (how === "deny") throw new ConnectorError("NOT_FOUND", address);

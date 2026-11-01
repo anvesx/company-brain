@@ -1,5 +1,5 @@
 import type { Pointer, Principal } from "@brain/core-types";
-import { type LiveQueryService, QueryError, type SearchResult } from "@brain/query-service";
+import { type LiveQueryService, QueryError, type SearchResult, validate } from "@brain/query-service";
 import { RetrievalError } from "./errors.js";
 
 export type SearchRequest = { query: string; limit: number; principal: Principal };
@@ -8,21 +8,25 @@ export type EmbedQuery = (text: string) => Promise<number[]> | number[];
 
 /**
  * Typed result of one search. `truncated` (the scan hit its candidate cap, so more matches may exist) rides on ok results.
+ * `degraded` is true when results survived but some hits could not be verified (a partial live ACL outage); absent otherwise.
  * LIVE_ACL means the live ACL check could not vouch for any hit; nothing is returned (fail closed).
  */
-export type Outcome = ({ ok: true } & SearchResult) | { ok: false; code: "LIVE_ACL" };
+export type Outcome = ({ ok: true; degraded?: true } & SearchResult) | { ok: false; code: "LIVE_ACL" };
 export type OutcomeFn = (q: SearchRequest) => Promise<Outcome>;
 
 const liveFailure: Outcome = { ok: false, code: "LIVE_ACL" };
 
-/** Embeds the query, then pages through the query service (`searchLive`). Other failures reject. */
+/** Validates and trims the request, embeds the trimmed query, then pages through the query service (`searchLive`). Other failures reject. */
 export function toOutcomeFn(service: Pick<LiveQueryService, "searchLive">, embedQuery: EmbedQuery): OutcomeFn {
   return async ({ query, limit, principal }) => {
-    const embedding = await embedQuery(query);
+    // Fail on bad input before paying for an embedding; embed the same trimmed text the index and audit use.
+    const { text } = validate({ query, principal, limit, embedding: [] });
+    const embedding = await embedQuery(text);
     try {
-      const result = await service.searchLive({ query, principal, limit, embedding });
+      const result = await service.searchLive({ query: text, principal, limit, embedding });
       // Nothing returned and something could not be verified: a verifier outage must not look like "no results".
-      return result.pointers.length === 0 && result.liveUnverified > 0 ? liveFailure : { ok: true, ...result };
+      if (result.pointers.length === 0 && result.liveUnverified > 0) return liveFailure;
+      return { ok: true, ...(result.liveUnverified > 0 && { degraded: true as const }), ...result };
     } catch (error) {
       if (error instanceof QueryError && error.code === "LIVE_ACL") return liveFailure;
       throw error;

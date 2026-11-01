@@ -11,7 +11,7 @@ describe("live ACL in the search flow", () => {
       return new Map();
     });
     await service.searchLive(req());
-    expect(seen).toEqual([["t1", docs(5), alice]]);
+    expect(seen.map((args) => args.slice(0, 3))).toEqual([["t1", docs(5), alice]]);
   });
 
   it("keeps paging past live-denied hits to fill the limit", async () => {

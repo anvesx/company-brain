@@ -7,14 +7,15 @@ registry, SHA-256 hashing, an in-memory fake, and a local-folder adapter.
 ## Interface
 
 - `Connector.list({ cursor, limit })` returns stable metadata pages; limits are integers from 1–1000.
-- `Connector.fetch(address, { token })` returns current UTF-8 text and its source version.
+- `Connector.enforcesUserToken` is true only when `fetch` really checks the token against the source. The fake and folder connectors declare `false`; a live ACL refuses connectors without `true`.
+- `Connector.fetch(address, { token, signal? })` returns current UTF-8 text and its source version.
 - `createConnectorRegistry()` rejects duplicate ids and unknown lookups with typed errors.
 - `createFakeConnector(id, docs)` snapshots fixtures for deterministic tests and demos.
 - `createFolderConnector(id, rootDir)` recursively reads a local folder without storing content.
 - `contentHash(text)` returns a lowercase SHA-256 hex digest.
 
 `ListedDoc` contains address, title, version, ACL, trust zone, and ISO update time. `FakeDoc` adds
-the text returned by `fetch`. `ConnectorError.code` is `NOT_FOUND`, `DUPLICATE`, `PATH_ESCAPE`, or
+the text returned by `fetch`. `ConnectorError.code` is `NOT_FOUND`, `DUPLICATE`, `PATH_ESCAPE`, `FORBIDDEN` (401/403 at the source), or
 `BAD_CURSOR`.
 
 ## Usage

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { liveCheck, realTimer, type Timer } from "../../src/paging/live.js";
+import { liveCheck, realTimer } from "../../src/paging/live.js";
 import { req, pagedRig as rig } from "../fakes.js";
 import { alice } from "../live-fakes.js";
 
@@ -25,29 +25,20 @@ describe("realTimer", () => {
     vi.advanceTimersByTime(100);
     expect(fn).not.toHaveBeenCalled();
   });
-
-  it("fails closed with the real timer when the verifier hangs", async () => {
-    vi.useFakeTimers();
-    const run = liveCheck(() => new Promise(() => undefined), realTimer, 30, alice, pointers);
-    await vi.advanceTimersByTimeAsync(30);
-    expect(await run).toEqual({ allowed: new Set(), denied: 0, unverified: 2 });
-  });
 });
 
-describe("liveCheck timer handling", () => {
-  it("clears the timer it set, exactly once, after a normal answer", async () => {
-    const set = vi.fn((_fn: () => void, _ms: number): unknown => "h1");
-    const clear = vi.fn();
-    const timer: Timer = { set, clear };
-    await liveCheck(async () => new Map([["d0000", "allow" as const]]), timer, 30, alice, pointers);
-    expect(set).toHaveBeenCalledWith(expect.any(Function), 30);
-    expect(clear.mock.calls).toEqual([["h1"]]);
+describe("liveCheck signal handling", () => {
+  it("never calls the verifier once the signal is aborted", async () => {
+    const verify = vi.fn();
+    expect(await liveCheck(verify, AbortSignal.abort(), alice, pointers)).toEqual({ allowed: new Set(), denied: 0, unverified: 2 });
+    expect(verify).not.toHaveBeenCalled();
   });
 
-  it("does not call clear when the timer handed back no handle", async () => {
-    const clear = vi.fn();
-    await liveCheck(async () => new Map(), { set: () => undefined, clear }, 30, alice, pointers);
-    expect(clear).not.toHaveBeenCalled();
+  it("fails closed when the signal aborts while the verifier hangs", async () => {
+    const controller = new AbortController();
+    const run = liveCheck(() => new Promise(() => undefined), controller.signal, alice, pointers);
+    controller.abort();
+    expect(await run).toEqual({ allowed: new Set(), denied: 0, unverified: 2 });
   });
 });
 

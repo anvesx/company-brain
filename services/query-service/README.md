@@ -24,19 +24,19 @@ class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "
 2. The index runs with `allowClause(principal)`, so tenant and ACL filter inside both retrieval lists. The service pages through it (`offset`, `limit` up to 100 per page) until `limit` visible hits are collected, the index is exhausted (short page, or a page with no new chunk), or `maxCandidates` (default 1000) hits were examined. Then `truncated` is `true`. It is conservative: an index with exactly `maxCandidates` hits also reports `true`.
 3. Each hit's document is looked up in the registry under the principal's tenant. Missing, tombstoned, cross-tenant pointers are dropped.
 4. The pointer's current ACL is re-checked with `isAllowed`. The index copy of the ACL can be stale: a revocation in the registry hides the document even before re-indexing.
-5. `searchLive` then calls `liveAcl(tenantId, docIds, principal)` once per page, only for hits that passed step 4. Only `allow` keeps a hit. `deny` drops it (`liveDenied`). `unknown`, an id missing from the map, a non-Map result, a throw, or no answer within `liveAclTimeoutMs` (default 2000, via the injected `timer`) fail closed: dropped and counted in `liveUnverified`. No verifier means no live step. A failing page does not stop paging.
+5. `searchLive` then calls `liveAcl(tenantId, docIds, principal, signal)` for hits that passed step 4, in steps of at most the number of results still needed. Only `allow` keeps a hit. `deny` drops it (`liveDenied`). `unknown`, an id missing from the map, a non-Map result, a throw, or no answer before the single search deadline (`liveAclTimeoutMs`, default 2000, armed once per search via the injected `timer`; its `signal` aborts when it passes) fail closed: dropped and counted in `liveUnverified`. No verifier means no live step. A step with no verdict at all stops paging (`truncated: true`).
 6. Results keep rank order, one pointer per document, at most `limit`. Fewer results than `limit` is normal only when `truncated` is false and the index is exhausted.
-7. A wrong-dimension embedding is `EMBEDDING`. Any other index or registry failure, on any page, is `BACKEND` with the original error as `cause`. `maxCandidates` below 1 or non-integer is `CONFIG` at construction.
+7. A wrong-dimension embedding is `EMBEDDING`. Any other index or registry failure, on any page, is `BACKEND` with the original error as `cause`. `maxCandidates` below 1, non-integer or above `MAX_WINDOW` (1000) is `CONFIG` at construction.
 
 ## Index API gap
 
-Closed. `@brain/hybrid-search` `SearchQuery` now has optional `offset` (integer >= 0) applied to the fused RRF ranking, with ACL applied inside both lists as before. Every page fuses the same top `MAX_WINDOW` (1000) of each list, so the ranking is identical across pages. The window bounds paging: `offset + limit` must be at most 1000, so a `maxCandidates` above 1000 makes the last page fail with a backend error. Keep `maxCandidates` at 1000 or below.
+Closed. `@brain/hybrid-search` `SearchQuery` now has optional `offset` (integer >= 0) applied to the fused RRF ranking, with ACL applied inside both lists as before. Every page fuses the same top `MAX_WINDOW` (1000) of each list, so the ranking is identical across pages. The window bounds paging: `offset + limit` must be at most 1000, so construction rejects a `maxCandidates` above 1000.
 
 ## Limits
 
 - Zones are not an access rule here; visibility comes from the ACL only.
 - Embeddings are supplied by the caller. No embedding model runs here.
-- Up to `maxCandidates` registry lookups per call, plus one live call per page.
+- Up to `maxCandidates` registry lookups per call, plus live calls for at most the hits still needed.
 
 ## Equivalent mutants
 
