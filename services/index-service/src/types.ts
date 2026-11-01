@@ -3,7 +3,10 @@ import type { Pointer } from "@brain/core-types";
 import type { SearchIndex } from "@brain/hybrid-search";
 import type { Registry } from "@brain/pointer-registry";
 
-export type ChangeEvent = { type: "upsert"; pointer: Pointer } | { type: "delete"; tenantId: string; id: string; at: string };
+/** Text the caller already fetched. `contentHash` is sha-256 hex of `text` and must equal the pointer's. */
+export type Content = { text: string; contentHash: string };
+
+export type ChangeEvent = { type: "upsert"; pointer: Pointer; content?: Content } | { type: "delete"; tenantId: string; id: string; at: string };
 
 export type ApplyResult = {
   outcome: "created" | "updated" | "unchanged" | "deleted" | "absent";
@@ -24,6 +27,7 @@ export interface IndexService {
 
 export type IndexErrorCode =
   | "INVALID_EVENT"
+  | "HASH_MISMATCH"
   | "FETCH_FAILED"
   | "CHUNK_FAILED"
   | "EMBED_FAILED"

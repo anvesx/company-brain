@@ -21,8 +21,10 @@ export function createIngestion({ runtime, indexService, connectorFor, tokenFor,
         const meta = listed.get(event.address);
         if (!meta) throw new Error(`no listing for ${event.address}`);
         const { text } = await connector.fetch(event.address, { token });
-        const pointer = toPointer(event, meta, contentHash(text));
-        const result = await indexService.apply({ type: "upsert", pointer });
+        const hash = contentHash(text);
+        const pointer = toPointer(event, meta, hash);
+        // The index gets the text we already fetched, so it does not fetch the document a second time.
+        const result = await indexService.apply({ type: "upsert", pointer, content: { text, contentHash: hash } });
         knownFor(tenantId).set(pointer.id, event.address);
         if (result.outcome !== "unchanged") counts.indexed++;
       } catch (error) {

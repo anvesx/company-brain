@@ -20,18 +20,20 @@ export const doc = (address: string, version = "v1", text = `text of ${address}`
 export function mutableConnector(initial: FakeDoc[]) {
   let inner = createFakeConnector("fake", initial);
   const tokens: string[] = [];
+  const broken = new Set<string>();
   const connector: Connector = {
     id: "fake",
     list: (q) => inner.list(q),
     fetch: (a, c) => {
       tokens.push(c.token);
+      if (broken.has(a)) return Promise.reject(new Error(`fetch failed: ${a}`));
       return inner.fetch(a, c);
     },
   };
   const set = (docs: FakeDoc[]) => {
     inner = createFakeConnector("fake", docs);
   };
-  return { connector, set, tokens };
+  return { connector, set, tokens, broken };
 }
 
 /** `tenants` limits which tenants resolve to the connector; default is every tenant. */
@@ -61,5 +63,7 @@ export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexServ
     });
   const rows = (tenantId = "acme") => registry.list({ tenantId, limit: 1000 });
   /** `reopen` simulates a restart: a new ingestion over the same stores with an empty in-memory known set. */
-  return { ...mine, ingestion: make(), reopen: make, registry, state, cursors, rows };
+  const search = (text: string, tenantId = "acme") =>
+    index.search({ text, embedding: [1, 1, 1], limit: 50, acl: { sql: "tenant_id = ?", params: [tenantId] } });
+  return { ...mine, ingestion: make(), reopen: make, registry, state, cursors, rows, search };
 }

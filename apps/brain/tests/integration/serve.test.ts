@@ -1,5 +1,6 @@
+import { createFakeConnector } from "@brain/connector-kit";
 import { describe, expect, it } from "vitest";
-import { call, connect, docs, idsOf, start } from "../harness.js";
+import { call, connect, doc, docs, idsOf, start } from "../harness.js";
 
 describe("brain app over MCP HTTP", () => {
   it("returns only the documents the caller may see", async () => {
@@ -45,7 +46,8 @@ describe("brain app over MCP HTTP", () => {
         if (ts.some((t) => t.includes("boom"))) throw new Error("embed down");
         return ts.map(() => [1, 0]);
       },
-      fetchText: async (p) => (p.address === "b" ? "boom" : "needle"),
+      // Ingestion hands the index the text it fetched, so the bad document's body comes from the connector.
+      connectorFor: () => createFakeConnector("fake", [doc("a", ["alice"]), doc("b", ["alice"], "boom"), doc("hidden", ["bob"])]),
     });
     const result = await app.ingest("t1");
     expect(result).toMatchObject({ indexed: 2, failed: 1 });
