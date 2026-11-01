@@ -12,7 +12,7 @@ Spec: `docs/specs/feature/chunker.md`.
 type Chunk = { id: string; docId: string; index: number; text: string; start: number; end: number };
 ```
 
-- `id` is `sha256(docId + ":" + index + ":" + text)` as hex. The same input always gives the same ids.
+- `id` is `sha256(JSON.stringify([docId, index, text]))` as hex. JSON quoting makes the tuple unambiguous, so `("a:1", 0, "x")` and `("a", 1, "0:x")` no longer collide. The same input always gives the same ids. Format change: ids differ from the old `docId:index:text` hash, so re-chunk and re-index existing documents.
 - `index` runs `0..n-1` in document order.
 - `start` and `end` are UTF-16 offsets into the input `text`.
 - Empty or whitespace-only text returns `[]`.
@@ -27,6 +27,8 @@ Splitting is delegated to `@langchain/textsplitters` `RecursiveCharacterTextSpli
 | `size`    | 1000    | integer >= 1, in UTF-16 units |
 | `overlap` | 100     | integer in `[0, size)`        |
 
+A document may produce at most 50,000 chunks. The count is estimated before splitting as `ceil((length - overlap) / (size - overlap))`; above the cap, `chunkText` throws `TOO_MANY_CHUNKS`. Without a cap, options such as size 50, overlap 49 give about one chunk per character, and the library overflows the stack (`RangeError`) near 100,000 chunks. A stack overflow from the library is also converted to `TOO_MANY_CHUNKS`. I kept overlap in `[0, size)` rather than capping it at size/2, because a small document with high overlap is valid; the count cap bounds the cost instead.
+
 Invalid options throw `ChunkError` with code `BAD_OPTIONS`. The message names the bad option (`size` or `overlap`). `docId` and `text` must be strings.
 
 Gotcha: the default overlap is 100. If you pass `size` below 101 without an `overlap`, the call throws `BAD_OPTIONS`. Pass both options for small sizes, for example `{ size: 50, overlap: 10 }`.
@@ -36,6 +38,7 @@ Gotcha: the default overlap is 100. If you pass `size` below 101 without an `ove
 `ChunkError` extends `Error` and carries `code`:
 
 - `BAD_OPTIONS`: wrong types or out-of-range `size` or `overlap`.
+- `TOO_MANY_CHUNKS`: the document would exceed 50,000 chunks. Raise `size` or lower `overlap`.
 - `OFFSET_LOST`: a chunk's text could not be placed in the source. The function throws. It never returns a guessed offset.
 
 ## Usage
@@ -58,9 +61,8 @@ try {
 
 ## Layout
 
-- `src/chunk.ts`: `chunkText`, the splitter subclass, option resolution.
+- `src/chunk.ts`: `chunkText`, `chunkId`, the chunk cap, the splitter subclass, option resolution.
 - `src/offsets.ts`: `locate`, which places library pieces in the source text by backtracking.
-- `src/ids.ts`: `chunkId`, the sha256 id.
 - `src/errors.ts`: `ChunkError` and its codes.
 - `src/index.ts`: the public exports.
 
@@ -85,5 +87,5 @@ Tests:
 
 - `tests/unit/`: errors, ids, offsets, and the fast-check offset identity property (300 runs). `tests/unit/chunk/`: chunk behaviour by topic, plus the small-alphabet property (3000 runs) and its regressions.
 - `tests/integration/`: a real markdown fixture with CJK, emoji, a table and code.
-- `tests/scale/`: 5 MB input, under 3 s, with identity and coverage.
+- `tests/scale/`: 5 MB input, under 3 s, with identity and coverage; the chunk count cap.
 - `tests/support/`: shared assertions (`expectIdentity`, `uncoveredNonSpace`, `hasLoneSurrogate`).
