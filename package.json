@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "packageManager": "pnpm@8.15.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "structure": "node tools/structure-lint/bin/cli.mjs",
     "test": "turbo run test",
@@ -13,5 +15,19 @@
     "mutation": "turbo run mutation",
     "changeset": "changeset",
     "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
+    "@changesets/cli": "^3.0.3",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
+    "@vitest/coverage-v8": "^5.0.5",
+    "dependency-cruiser": "^18.7.0",
+    "lefthook": "^2.2.2",
+    "turbo": "^2.11.10",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
   }
 }
