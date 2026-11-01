@@ -11,6 +11,8 @@ const ingestion = createIngestion({
   connectorFor: (tenantId) => connectors.get(tenantId), // undefined for an unknown tenant
   tokenFor: (tenantId) => tokens.get(tenantId),
   known: (tenantId) => ids, // optional: pointer ids already indexed, e.g. from the registry
+  reapGuard: { maxFraction: 0.5, minDocs: 10 }, // optional; false disables
+  warn: (msg, fields) => log.warn(msg, fields), // optional: told when a delete pass is skipped
 });
 const { emitted, indexed, failed, failures, quarantined } = await ingestion.runOnce("tenant-1");
 ```
@@ -26,6 +28,7 @@ const { emitted, indexed, failed, failures, quarantined } = await ingestion.runO
 - A failed document is retried on the next runs (the runtime re-lists from the start). After `maxAttempts` runs (default 3) it is quarantined: skipped, and returned in `quarantined` on every run, until a new version or ACL arrives.
 - A changed ACL at an unchanged version is a new event and is re-indexed.
 - After a run that listed every page from the start (document failures do not prevent this; a connector error does), documents this process indexed earlier, or that `known(tenantId)` returns (read only at this point, so an incomplete listing never calls it), but that are no longer listed get a delete event (tombstone). A throwing `known` rejects the run; the upserts already applied stay.
+- Reap guard: a delete pass is skipped, with nothing deleted, when the complete listing is empty and documents are known (`reason: "empty-listing"`), or when at least `minDocs` (10) are known and more than `maxFraction` (50%) of them would be tombstoned (`reason: "too-many"`). The run then returns `reapSkipped: {reason, wouldDelete, known}` and calls `warn("reap skipped", ...)`. `reapGuard: false` turns the guard off, for a deliberate mass delete.
 - Counts: `emitted` is events sent to the index (upserts and deletes, including failed ones); `indexed` is events applied as created, updated or deleted; `failed` is rejected events (one per failed document attempt or delete). A failed delete is reported in `failures` and retried on the next full run.
 - Other runtime errors (`INVALID_INPUT`, `BAD_CURSOR_LOOP`, connector errors) propagate unchanged.
 
