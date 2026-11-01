@@ -5,23 +5,24 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServerDeps } from "../build.js";
 import { McpServiceError } from "../errors.js";
 import { readJson } from "./body.js";
+import { type HostOptions, hostAllowed, resolvePolicy } from "./guard.js";
+import { type LimitOptions, realTimers, resolveLimits, type Timers } from "./limits.js";
 import { Sessions } from "./sessions.js";
 
-export type HttpOptions = { port: number; host?: string; path?: string };
+export type HttpOptions = HostOptions & LimitOptions & { port: number; host?: string; path?: string; timers?: Timers | undefined };
 export type HttpHandle = { port: number; close(): Promise<void> };
-
-const STATUS = { UNAUTHENTICATED: 401, FORBIDDEN: 403, BAD_JSON: 400, BODY_TOO_LARGE: 413, INVALID_CONFIG: 500 };
+const STATUS = { UNAUTHENTICATED: 401, FORBIDDEN: 403, BAD_JSON: 400, BODY_TOO_LARGE: 413, INVALID_CONFIG: 500, TOO_MANY_SESSIONS: 429 };
 
 function reply(res: ServerResponse, status: number, message: string): void {
   if (res.headersSent) return void res.end();
-  const body = JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message }, id: null });
   res.writeHead(status, { "content-type": "application/json", connection: status === 413 ? "close" : "keep-alive" });
-  res.end(body);
+  res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message }, id: null }));
 }
 
 export async function startHttp(deps: McpServerDeps, opts: HttpOptions): Promise<HttpHandle> {
-  const sessions = new Sessions();
-  const route = opts.path ?? "/mcp";
+  const limits = resolveLimits(opts);
+  let sessions: Sessions; // built after listen(): default host lists need the bound port
+  let policy = resolvePolicy(opts.port, opts);
 
   /** Authenticate with the same resolver the tool uses, so a request that cannot resolve never reaches the SDK. */
   const authenticate = (req: IncomingMessage): Principal => {
@@ -33,7 +34,8 @@ export async function startHttp(deps: McpServerDeps, opts: HttpOptions): Promise
   };
 
   async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (new URL(req.url ?? "/", "http://localhost").pathname !== route) return reply(res, 404, "Not found");
+    if (!hostAllowed(policy, req.headers)) throw new McpServiceError("FORBIDDEN", "Forbidden host");
+    if (new URL(req.url ?? "/", "http://localhost").pathname !== (opts.path ?? "/mcp")) return reply(res, 404, "Not found");
     const caller = authenticate(req);
     const body = req.method === "POST" ? await readJson(req) : undefined;
     const sid = req.headers["mcp-session-id"];
@@ -62,6 +64,9 @@ export async function startHttp(deps: McpServerDeps, opts: HttpOptions): Promise
     http.once("error", reject);
     http.listen(opts.port, opts.host ?? "127.0.0.1", resolve);
   });
+  const port = (http.address() as AddressInfo).port;
+  policy = resolvePolicy(port, opts);
+  sessions = new Sessions({ limits, timers: opts.timers ?? realTimers, policy });
 
   let closing: Promise<void> | undefined;
   const close = () =>
@@ -71,5 +76,5 @@ export async function startHttp(deps: McpServerDeps, opts: HttpOptions): Promise
       http.closeAllConnections();
       await stopped;
     })());
-  return { port: (http.address() as AddressInfo).port, close };
+  return { port, close };
 }
