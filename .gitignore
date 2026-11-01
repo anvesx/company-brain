@@ -14,3 +14,5 @@ reports/
 docs/html/devx-os-*
 docs/html/*.pdf
 .claude/worktrees/
+test-results/
+playwright-report/
