@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkId } from "../../src/ids.js";
+import { chunkId } from "../../src/chunk.js";
 
 describe("chunkId", () => {
   it("equals sha256 of docId, index and text joined by colons", () => {

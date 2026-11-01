@@ -1,5 +1,5 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { chunkId } from "./ids.js";
+import { createHash } from "node:crypto";
 import { ChunkError } from "./errors.js";
 import { locate } from "./offsets.js";
 
@@ -8,6 +8,11 @@ export type ChunkOptions = { size?: number; overlap?: number };
 
 const DEFAULT_SIZE = 1000;
 const DEFAULT_OVERLAP = 100;
+
+/** Stable chunk id: sha256 of "docId:index:text", hex. Same input gives the same id. */
+export function chunkId(docId: string, index: number, text: string): string {
+  return createHash("sha256").update(`${docId}:${index}:${text}`, "utf8").digest("hex");
+}
 
 /** The library splits on "" by UTF-16 unit, which can cut a surrogate pair. Split by code point instead. */
 class CodePointSplitter extends RecursiveCharacterTextSplitter {
@@ -34,7 +39,7 @@ export async function chunkText(docId: string, text: string, opt: ChunkOptions =
   if (text.trim() === "") return [];
   const splitter = new CodePointSplitter({ chunkSize: size, chunkOverlap: overlap });
   const pieces = await splitter.splitText(text);
-  return locate(text, pieces).map((hit, index) => ({
+  return locate(text, pieces, overlap).map((hit, index) => ({
     id: chunkId(docId, index, hit.text),
     docId,
     index,
