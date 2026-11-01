@@ -8,7 +8,7 @@ Node 26 built-ins only (`node:fs`, `node:path`); runs `.ts` natively (erasable s
 extensions). `dependency-cruiser` stays for import graphs; this tool checks tiers from package.json.
 ## Rules checked
 1. No source file over 80 lines (`src/` and `tests/`, `.ts` `.mjs`).
-2. No folder with more than 5 files (files only; `tests/<kind>/` counts per folder).
+2. No folder with more than 5 files. Subfolders are not files, and `README.md` is exempt from the count (so `src/` may hold 5 source files plus its README). `tests/<kind>/` counts per folder.
 3. Every package has `src/`, `tests/`, `README.md`; every folder under `src/` has a README.md.
 4. Tier direction: feature may depend only on `@brain/core-types`; service on features and core-types; module on services and features; app on modules; no upward or sideways workspace dependency.
 ## Interface
