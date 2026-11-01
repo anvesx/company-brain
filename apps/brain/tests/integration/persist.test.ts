@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createFakeConnector } from "@brain/connector-kit";
 import { afterAll, describe, expect, it } from "vitest";
-import { start } from "../harness.js";
+import { docs, start } from "../harness.js";
 
 const dir = mkdtempSync(join(tmpdir(), "brain-data-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -30,6 +31,21 @@ describe("dataDir persistence", () => {
     await second.app.close();
   });
 
-  // Needs ingestion to seed its in-memory `known` map from the registry; see README Limits.
-  it.todo("docs deleted at source while down are tombstoned on the next run");
+  it("docs deleted at source while down are tombstoned on the next run", async () => {
+    const data = join(dir, "deleted-while-down");
+    const source = createFakeConnector("fake", docs());
+    const first = await start({ dataDir: data, cursors: undefined, connectorFor: () => source });
+    await first.app.ingest("t1");
+    await first.app.close();
+    // "a" is deleted at the source while the app is down.
+    const shrunk = createFakeConnector(
+      "fake",
+      docs().filter((d) => d.address !== "a"),
+    );
+    const second = await start({ dataDir: data, cursors: undefined, connectorFor: () => shrunk });
+    expect(await second.app.ingest("t1")).toMatchObject({ emitted: 1, indexed: 1, failed: 0 });
+    const found = await second.app.search({ query: "needle", principal: alice });
+    expect(found.map((p) => p.address)).toEqual(["b"]);
+    await second.app.close();
+  });
 });

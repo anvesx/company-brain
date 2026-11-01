@@ -45,7 +45,7 @@ Bearer token: `<user>:<tenant>:<hmac-sha256-hex(secret, "user:tenant")>`, checke
 ## Limits
 
 - `@brain/retrieval` cannot take an injected search function (it builds its own query service from `index` and `registry`), so the app starts `@brain/mcp-service` directly with a governance-backed search. Retrieval is not used.
-- Documents deleted at source while the app was down are not tombstoned after a restart: `@brain/ingestion` keeps its `known` set in memory and exposes no way to seed it from the registry. It needs a seed hook (for example `IngestionDeps.known?(tenantId)` returning id and address pairs, filled from `registry.list`).
+- After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers (`runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing.
 - `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
 
 ## Test

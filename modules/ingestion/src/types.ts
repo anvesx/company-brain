@@ -10,6 +10,12 @@ export interface IngestionDeps {
   connectorFor(tenantId: string): Connector | undefined;
   /** The credential bound to this tenant, or undefined when the tenant is unknown. */
   tokenFor(tenantId: string): string | undefined;
+  /**
+   * Pointer ids (`docId`) the index already holds for the tenant, e.g. read from the registry after a restart.
+   * Merged into the known set once a run has listed everything, so documents deleted at the source while the
+   * process was down are tombstoned. Duplicates are fine. If it throws, the run rejects before any delete.
+   */
+  known?(tenantId: string): Iterable<string> | Promise<Iterable<string>>;
 }
 
 export interface IngestionCounts {

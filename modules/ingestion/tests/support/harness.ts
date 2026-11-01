@@ -4,7 +4,7 @@ import { type Connector, createFakeConnector, type FakeDoc } from "@brain/connec
 import { createSearchIndex } from "@brain/hybrid-search";
 import { createIndexService, type IndexDeps, type IndexService } from "@brain/index-service";
 import { createRegistry } from "@brain/pointer-registry";
-import { createIngestion } from "../../src/index.js";
+import { createIngestion, type IngestionDeps } from "../../src/index.js";
 
 export const doc = (address: string, version = "v1", text = `text of ${address}`): FakeDoc => ({
   address,
@@ -51,12 +51,15 @@ export function setup(initial: FakeDoc[], wrap: (svc: IndexService) => IndexServ
     },
   };
   const cursors = createCursorStore(":memory:", () => 1000);
-  const ingestion = createIngestion({
-    runtime: { cursors, clock: () => 1000, pageSize: 2 },
-    connectorFor: (t) => (!tenants || tenants.includes(t) ? mine.connector : undefined),
-    tokenFor: (t) => (!tenants || tenants.includes(t) ? `token-${t}` : undefined),
-    indexService: wrap(createIndexService(deps)),
-  });
+  const make = (known?: IngestionDeps["known"]) =>
+    createIngestion({
+      runtime: { cursors, clock: () => 1000, pageSize: 2 },
+      connectorFor: (t) => (!tenants || tenants.includes(t) ? mine.connector : undefined),
+      tokenFor: (t) => (!tenants || tenants.includes(t) ? `token-${t}` : undefined),
+      indexService: wrap(createIndexService(deps)),
+      ...(known && { known }),
+    });
   const rows = (tenantId = "acme") => registry.list({ tenantId, limit: 1000 });
-  return { ...mine, ingestion, registry, state, cursors, rows };
+  /** `reopen` simulates a restart: a new ingestion over the same stores with an empty in-memory known set. */
+  return { ...mine, ingestion: make(), reopen: make, registry, state, cursors, rows };
 }
