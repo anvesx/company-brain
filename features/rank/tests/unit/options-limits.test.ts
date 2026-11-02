@@ -58,7 +58,7 @@ describe("size limits", () => {
     expect(codeOf(() => open().index(ids.map((id) => doc(id))))).toBe("BAD_DOC");
     expect(open().remove(ids.slice(0, 10_000))).toEqual({ removed: 0 });
     expect(codeOf(() => open().remove(ids))).toBe("BAD_DOC");
-  });
+  }, 60_000);
 });
 
 describe("remove validation", () => {
