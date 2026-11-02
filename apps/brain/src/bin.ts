@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 import { createGraphStore } from "@brain/graph-store";
 import { createBrainApp } from "./app.js";
+import { runSync } from "./cli/sync.js";
+
+if (process.argv[2] === "sync") {
+  const r = await runSync(process.env, () => Date.now() / 1000).catch((e: Error) => {
+    console.error(`brain sync: ${e.message}`);
+    return process.exit(1);
+  });
+  console.log(`synced ${r.nodes} nodes, ${r.edges} edges, ${r.removed} removed in ${r.pages} pages`);
+  process.exit(0);
+}
 
 const { BRAIN_GRAPH_PATH: path, BRAIN_AUTH_SECRET: secret, BRAIN_PORT: port, BRAIN_HOST: host } = process.env;
 if (!path || !secret) {

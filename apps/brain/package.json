@@ -16,6 +16,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brain/graph-store": "workspace:*"
+    "@brain/connector-kit": "workspace:*",
+    "@brain/connectors": "workspace:*",
+    "@brain/graph-store": "workspace:*",
+    "@brain/graph-sync": "workspace:*"
   }
 }
