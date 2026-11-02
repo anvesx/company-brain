@@ -1,16 +1,21 @@
 import { chmodSync, renameSync, writeFileSync } from "node:fs";
 import type { Store } from "../accounts/store.js";
+import { sourceOf } from "../sync/connector.js";
 import { accessTokenOf } from "./access-token.js";
 
-/** Writes `BRAIN_USER_TOKENS_FILE`: `{user: {source: token}}`, mode 600, replaced atomically. Each owner's oldest active account per provider wins. */
+/**
+ * Writes `BRAIN_USER_TOKENS_FILE`: `{user: {source: token}}`, mode 600, replaced atomically.
+ * Each active account is keyed by its graph source `<provider>:<id>`, which is what a synced document carries in `source`.
+ * Each owner's oldest active account per provider is also keyed by the bare provider (`github`, `drive`), the id `brain sync` uses.
+ */
 export function writeTokenFile(store: Store, file: string): { users: number; tokens: number } {
   const out: Record<string, Record<string, string>> = {};
   let tokens = 0;
   for (const s of store.secrets()) {
     const token = accessTokenOf(s.kind, s.secret);
+    if (token === undefined) continue;
     const mine = out[s.owner] ?? {};
-    if (token === undefined || s.provider in mine) continue;
-    out[s.owner] = { ...mine, [s.provider]: token };
+    out[s.owner] = { ...mine, ...(s.provider in mine ? {} : { [s.provider]: token }), [sourceOf(s)]: token };
     tokens++;
   }
   const tmp = `${file}.${process.pid}.tmp`;

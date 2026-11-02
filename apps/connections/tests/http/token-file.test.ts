@@ -8,7 +8,10 @@ let s: Awaited<ReturnType<typeof boot>> | undefined;
 const dir = mkdtempSync(join(tmpdir(), "conn-tok-"));
 afterEach(() => s?.close());
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const read = (file: string) => JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+const read = (file: string) => {
+  const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+  return Object.fromEntries(Object.entries(all).map(([u, m]) => [u, Object.fromEntries(Object.entries(m).filter(([k]) => !k.includes(":")))]));
+};
 
 describe("the token file follows the account routes", () => {
   it("is rewritten on create, patch and delete", async () => {

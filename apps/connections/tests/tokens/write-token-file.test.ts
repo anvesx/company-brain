@@ -12,7 +12,11 @@ beforeEach(() => {
   file = join(t.path, "..", "tokens.json");
 });
 afterEach(() => t.done());
-const read = () => JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+const read = () => {
+  const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+  // Provider keys only; the per-account `<provider>:<id>` keys are covered in source-keys.test.ts.
+  return Object.fromEntries(Object.entries(all).map(([u, m]) => [u, Object.fromEntries(Object.entries(m).filter(([k]) => !k.includes(":")))]));
+};
 
 describe("writeTokenFile", () => {
   it("writes {user: {source: token}} with mode 600", () => {
