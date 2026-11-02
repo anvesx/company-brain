@@ -16,7 +16,9 @@ export type Account = {
   status: Status;
   /** `owner/name`, github only. Sync uses it when the request body has none. */
   repo: string | null;
+  /** Milliseconds since the epoch of the last sync that succeeded; null if none has. */
+  lastSyncAt: number | null;
 };
 
-export type NewAccount = Omit<Account, "id" | "status" | "repo"> & { secret: string; repo?: string | null };
+export type NewAccount = Omit<Account, "id" | "status" | "repo" | "lastSyncAt"> & { secret: string; repo?: string | null };
 export type Patch = Partial<Pick<Account, "label" | "access" | "dataZone" | "repo">>;

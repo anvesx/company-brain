@@ -1,3 +1,4 @@
+import { when } from "../actions.js";
 import { call } from "../api.js";
 import { h, mount, select } from "../dom.js";
 import { PROVIDERS, ZONES } from "./hints.js";
@@ -14,8 +15,8 @@ const card = (a) =>
     h(
       "dl",
       { class: "facts" },
-      ...["Credential", "Access", "Data zone", "Status"].map((t, i) => {
-        const v = [a.kind, a.access, a.dataZone, a.status][i];
+      ...["Credential", "Access", "Data zone", "Status", "Last sync"].map((t, i) => {
+        const v = [a.kind, a.access, a.dataZone, a.status, when(a.lastSyncAt)][i];
         return h("div", {}, ...fact(t, i === 3 ? h("span", { class: `status ${v}` }, v) : v));
       }),
     ),

@@ -1,5 +1,6 @@
+import { reauthorise, syncNow, when } from "../actions.js";
 import { call, who } from "../api.js";
-import { h, mount } from "../dom.js";
+import { field, h, mount } from "../dom.js";
 import { WIDENING, zoneField } from "./hints.js";
 
 const fact = (t, v) => h("div", {}, h("dt", {}, t), h("dd", {}, v));
@@ -14,7 +15,8 @@ export async function detail(root, id) {
   const val = (n) => root.querySelector(`#${n}`).value;
   const save = async (e) => {
     e.preventDefault();
-    const p = await call("PATCH", `/v1/accounts/${id}`, { access: val("access"), dataZone: val("dataZone") });
+    const repo = a.provider === "github" ? { repo: val("repo").trim() || null } : {};
+    const p = await call("PATCH", `/v1/accounts/${id}`, { access: val("access"), dataZone: val("dataZone"), ...repo });
     say(p.ok ? "Saved." : p.error, !p.ok);
   };
   const ask = h(
@@ -41,12 +43,27 @@ export async function detail(root, id) {
     root,
     h("a", { href: "#/" }, "All connections"),
     h("h1", {}, a.label),
-    h("dl", { class: "facts" }, fact("Provider", a.provider), fact("Owner", a.owner), fact("Credential", a.kind), fact("Status", a.status)),
+    h(
+      "dl",
+      { class: "facts" },
+      fact("Provider", a.provider),
+      fact("Owner", a.owner),
+      fact("Credential", a.kind),
+      fact("Status", a.status),
+      fact("Last sync", when(a.lastSyncAt)),
+    ),
     mine
       ? h(
           "form",
           { onsubmit: save },
           h("h2", {}, "Zones"),
+          a.provider === "github" &&
+            field(
+              "Repository",
+              "repo",
+              h("input", { id: "repo", value: a.repo ?? "", placeholder: "owner/name", maxlength: 200 }),
+              h("p", { class: "hint" }, "Sync uses this."),
+            ),
           zoneField("access", "Access", "access", a.access),
           zoneField("dataZone", "Data zone", "dataZone", a.dataZone),
           h("p", { class: "rule-box" }, WIDENING),
@@ -54,7 +71,9 @@ export async function detail(root, id) {
           h(
             "div",
             { class: "actions" },
-            h("button", { type: "submit" }, "Save zones"),
+            h("button", { type: "submit" }, "Save"),
+            h("button", { type: "button", class: "quiet", id: "sync-now", onclick: () => syncNow(a, say, () => detail(root, id)) }, "Sync now"),
+            h("button", { type: "button", class: "quiet", id: "reauth", onclick: () => reauthorise(a, say) }, "Re-authorise"),
             h("button", { type: "button", class: "danger", id: "disconnect", onclick: () => ask.removeAttribute("hidden") }, "Disconnect"),
           ),
           ask,

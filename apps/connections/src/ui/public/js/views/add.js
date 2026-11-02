@@ -1,8 +1,7 @@
+import { ROUTE } from "../actions.js";
 import { call } from "../api.js";
 import { field, h, mount, select } from "../dom.js";
 import { KINDS, PROVIDERS, WIDENING, warning, zoneField } from "./hints.js";
-
-const ROUTE = { github: "github", drive: "google" };
 
 /** The add form. oauth asks the server for a provider url and navigates to it; the others post the pasted token. */
 export function add(root) {

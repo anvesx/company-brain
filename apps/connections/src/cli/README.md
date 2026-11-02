@@ -4,7 +4,7 @@ Turns environment variables into a running server. `src/bin.ts` is a thin launch
 
 - `config.ts`: `parseConfig(env)` reads the settings and throws one error naming every bad one. Nothing is opened before it passes.
 - `oauth-env.ts`: `oauthFromEnv` builds the GitHub and Google sign-in providers when their client settings are present.
-- `start.ts`: `start(env, now)` opens the account store and the graph, wires the app (admins, oauth, sync, token file) and listens on 127.0.0.1.
+- `start.ts`: `start(env, now, opts)` opens the account store and the graph, wires the app (admins, oauth, sync, token file) and listens on 127.0.0.1. `opts` goes to `createApp`; `src/bin.ts` passes `{ uiRedirect: "/" }` so the OAuth callback returns the browser to the page.
 
 | Variable                                                                       | Meaning                                                                          |
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |

@@ -31,16 +31,17 @@ Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Compos
 4. Sign-in uses the same `user:tenant:exp:hmac` bearer as the brain app.
 
 ## API (all under `/v1`, caller from the bearer)
-`GET /accounts`, `POST /accounts`, `PATCH /accounts/:id` (label, access, dataZone), `DELETE /accounts/:id`, `GET /oauth/:provider/start`, `GET /oauth/:provider/callback`, `POST /accounts/:id/sync`.
+`GET /accounts`, `POST /accounts` (optional repo), `PATCH /accounts/:id` (label, access, dataZone, repo), `DELETE /accounts/:id`, `GET /oauth/:provider/start`, `GET /oauth/:provider/callback`, `POST /accounts/:id/sync`.
 
 ## Behaviour
 1. A caller sees only accounts they own, plus `company` accounts in their tenant (without credentials).
 2. Every change checks the widening rule above and answers 403 with the reason.
 3. The token file is `{user: {source: token}}` with one key per account, `<provider>:<account id>` (the graph source of its documents), plus the bare provider for the owner's oldest active account. `GET /v1/tokens` for the brain app is not exposed over HTTP; the app writes `BRAIN_USER_TOKENS_FILE` (chmod 600) instead.
-5. Documents are stored in the graph as `<provider>:<account id>/<address>` and groups as `<source>/<raw>`, so two accounts never share a node or an edge; disconnecting one closes only its own edges.
-6. A github account has a nullable `repo` (`owner/name`, validated on create and patch, refused for other providers). `POST /v1/accounts/:id/sync` uses the body `repo` if given, else the account's.
 4. A failed refresh marks the account `needs-auth`; it is never deleted silently.
 5. Disconnect removes the credential and the account's `can-read` and `member-of` edges for that source.
+6. Documents are stored in the graph as `<provider>:<account id>/<address>` and groups as `<source>/<raw>`, so two accounts never share a node or an edge; disconnecting one closes only its own edges.
+7. A github account has a nullable `repo` (`owner/name`, validated on create and patch, refused for other providers). `POST /v1/accounts/:id/sync` uses the body `repo` if given, else the account's.
+8. `lastSyncAt` (milliseconds) is set by each sync that succeeds and is null before; the card and the detail page show it. Failed syncs leave it alone.
 
 ## Tests
 - Unit: the zone-widening rule, encryption round trip, token-file writer permissions.

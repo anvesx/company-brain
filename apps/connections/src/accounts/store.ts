@@ -46,6 +46,7 @@ export function openStore(path: string, key: Buffer) {
       );
       return view(get(id) as Row);
     },
+    setLastSync: (id: string, ms: number): void => void db.prepare("UPDATE accounts SET last_sync_at = ? WHERE id = ?").run(ms, id),
     setStatus: (id: string, s: Status): void => void db.prepare("UPDATE accounts SET status = ? WHERE id = ?").run(s, id),
     setCredential: (id: string, secret: string): void => void db.prepare("UPDATE accounts SET secret = ? WHERE id = ?").run(seal(key, id, secret), id),
     remove: (id: string): boolean => Number(db.prepare("DELETE FROM accounts WHERE id = ?").run(id).changes) > 0,

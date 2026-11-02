@@ -26,7 +26,9 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     if (token === undefined) return c.json({ error: "account has no usable credential" }, 409);
     try {
       const r = await runAccountSync(d.sync, cur, token, repo, d.now() * 1000);
-      return "error" in r ? c.json(r, 400) : c.json(r);
+      if ("error" in r) return c.json(r, 400);
+      d.store.setLastSync(cur.id, d.now() * 1000);
+      return c.json(r);
     } catch (e) {
       return c.json({ error: "source sync failed", code: (e as { code?: string }).code ?? "UNKNOWN" }, 502);
     }
