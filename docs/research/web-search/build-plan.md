@@ -76,5 +76,5 @@ Elastic [document-level security](https://www.elastic.co/docs/deploy-manage/user
 - [Google Cloud Search ACLs](https://developers.google.com/workspace/cloud-search/docs/guides/acls)
 - [Microsoft Graph connectors](https://learn.microsoft.com/en-us/graph/api/resources/externalconnectors-externalitem)
 - [Joachims, optimizing search engines using clickthrough data](https://www.cs.cornell.edu/people/tj/publications/joachims_02c.pdf)
-- [ADR 0004](../../adr/0004-rag-and-brain-are-separate.md)
+- [ADR 0004](../../adr/boundaries/0004-rag-and-brain-are-separate.md)
 - Library repo pages linked in the table

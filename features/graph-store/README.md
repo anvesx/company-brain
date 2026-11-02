@@ -2,7 +2,7 @@
 
 Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`). Nodes and typed edges carry a tenant id on every row and one caller-supplied validity axis (`validFrom`/`validTo`): a changed fact closes the old row instead of overwriting it. There is no recorded-at axis, so the store cannot answer what it believed at an earlier time; it is not bi-temporal. No document text, no embeddings (ADR 0004).
 
-Spec: `docs/specs/feature/graph-store.md`. Decision: `docs/adr/0004-rag-and-brain-are-separate.md`.
+Spec: `docs/specs/feature/graph-store.md`. Decision: `docs/adr/boundaries/0004-rag-and-brain-are-separate.md`.
 
 ## Use
 

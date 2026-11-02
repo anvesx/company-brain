@@ -1,0 +1,21 @@
+# Architecture decision records
+
+Each ADR records one decision. Numbers never change, so links stay stable when a
+decision is amended. ADRs live in theme folders, and each folder holds at most five files.
+
+| ADR | Title | Status | Folder |
+| --- | --- | --- | --- |
+| [0001](product/0001-tiers-and-limits.md) | Four tiers, small files, few files per folder | accepted | [product](product) |
+| [0003](product/0003-connector-sourcing.md) | Connector sourcing | proposed | [product](product) |
+| [0004](boundaries/0004-rag-and-brain-are-separate.md) | RAG and brain are separate apps | accepted, 2026-11-02 | [boundaries](boundaries) |
+| [0005](boundaries/0005-connectors-and-rag-move-to-own-repos.md) | Connectors and RAG move to their own repos | accepted, 2 Nov 2026 | [boundaries](boundaries) |
+| [0006](boundaries/0006-rank-and-reindex-move-to-rag.md) | Rank, reindex and the rank scale test move to rag | accepted, 3 Nov 2026 | [boundaries](boundaries) |
+| [0007](tooling/0007-package-root-files-count.md) | Package-root files count toward the five-file limit | accepted, 3 Nov 2026 | [tooling](tooling) |
+
+## Folders
+
+- `product/`: scope, tiers and sourcing rules for the product.
+- `boundaries/`: which app owns which part, and the repo moves that enforce it.
+- `tooling/`: rules the structure lint enforces.
+
+ADR 0006 amends ADR 0005. ADR 0005 is kept as written.
