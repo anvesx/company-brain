@@ -22,8 +22,9 @@ jobs:
       - run: pnpm deps
       - run: pnpm turbo run build --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e'
       - run: pnpm turbo run typecheck --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e'
-      - run: pnpm turbo run test --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e'
-      - run: pnpm turbo run mutation --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e'
+      # Wall-clock scale tests need dedicated hardware; shared runners fail them on timing alone.
+      - run: pnpm -r --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e' run test --exclude '**/tests/scale/**'
+      - run: pnpm -r --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/e2e' mutation
       - run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha || 'HEAD~1' }} --to HEAD
   integration:
     runs-on: ubuntu-latest

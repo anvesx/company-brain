@@ -26,6 +26,10 @@ jobs:
       - run: pnpm release
         env:
           NODE_AUTH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: confirm the packages exist on GitHub Packages
+        run: gh api "/orgs/anvesx/packages?package_type=npm" --jq '.[] | .name + " " + .visibility'
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       - run: pnpm dlx @cyclonedx/cdxgen -o sbom.json
       - uses: actions/upload-artifact@v4
         with: { name: sbom, path: sbom.json }
