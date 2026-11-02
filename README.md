@@ -1,8 +1,8 @@
-35%
+18%
 
 # Company Brain
 
-Company Brain connects to the apps a company already uses and lets people and LLMs ask questions across all of them. It keeps an index of pointers to documents. It does not keep a copy of the documents. When a question arrives, it fetches the real text from the source app at that moment, using the asking user's own permissions.
+Company Brain is meant to be a graph of who and what a company knows: people, teams, documents, repos and the links between them, stored as metadata only. A separate retrieval app (RAG) fetches real text when an agent asks. Today the repo contains the retrieval half and the first graph building blocks. The graph-only brain app is not built yet; see [docs/reviews/brain-vs-rag-gap.md](docs/reviews/brain-vs-rag-gap.md).
 
 ## Why we are building it
 
@@ -31,7 +31,7 @@ Features and services are built to be published to a registry and reused in othe
 
 **Read path.** A search runs BM25 and vector search together, fused by reciprocal rank. The ACL filter runs inside both queries, so a hit the user cannot see is never ranked. The cached ACL runs first. A live check with the user's token can only narrow the result. Every search writes one row to a hash-chained audit log.
 
-**Interfaces.** The `brain` app serves the search tool over MCP. Bearer tokens are `user:tenant:exp:hmac`.
+**Interfaces.** The `brain` app is the retrieval server today and will be renamed `rag`. It serves the search tool over MCP. Bearer tokens are `user:tenant:exp:groups:kid:sig`, with key rotation and a 24 hour cap.
 
 The full design is in [docs/brain](docs/brain). Decisions are in [docs/adr](docs/adr), per-package specs in [docs/specs](docs/specs), and review findings in [docs/reviews](docs/reviews).
 
@@ -52,14 +52,14 @@ pnpm -r --no-bail --workspace-concurrency=1 test
 pnpm integration
 ```
 
-Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @brain/scale-test scale:node`. The last run at 50 virtual users gave a p95 of 18 ms with no failed requests.
+Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @brain/scale-test scale:node`. 
 
 ## Progress
 
-The percentage on the first line is working software, not process goals. It was 100% when it only counted the 19 process goals (specs, tests, CI, reviews), and that overstated it. The 35% reflects what exists and is tested against real systems today.
+The percentage on the first line is the share of the 152 designed components that exist and are tested. It is 18% because the retrieval path is built and the graph path is mostly not. Counting process goals gave 100% earlier, which overstated it.
 
-**Real and tested:** the folder connector, SQLite pointer registry, FTS5 and sqlite-vec search, the ACL filter, the hash-chained audit log, and the MCP server.
+**Real and tested:** folder, GitHub and Drive connectors on the official SDKs (GitHub and Drive tested against replay servers only), a real 384-dimension embedder, SQLite pointer registry, FTS5 and sqlite-vec search, the ACL filter, the hash-chained audit log, the MCP server, and the features graph-store, query-router and zone-policy.
 
-**Not real yet:** connectors for Slack, Google Drive, GitHub and Notion; a real embedding model; live permission checks against a source app; token issuing; any deployment. Most tests of the runtime and retrieval layers use fakes for these.
+**Not built yet:** the graph-only brain app, graph-sync from connectors, validity and supersession of facts, memory distillation, governance (erasure, tenant keys), the evaluation harness, the capture daemon and the action agent. Live checks against real GitHub and Drive accounts have not run. The Docker image has not been verified in CI.
 
 Ticketing runs on the [Company Brain board](https://github.com/orgs/anvesx/projects/7). Known gaps are in [docs/reviews](docs/reviews).
