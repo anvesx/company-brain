@@ -2,6 +2,7 @@ import { customManifest, hasLiveRecheck, type Listed } from "@anvesx/connectors"
 import { Hono } from "hono";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/guard/auth.js";
+import { reservedNames } from "../oauth/providers.js";
 import { kindsOf } from "./kinds.js";
 import { parseCustom } from "./parse.js";
 
@@ -27,6 +28,7 @@ export function catalogRoutes(d: Deps): Hono<Env> {
     if (!d.isAdmin(caller)) return c.json({ error: "only a tenant admin can add a connector" }, 403);
     const p = parseCustom(await c.req.json().catch(() => undefined));
     if ("error" in p) return c.json({ error: p.error }, 400);
+    if (reservedNames().has(p.value.id)) return c.json({ error: `${p.value.id} is a built-in connector or oauth app name` }, 409);
     const manifest = customManifest(p.value);
     try {
       d.catalog.register(manifest, caller.tenant);

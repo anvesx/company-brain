@@ -1,4 +1,4 @@
-import { createBuiltinRegistry, type Manifest, type Registry } from "@anvesx/connectors";
+import { createBuiltinRegistry, type Listed, type Manifest, type Registry } from "@anvesx/connectors";
 
 export type OAuthProvider = {
   /** The account provider id this sign-in creates: the manifest id. */
@@ -18,9 +18,20 @@ type Given = { clientId: string; clientSecret: string; redirectURI: string; auth
 /** The OAuth app (client id and secret) a manifest signs in through; manifests with the same app share one client and one flow. */
 export const appOf = (m: Manifest): string => (m.auth.kind === "oauth2" ? (m.auth.app ?? m.id) : m.id);
 
-/** The manifest a route name means: a manifest id, else the first manifest of an app with that name (`google` is the Drive app). */
-export const manifestFor = (catalog: Registry, name: string, tenant: string): Manifest | undefined =>
-  catalog.get(name, tenant) ?? catalog.list(tenant).find((e) => appOf(e.manifest) === name)?.manifest;
+/**
+ * The manifest a route name means: a built-in manifest by id or by app name (`google` is the Drive app), else a tenant's own by id.
+ * Built-ins come first and a tenant manifest never answers to an app name, so it cannot reach a server client by reusing a name.
+ */
+export const manifestFor = (catalog: Registry, name: string, tenant: string): Manifest | undefined => {
+  const all = catalog.list(tenant);
+  const own = (e: Listed) => e.tenant === undefined;
+  return (all.find((e) => own(e) && (e.manifest.id === name || appOf(e.manifest) === name)) ?? all.find((e) => e.manifest.id === name))?.manifest;
+};
+
+const BUILTIN = createBuiltinRegistry();
+
+/** Every id and OAuth app name of the built-in catalog: a tenant's custom connector may not use any of them. */
+export const reservedNames = (): Set<string> => new Set(BUILTIN.list().flatMap((e) => [e.manifest.id, appOf(e.manifest)]));
 
 /**
  * The sign-in for one manifest: the app's client, redirect and endpoints as configured (a test can point them at a local server),
@@ -31,8 +42,6 @@ export function providerFor(oauth: Record<string, OAuthProvider> | undefined, m:
   if (m.auth.kind !== "oauth2" || !app) return undefined;
   return { ...app, source: m.id, scopes: [...m.auth.scopes], pkce: m.auth.pkce, extraParams: { ...m.auth.extraParams } };
 }
-
-const BUILTIN = createBuiltinRegistry();
 
 /** An OAuth app's client for a built-in manifest's app (`github`, `google`), with that manifest's endpoints unless `given` overrides them. */
 export const oauthProvider = (app: string, g: Given): OAuthProvider => {
