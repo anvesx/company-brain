@@ -23,7 +23,8 @@ export async function bootUi(opts: { deny?: boolean; redirect?: string | undefin
   );
   const server = await startServer(app, 0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const get = (path: string, who?: string) => fetch(base + path, { redirect: "manual", headers: who ? { authorization: who } : {} });
+  const get = (path: string, who?: string, cookie?: string) =>
+    fetch(base + path, { redirect: "manual", headers: { ...(who && { authorization: who }), ...(cookie && { cookie }) } });
   return {
     get,
     store: t.store,

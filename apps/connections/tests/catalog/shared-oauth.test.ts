@@ -45,7 +45,8 @@ describe("two manifests sharing one oauth app", () => {
       flows[id] = new URL(start.headers.get("location") ?? "");
       const consent = await fetch(flows[id] as URL, { redirect: "manual" });
       const back = new URL(consent.headers.get("location") ?? "");
-      expect((await app.call("GET", back.pathname + back.search)).status).toBe(201);
+      const cookie = (start.headers.get("set-cookie") ?? "").split(";")[0];
+      expect((await app.call("GET", back.pathname + back.search, undefined, undefined, cookie)).status).toBe(201);
     }
     const [mail, cal] = [flows.mail as URL, flows.cal as URL];
     expect(mail.origin + mail.pathname).toBe(cal.origin + cal.pathname);

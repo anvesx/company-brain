@@ -16,11 +16,11 @@ export async function boot(extra: Partial<Parameters<typeof createApp>[0]> = {})
   const app = createApp({ store: t.store, secret: SECRET, now: () => NOW, isAdmin: (c) => c.user === "root", ...extra });
   const server = await startServer(app, 0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const call = (method: string, path: string, who?: string, body?: unknown) =>
+  const call = (method: string, path: string, who?: string, body?: unknown, cookie?: string) =>
     fetch(base + path, {
       method,
       redirect: "manual",
-      headers: { ...(who && { authorization: who }), ...(body !== undefined && { "content-type": "application/json" }) },
+      headers: { ...(who && { authorization: who }), ...(cookie && { cookie }), ...(body !== undefined && { "content-type": "application/json" }) },
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   return {

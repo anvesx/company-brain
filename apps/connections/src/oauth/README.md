@@ -7,4 +7,6 @@ Sign-in with `arctic`'s `OAuth2Client`, the generic client that `arctic`'s GitHu
 - `state/`: `pending.ts` (sign-ins in flight, in memory, single use, 10 minute life) and `refresh.ts` (`refreshAccount`, see its README).
 - `routes.ts`: `GET /oauth/:provider/start` (bearer, answers 302) and `GET /oauth/:provider/callback` (the provider's redirect, answers 201 with the account).
 
+`start` sets an HttpOnly, SameSite=Lax, signed `oauth_bind` cookie (`state/binding.ts`); `callback` answers 400 without a matching one, before any token exchange. `ui/oauth-ui.ts` passes the cookie through `start-url`.
+
 The widening rule is checked at start and again at callback. `POST /accounts/:id/sync` calls the refresh before each sync of an oauth account.

@@ -42,7 +42,7 @@ export async function bootDrive(opts: Parameters<typeof startDrive>[1] = {}) {
     const start = await s.call("GET", `/v1/oauth/google/start${query}`, root);
     const consent = await fetch(start.headers.get("location") ?? "", { redirect: "manual" });
     const back = new URL(consent.headers.get("location") ?? "");
-    const made = await s.call("GET", back.pathname + back.search);
+    const made = await s.call("GET", back.pathname + back.search, undefined, undefined, (start.headers.get("set-cookie") ?? "").split(";")[0]);
     return { made, code: back.searchParams.get("code") };
   };
   const close = async () => {

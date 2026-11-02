@@ -11,7 +11,9 @@ const walk = async (who: string, query = "") => {
   const { url } = (await r.json()) as { url: string };
   const consent = await fetch(url, { redirect: "manual" });
   const back = new URL(consent.headers.get("location") ?? "");
-  return { start: r, url, callback: () => s.get(back.pathname + back.search) };
+  const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const hit = (c: string) => s.get(back.pathname + back.search, undefined, c);
+  return { start: r, url, callback: () => hit(cookie), callbackWith: hit };
 };
 
 describe("start-url", () => {
@@ -31,6 +33,16 @@ describe("start-url", () => {
     expect(((await wide.json()) as { error: string }).error).toContain("tenant admin");
     expect((await s.get("/v1/oauth/slack/start-url", ann)).status).toBe(404);
     expect((await s.get("/v1/oauth/github/start-url?access=everyone", ann)).status).toBe(400);
+  });
+});
+
+describe("login CSRF through start-url", () => {
+  it("sets the binding cookie, and a callback without it creates nothing", async () => {
+    s = await bootUi();
+    const f = await walk(ann);
+    expect(f.start.headers.get("set-cookie")).toMatch(/HttpOnly/i);
+    expect((await f.callbackWith("")).headers.get("location")).toContain("oauth_error=");
+    expect(s.store.listVisible({ user: "ann", tenant: "t1" })).toEqual([]);
   });
 });
 

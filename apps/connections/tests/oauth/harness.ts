@@ -25,7 +25,9 @@ export async function harness(opts: { refresh?: boolean; deny?: boolean } = {}, 
     expect(start.status).toBe(302);
     const consent = await fetch(start.headers.get("location") ?? "", { redirect: "manual" });
     const back = new URL(consent.headers.get("location") ?? "");
-    return { start: new URL(start.headers.get("location") ?? ""), back, callback: () => s.call("GET", back.pathname + back.search) };
+    const setCookie = start.headers.get("set-cookie") ?? "";
+    const send = (c: string) => s.call("GET", back.pathname + back.search, undefined, undefined, c);
+    return { start: new URL(start.headers.get("location") ?? ""), back, setCookie, callback: () => send(setCookie.split(";")[0] ?? ""), callbackWith: send };
   };
   return {
     s,
