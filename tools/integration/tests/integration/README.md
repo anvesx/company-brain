@@ -7,3 +7,4 @@ One folder per scenario. See the package README for what is real and what is a g
 - `zone/` zone-policy gates the readers
 - `resume/` restart mid-feed
 - `delete/` tombstone reaches the listing
+- `docs/` listing edge cases: edge filters, reader order, optional fields

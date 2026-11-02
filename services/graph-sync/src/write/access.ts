@@ -7,6 +7,7 @@ export const principal = (c: Ctx, kind: "person" | "team", raw: string): string 
   const id = resolve === undefined ? raw : resolve(kind, raw);
   const old = c.principals.get(id) ?? c.deps.store.node(tenant, id)?.kind;
   if (old !== undefined && old !== kind) throw new SyncError("BAD_INPUT", `${id} is already a ${old}, not a ${kind}`);
+  // Stryker disable next-line ConditionalExpression: equivalent, a principal seen this run already has its node, so the write below is skipped
   if (c.principals.has(id)) return id;
   // Written once, by whichever source saw it first: a person shared by two connectors is not rewritten on every run.
   if (c.deps.store.node(tenant, id) === undefined) writeNode(c, { tenant, id, kind, source: connector.id, address: id, title: id, version: "", props: {} });
