@@ -48,4 +48,16 @@ describe("writeTokenFile", () => {
     writeTokenFile(t.store, file);
     expect(read()).toEqual({ root: { github: "ghp_root" } });
   });
+  it("skips an oauth account with no usable token and counts only what it wrote", () => {
+    t.store.create({ ...base, owner: "ann", kind: "oauth", secret: "not json" });
+    t.store.create({ ...base, owner: "ann", provider: "drive", kind: "pat", secret: "drv" });
+    expect(writeTokenFile(t.store, file)).toEqual({ users: 1, tokens: 1 });
+    expect(read()).toEqual({ ann: { drive: "drv" } });
+  });
+  it("leaves mode 600 even when the temporary file already exists as 644", () => {
+    writeFileSync(`${file}.${process.pid}.tmp`, "x", { mode: 0o644 });
+    t.store.create({ ...base, owner: "ann", kind: "pat", secret: "x" });
+    writeTokenFile(t.store, file);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
 });
