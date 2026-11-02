@@ -27,4 +27,13 @@ describe("empty identities", () => {
     const error = captureError(() => promote(team(""), company, { by: "bo", at: 1 }, yes));
     expect(error).toMatchObject({ code: "NOT_MEMBER" });
   });
+
+  // Untyped callers (JSON input): non-string ids are not identities.
+  it("treats undefined or non-string ids as no identity", () => {
+    const bad = (v: unknown) => v as string;
+    expect(canSee({ kind: "personal", owner: bad(undefined) }, { user: bad(undefined), teams: [] })).toBe(false);
+    expect(canSee({ kind: "team", team: bad(undefined) }, { user: "ana", teams: [bad(undefined)] })).toBe(false);
+    const error = captureError(() => promote(team("infra"), company, { by: bad(undefined), at: 1 }, () => true));
+    expect(error).toMatchObject({ code: "NO_CONSENT" });
+  });
 });

@@ -17,5 +17,5 @@ export type Consent = { by: string; at: number };
 /** Caller-supplied proof that a user belongs to a team. Absent proof means no membership. */
 export type Membership = (user: string, team: string) => boolean;
 
-/** An identity is a non-empty string. The empty string matches nothing. */
-export const hasId = (id: string): boolean => id !== "";
+/** An identity is a non-empty string. Anything else, including undefined from untyped input, matches nothing. */
+export const hasId = (id: unknown): id is string => typeof id === "string" && id !== "";
