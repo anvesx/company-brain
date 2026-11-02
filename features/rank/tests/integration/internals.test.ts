@@ -33,3 +33,16 @@ describe("probe", () => {
     expect(seen).toEqual(["terms", "terms", "stats"]);
   });
 });
+
+describe("re-indexing the same docs", () => {
+  // On Linux SQLite with Node 26.13 an FTS5 delete leaves last_insert_rowid near 2^53 and the next run() threw
+  // "Value is too large to be represented as a JavaScript number". macOS does not show it, so CI is the real check.
+  it("keeps working across repeated batches and removals", () => {
+    const ix = open();
+    const batch = (g: number) => Array.from({ length: 10 }, (_, j) => doc(`d${j}`, { title: `gen${g} shared`, links: ["d0"] }));
+    for (let g = 0; g < 5; g++) ix.index(batch(g));
+    expect(ix.remove(["d1", "d2"])).toEqual({ removed: 2 });
+    ix.index(batch(9));
+    expect(ix.search({ query: "shared", asker, k: 100 })).toHaveLength(10);
+  });
+});
