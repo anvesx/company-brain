@@ -139,7 +139,7 @@ Fix: record a key id in each audit row's `detail`.
 - No ambiguity in what is signed: the regex at `token.ts:6` forbids `:` in user and tenant, so `user:tenant:exp` has one parse.
 - Minimum secret length of 32 characters is enforced twice (`config.ts:15`, `token.ts:18`).
 - Signature is checked before expiry, so expiry timing reveals nothing about unsigned input.
-- Groups are always `[]` (`token.ts:57`). Group ACLs never match through the HTTP path. That is a functional gap, not a leak.
+- Groups are always `[]` (`token.ts:57`). Group-based access rules never match through the HTTP path. That is a functional gap, not a leak.
 
 ## CI gaps
 
