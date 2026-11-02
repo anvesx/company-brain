@@ -28,7 +28,8 @@ describe("login CSRF: a state only completes in the browser that started it", ()
     const f = await h.signIn(ann, "github");
     const g = await h.signIn(bob, "github");
     expect((await f.callbackWith(g.setCookie.split(";")[0] ?? "")).status).toBe(400);
-    const tampered = `${g.setCookie.split(";")[0]?.slice(0, -1)}0`;
+    const own = g.setCookie.split(";")[0] ?? "";
+    const tampered = `${own.slice(0, -1)}${own.endsWith("0") ? "1" : "0"}`;
     expect((await g.callbackWith(tampered)).status).toBe(400);
     expect(accounts("ann")).toEqual([]);
     expect(accounts("bob")).toEqual([]);
