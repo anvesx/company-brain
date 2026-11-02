@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { checkZones } from "../accounts/widen.js";
 import type { Deps } from "../deps.js";
+import { disconnect } from "../sync/disconnect.js";
+import { syncRoute } from "../sync/route.js";
 import { type Env, requireCaller } from "./auth.js";
 import { parseNew, parsePatch } from "./validate.js";
 
@@ -37,8 +39,9 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const cur = d.store.listVisible(caller).find((a) => a.id === c.req.param("id"));
     if (!cur) return c.json({ error: "not found" }, 404);
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can disconnect this account" }, 403);
-    d.store.remove(cur.id);
+    disconnect(d, cur);
     return c.body(null, 204);
   });
+  syncRoute(r, d);
   return r;
 }

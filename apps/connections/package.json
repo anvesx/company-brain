@@ -10,11 +10,19 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mutation": "stryker run"
   },
   "dependencies": {
+    "@brain/connector-kit": "workspace:*",
+    "@brain/connectors": "workspace:*",
+    "@brain/graph-store": "workspace:*",
+    "@brain/graph-sync": "workspace:*",
     "@hono/node-server": "^2.1.5",
     "arctic": "^3.7.0",
     "hono": "^4.13.16"
+  },
+  "bin": {
+    "connections": "dist/bin.js"
   }
 }
