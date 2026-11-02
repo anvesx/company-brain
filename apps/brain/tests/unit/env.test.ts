@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoDeps, readEnv } from "../../src/config.js";
+import { demoDeps, readEnv } from "../../src/config/index.js";
 
 const bearer = (token: string) => ({ requestInfo: { headers: { authorization: token } } });
 

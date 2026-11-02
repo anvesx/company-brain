@@ -32,7 +32,7 @@ await app.close(); // idempotent, frees the port
 
 - Every search, whether over MCP or `app.search`, goes through governance and writes one audit row.
 - ACL, tenant and tombstone rules come from the query service. Unauthenticated HTTP gets `401`.
-- With `dataDir` (env `BRAIN_DATA_DIR`) the registry, search index and cursor store are files there, so ingested docs stay searchable and are not re-emitted after a restart. Without it they are in memory.
+- With `dataDir` (env `BRAIN_DATA_DIR`) the registry, search index, cursor store, audit DB and anchor log are files there, so ingested docs stay searchable and are not re-emitted after a restart. Without it they are in memory.
 - MCP search failures are logged through `logger` (cause name and message only, never query text, principal or token); the client still sees only `Search failed`.
 - Vector size is measured by embedding one probe text at startup unless `dimension` is given.
 
@@ -44,15 +44,36 @@ Cost: the check fetches the full document for each hit. Fine for a handful of hi
 
 ## Run
 
-`BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Without `BRAIN_DEMO=1` it exits 1, since no real connector is wired. Other variables: `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`, `BRAIN_DATA_DIR`, `BRAIN_AUTH_SECRET`, `BRAIN_AUDIT_KEY`.
+Local demo: `BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Prints `brain listening on http://HOST:PORT/mcp` and `brain health on http://HOST:HEALTHPORT`.
+
+Folder mode: `BRAIN_FOLDER_ROOT=/docs BRAIN_TENANT=acme BRAIN_AUTH_SECRET=... BRAIN_AUDIT_KEY=... node dist/bin.js` serves a directory as one tenant. Each document's ACL is in a `<doc>.acl.json` sidecar; a document without one is denied to everyone. Search embeds with the demo toy embedder, so every permitted match is found but ranking is meaningless. A connector that enforces per-user tokens needs `BRAIN_USER_TOKENS` (JSON file `{"tenant:user": "credential"}`); that wires `userTokenFor` and turns on the live ACL.
+
+| Variable                                                                                                    | Meaning                                                                                       |
+| ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `BRAIN_PORT`                                                                                                | MCP port, default 3000.                                                                       |
+| `BRAIN_HOST`                                                                                                | Bind address, default loopback. Use `0.0.0.0` in a container.                                 |
+| `BRAIN_ALLOWED_HOSTS`, `BRAIN_ALLOWED_ORIGINS`                                                              | Comma lists. Host values include the port. Default: loopback on the bound port.               |
+| `BRAIN_DATA_DIR`                                                                                            | Registry, index, cursors, `audit.db` and `anchors.log` on disk. Requires `BRAIN_AUTH_SECRET`. |
+| `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`                                                                            | Override the audit paths (default under the data dir).                                        |
+| `BRAIN_AUTH_SECRET`, `BRAIN_AUDIT_KEY`                                                                      | Token signing secret and audit key, each at least 32 characters.                              |
+| `BRAIN_AUTH_KEYS`                                                                                           | JSON `{"kid": "secret"}`: extra verification keys for rotation.                               |
+| `BRAIN_TOKEN_MAX_TTL_SECONDS`                                                                               | Longest lifetime a token may claim, default 86400.                                            |
+| `BRAIN_FOLDER_ROOT`, `BRAIN_TENANT`, `BRAIN_USER_TOKENS`                                                    | Folder mode (see above).                                                                      |
+| `BRAIN_EMBED_TIMEOUT_MS`, `BRAIN_EMBED_QUERY_TIMEOUT_MS`, `BRAIN_FETCH_TIMEOUT_MS`, `BRAIN_LIST_TIMEOUT_MS` | Time limits (defaults 30000, 5000, 30000, 30000).                                             |
+| `BRAIN_DRAIN_MS`, `BRAIN_FORCE_EXIT_MS`                                                                     | Shutdown: wait for in-flight work (10000), then exit 1 regardless (20000).                    |
+| `BRAIN_HEALTH_PORT`                                                                                         | Health port, default MCP port + 1 (0 = ephemeral).                                            |
+
+Shutdown (SIGTERM/SIGINT): new ingest and search are refused, in-flight ones finish (up to `BRAIN_DRAIN_MS`), then the MCP server, health server and every SQLite handle close. `/readyz` turns 503 at once. `/healthz` and `/readyz` are on the health port because the MCP server answers only `/mcp`.
+
+Container: `docker compose up --build` from this folder (see `docker-compose.yml`; set `BRAIN_AUTH_SECRET` and `BRAIN_AUDIT_KEY` in the environment first). The compose file keeps data in a named volume.
 
 ## Auth
 
-Bearer token: `<user>:<tenant>:<exp>:<hmac-sha256-hex(secret, "user:tenant:exp")>`, `exp` in epoch seconds, checked in constant time. A missing or bad signature is unauthenticated. A correctly signed token at or past `exp` throws `TokenExpiredError` (`code` `TOKEN_EXPIRED`, message `unauthenticated: token expired`); MCP clients see the same 401 as any other unauthenticated call. `BRAIN_AUTH_SECRET` must be at least 32 characters or startup fails. Mint with the exported `mintToken(secret, user, tenant, { ttlSeconds?, now? })`; the default lifetime is one hour (`DEFAULT_TTL_SECONDS`). `signedPrincipalFor(secret, now?)` takes an injectable millisecond clock.
+Without `BRAIN_AUTH_SECRET` the process refuses to start unless `BRAIN_DEMO=1` and `BRAIN_HOST` is loopback; only then is the forgeable unsigned `Bearer alice:acme` accepted.
 
-Breaking change: the earlier `user:tenant:hmac` tokens carry no expiry and are rejected. Re-mint every token. There is still no revocation before `exp` except rotating `BRAIN_AUTH_SECRET`, and `groups` is always empty.
+Bearer token, legacy form: `<user>:<tenant>:<exp>:<hmac-sha256-hex(secret, "user:tenant:exp")>`. Extended form: `<user>:<tenant>:<exp>:<groups>:<kid>:<sig>`, signed over `user:tenant:exp:groups:kid`; `groups` is comma separated and `kid` optional (empty when absent). Groups come only from the signed token. `exp` is epoch seconds, checked in constant time. A missing or bad signature, an unknown kid, or a lifetime past the maximum is unauthenticated. A correctly signed token at or past `exp` throws `TokenExpiredError` (`TOKEN_EXPIRED`); MCP clients see the same 401.
 
-Demo mode only: with `BRAIN_DEMO=1` and no secret, the forgeable unsigned `Bearer alice:acme` is accepted. Set a secret in anything reachable by others.
+Mint: `BRAIN_AUTH_SECRET=... node dist/bin.js mint-token --user alice --tenant acme [--groups eng,ops] [--ttl 3600] [--kid k2]`. In code: `mintToken(secret, user, tenant, { ttlSeconds?, groups?, kid?, maxLifetimeSeconds?, now? })`; default lifetime one hour. Rotation: add the new secret to `BRAIN_AUTH_KEYS` under a kid, mint with `--kid`, retire the old secret. There is no revocation before `exp` except rotating keys.
 
 Audit key: `BRAIN_AUDIT_KEY` (at least 32 characters) is required whenever `BRAIN_AUTH_SECRET` or `BRAIN_DATA_DIR` is set; `bin.ts` prints the reason and exits 1 without it. Only in pure demo mode (neither set) a missing key falls back to the public constant `demo-only-audit-key`, with a warning on stderr.
 
@@ -60,7 +81,8 @@ Audit key: `BRAIN_AUDIT_KEY` (at least 32 characters) is required whenever `BRAI
 
 - `@brain/retrieval` cannot take an injected search function, so the app starts `@brain/mcp-service` directly. Governed search (no live ACL) uses governance, whose sync query path cannot run a live verifier; live search composes retrieval's `toOutcomeFn`, `auditedOutcome` and `toSearchFn` instead.
 - `truncated` (candidate cap hit) is not exposed by `app.search`, which returns pointers only.
-- `bin.ts` does not configure `userTokenFor`; the live ACL is a library option.
+- `bin.ts` wires `userTokenFor` only through `BRAIN_USER_TOKENS`, and only for connectors that enforce user tokens. The folder connector does not.
+- Ingestion runs once at start, not on a schedule.
 - After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers written by the tenant's own connector (`pointer.source` equals the connector id; `runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing. A complete but empty listing, or one that would tombstone more than half of 10 or more known documents, is not reaped: the run returns `reapSkipped` and the app logs `reap skipped` at warn level (see `@brain/ingestion`).
 - `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
 

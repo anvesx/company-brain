@@ -1,12 +1,15 @@
 # src
 
-| File        | Job                                                                                         |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| `app.ts`    | `createBrainApp`: wires stores, ingestion, governance and the MCP server.                   |
-| `types.ts`  | `BrainDeps`, `BrainApp`, `SearchInput`.                                                     |
-| `config.ts` | `readEnv` and the demo connector (bound to tenant acme only), embeddings and principal.     |
-| `live/`     | Connector-based live ACL verifier and the audited search that uses it (`userTokenFor`).     |
-| `auth/`     | Signed expiring bearer tokens and the audit key rule.                                       |
-| `runtime/`  | Store opening (`dataDir`), the registry seed for ingestion's known set, the default logger. |
-| `bin.ts`    | Process entry: env config, demo ingest, graceful shutdown.                                  |
-| `index.ts`  | Public exports.                                                                             |
+| File       | Job                                                                                          |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| `app.ts`   | `createBrainApp`: opens stores, bounds dependencies, serves MCP and health, drains on close. |
+| `types.ts` | `BrainDeps`, `BrainApp`, `SearchInput`.                                                      |
+| `config/`  | Env parsing (`readEnv`, `readOps`) and the demo dependencies.                                |
+| `auth/`    | Signed expiring bearer tokens, token policy, auth mode and the audit key rule.               |
+| `cli/`     | Process wiring: source selection, per-user tokens, `mint-token`, `startFromEnv`.             |
+| `ops/`     | In-flight gate, `/healthz` and `/readyz`, signal handling with a force-exit timer.           |
+| `wire/`    | The ingest/search/audit pipeline over the opened stores.                                     |
+| `live/`    | Connector-based live ACL verifier and the audited search that uses it (`userTokenFor`).      |
+| `runtime/` | Store opening and closing, timeouts, ingestion's known set, the default logger.              |
+| `bin.ts`   | Process entry: `mint-token` subcommand, or serve, then graceful shutdown.                    |
+| `index.ts` | Public exports.                                                                              |

@@ -4,6 +4,7 @@ import type { Connector } from "@brain/connector-kit";
 import type { Pointer, Principal } from "@brain/core-types";
 import type { Governance } from "@brain/governance";
 import type { IngestionCounts } from "@brain/ingestion";
+import type { Timeouts } from "./config/ops.js";
 
 export type Logger = {
   error(msg: string, fields?: Record<string, unknown>): void;
@@ -47,6 +48,16 @@ export type BrainDeps = {
   port?: number | undefined;
   /** Vector size. Omitted: measured by embedding one probe text at startup. */
   dimension?: number | undefined;
+  /** Bind address; default loopback. Host (with port) and Origin allow-lists default to loopback on the bound port. */
+  host?: string | undefined;
+  allowedHosts?: string[] | undefined;
+  allowedOrigins?: string[] | undefined;
+  /** Per-call limits on embed, embedQuery, fetchText and connector.list; each defaults to DEFAULT_TIMEOUTS. */
+  timeouts?: Partial<Timeouts> | undefined;
+  /** Milliseconds close() waits for in-flight requests before cutting them off. Default 10000. */
+  drainMs?: number | undefined;
+  /** Serve /healthz and /readyz on this port; omitted: off. */
+  healthPort?: number | undefined;
   /** stdio only; default to process stdin and stdout. */
   stdin?: Readable | undefined;
   stdout?: Writable | undefined;
@@ -63,4 +74,5 @@ export type BrainApp = {
   /** Idempotent. */
   close(): Promise<void>;
   port: number | undefined;
+  healthPort: number | undefined;
 };
