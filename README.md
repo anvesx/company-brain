@@ -1,4 +1,4 @@
-18%
+62%
 
 # Company Brain
 
@@ -55,7 +55,7 @@ The two apps link sibling checkouts of the connectors repo (`link:../../../conne
 
 ## Progress
 
-The percentage on the first line was last computed before RAG moved out (2 Nov 2026). The component list it counts has not been recomputed against what remains, so treat it as stale.
+The percentage on the first line is computed in [docs/progress.md](docs/progress.md): working software over the committed backlog.
 
 **Real and tested here:** graph-store, graph-sync, query-router, zone-policy, change-cursor, connector-kit, core-types, the brain app and the connections app.
 
