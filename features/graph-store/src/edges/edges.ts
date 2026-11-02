@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { bad, EDGE_KINDS, type Edge, type EdgeKind, NOW, oneOf, text, time } from "../schema.js";
+import { batchOps } from "./batch.js";
 
 type Row = Record<string, unknown>;
 const toEdge = (r: Row): Edge => ({
@@ -22,6 +23,7 @@ export function edgeOps(db: DatabaseSync) {
   const close = db.prepare("UPDATE edges SET valid_to = ? WHERE tenant = ? AND from_id = ? AND to_id = ? AND kind = ? AND valid_to IS NULL");
   const closeAll = db.prepare("UPDATE edges SET valid_to = ? WHERE tenant = ? AND (from_id = ? OR to_id = ?) AND valid_to IS NULL");
   return {
+    ...batchOps(db),
     add(e: Edge, at: number): void {
       const [t, from, to, kind, source] = check(e);
       ins.run(t, from, to, kind, source, time("at", at));
@@ -58,12 +60,6 @@ export function edgeOps(db: DatabaseSync) {
         .prepare(q)
         .all(text("tenant", tenant), text("source", source), oneOf("kind", kind, EDGE_KINDS), NOW, NOW)
         .map(toEdge);
-    },
-    /** Prepared out-edge lookup for traversal; ids come back in insertion order. */
-    outTargets(kinds: readonly string[]): (tenant: string, id: string, when: number) => string[] {
-      const marks = kinds.map(() => "?").join(", ");
-      const q = db.prepare(`SELECT to_id FROM edges WHERE tenant = ? AND from_id = ? AND kind IN (${marks}) AND ${VALID} ORDER BY rowid`);
-      return (t, id, when) => q.all(t, id, ...kinds, when, when).map((r) => r["to_id"] as string);
     },
   };
 }
