@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { open, seal } from "./crypto.js";
 import { migrate, type Row, SCHEMA, view } from "./rows.js";
+import { open, seal } from "./rules/crypto.js";
 import type { Account, Caller, Kind, NewAccount, Patch, Status } from "./types.js";
 
 export type Secret = { id: string; owner: string; provider: string; kind: Kind; secret: string };

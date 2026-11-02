@@ -1,7 +1,7 @@
 import { customManifest, hasLiveRecheck, type Listed } from "@anvesx/connectors";
 import { Hono } from "hono";
 import type { Deps } from "../deps.js";
-import { type Env, requireCaller } from "../http/auth.js";
+import { type Env, requireCaller } from "../http/guard/auth.js";
 import { kindsOf } from "./kinds.js";
 import { parseCustom } from "./parse.js";
 

@@ -32,8 +32,11 @@ The full design is in [docs/brain](docs/brain). Decisions are in [docs/adr](docs
 
 ## Conventions
 
-- Files are at most 80 lines. A folder holds at most 5 files plus its README.
+- Files are at most 80 lines. A folder holds at most 5 files, and its README counts as one of them.
 - Every package has `src/`, `tests/` and a README describing the feature in depth.
+- Every folder under `src/`, `tests/`, `bin/` and `scripts/` has its own README, except a folder that holds only JSON fixtures.
+- Tests live in the package's `tests/` folder beside `src/`, never inside `src/`.
+- `pnpm structure` prints how many packages, files and folders it checked.
 - Specs come first, then failing tests, then code. Existing libraries are used wherever they exist, including `node:sqlite`.
 - Testing covers unit, integration and mutation (Stryker, break at 80).
 - CI, Changesets versioning and Lefthook commit hooks are configured. Commits use conventional messages.

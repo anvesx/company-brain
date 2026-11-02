@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { edgeOps } from "./edges.js";
+import { edgeOps } from "./edges/edges.js";
+import { reach } from "./edges/reach.js";
 import { nodeOps, tx } from "./nodes.js";
-import { reach } from "./reach.js";
 import { bad, GraphError, type GraphStore, text, time } from "./schema.js";
 
 export type { Edge, EdgeKind, GraphNode, GraphStore, NodeKind } from "./schema.js";

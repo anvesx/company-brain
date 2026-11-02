@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env } from "../http/auth.js";
+import type { Env } from "../http/guard/auth.js";
 
 /**
  * Two additions for a browser around the bearer-only OAuth routes:

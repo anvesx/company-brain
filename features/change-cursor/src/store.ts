@@ -1,5 +1,14 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { DEFAULT_TTL_MS, DROP_LEGACY_SEEN_SQL, requireCursor, requireFunction, requirePositiveInt, requireText, requireTime, SCHEMA_SQL } from "./schema.js";
+import {
+  DEFAULT_TTL_MS,
+  DROP_LEGACY_SEEN_SQL,
+  requireCursor,
+  requireFunction,
+  requirePositiveInt,
+  requireText,
+  requireTime,
+  SCHEMA_SQL,
+} from "./model/schema.js";
 
 /** Durable cursor and dedupe state, backed by one SQLite file. */
 export interface CursorStore {

@@ -1,8 +1,8 @@
 import { GraphError } from "@anvesx/graph-store";
-import { syncAccess } from "./access.js";
-import { type Ctx, rootNode, syncDocument, writeNode } from "./document.js";
 import { syncMemberships } from "./membership/sync.js";
 import { type SyncDeps, SyncError, type SyncReport } from "./types.js";
+import { syncAccess } from "./write/access.js";
+import { type Ctx, rootNode, syncDocument, writeNode } from "./write/document.js";
 
 type Opts = { pageSize?: number; signal?: AbortSignal };
 

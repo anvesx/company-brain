@@ -5,5 +5,4 @@ Drive the real app over HTTP: the static page routes, the `start-url` variant an
 - `fixture.ts`: boots the app with the replay provider and the UI redirect on.
 - `routes.test.ts`: page and asset serving, content types, path traversal.
 - `oauth-ui.test.ts`: `start-url` JSON and the redirect back to the page.
-- `launch-redirect.test.ts`: the launcher's `uiRedirect` option sends a failed callback back to the page.
-- `last-sync.test.ts`: `lastSyncAt` is null, then set by a successful sync only.
+- `pages/`: the launcher redirect and `lastSyncAt`.

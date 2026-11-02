@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkTiers } from "../../src/tiers.ts";
-import { cleanFixtures, fixture, packageJson } from "./fixture.js";
+import { cleanFixtures, fixture, packageJson } from "../support/fixture.ts";
 
 afterEach(cleanFixtures);
 

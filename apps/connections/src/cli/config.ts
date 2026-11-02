@@ -1,4 +1,4 @@
-import { parseKey } from "../accounts/crypto.js";
+import { parseKey } from "../accounts/rules/crypto.js";
 import type { OAuthProvider } from "../oauth/providers.js";
 import { oauthFromEnv } from "./oauth-env.js";
 

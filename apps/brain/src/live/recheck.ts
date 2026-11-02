@@ -1,5 +1,5 @@
 import type { GraphNode } from "@anvesx/graph-store";
-import type { Caller } from "../auth.js";
+import type { Caller } from "../gate/auth.js";
 
 /** Asks the source whether `caller` can still read `doc` right now. Throwing or returning false hides the document. */
 export type Recheck = (doc: GraphNode, caller: Caller) => Promise<boolean>;

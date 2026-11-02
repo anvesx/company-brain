@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { oauthProvider } from "../../src/oauth/providers.js";
-import { refreshAccount } from "../../src/oauth/refresh.js";
+import { refreshAccount } from "../../src/oauth/state/refresh.js";
 import { input, tempStore } from "../accounts/fixture.js";
 import { startReplay } from "../oauth/replay-provider.js";
 

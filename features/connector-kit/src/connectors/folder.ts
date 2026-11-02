@@ -1,7 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { type Connector, ConnectorError, type Skipped } from "../core/contract.js";
-import { pageWalk, type Walks } from "../core/walks.js";
+import { pageWalk, type Walks } from "../core/paging/walks.js";
 import { aclVersion, readAcl } from "./folder-acl.js";
 import { escapes, safeRealpath } from "./folder-path.js";
 import { scan } from "./folder-scan.js";

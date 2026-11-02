@@ -2,7 +2,7 @@ import { execFile, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanFixtures, fixture, packageJson } from "../unit/fixture.js";
+import { cleanFixtures, fixture, packageJson } from "../support/fixture.ts";
 
 afterEach(cleanFixtures);
 const cli = resolve("bin/cli.mjs");
@@ -12,11 +12,12 @@ const base = (name: string) => ({
   [`features/${name}/package.json`]: packageJson(`@anvesx/${name}`),
   [`features/${name}/README.md`]: "# package",
   [`features/${name}/src/README.md`]: "# source",
-  [`features/${name}/tests/.keep`]: "",
+  [`features/${name}/tests/README.md`]: "# tests",
+  [`features/${name}/tests/a.test.ts`]: "",
 });
 
 describe("structure-lint CLI", () => {
-  it("prints all four rule violations and exits one", () => {
+  it("prints all six rule violations and exits one", () => {
     const crowded = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`features/two/src/many/${index}.ts`, ""]));
     const root = fixture({
       ...base("core-types"),
@@ -25,19 +26,29 @@ describe("structure-lint CLI", () => {
       ...crowded,
       "features/one/src/long.ts": Array(81).fill("x").join("\n"),
       "features/one/src/missing/code.ts": "",
+      "features/one/src/stray.test.ts": "",
+      "features/five/package.json": packageJson("@anvesx/five"),
+      "features/five/src/README.md": "# source",
       "features/two/src/many/README.md": "# source",
       "features/two/package.json": packageJson("@anvesx/two", { "@anvesx/one": "workspace:*" }),
     });
     const result = run(root);
     expect(result.status).toBe(1);
-    for (const rule of ["lines", "fanout", "layout", "tiers"]) expect(result.stdout).toContain(`:${rule}:`);
-    expect(result.stdout).toMatch(/checked 3 packages, \d+ files/);
+    for (const rule of ["lines", "fanout", "layout", "tiers", "readme", "tests-beside"]) expect(result.stdout).toContain(`:${rule}:`);
+    expect(result.stdout).toMatch(/checked 4 packages, \d+ files, \d+ folders/);
+  });
+
+  it("prints exact denominators: every file and folder under src, tests, bin, scripts", () => {
+    const root = fixture({ ...base("core-types"), "features/core-types/bin/README.md": "# bin", "features/core-types/bin/c.mjs": "" });
+    const result = run(root);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("checked 1 packages, 5 files, 3 folders");
   });
 
   it("exits two when no packages exist", () => {
     const result = run(fixture({ "README.md": "empty" }));
     expect(result.status).toBe(2);
-    expect(result.stdout).toContain("checked 0 packages, 0 files");
+    expect(result.stdout).toContain("checked 0 packages, 0 files, 0 folders");
   });
 
   it("runs concurrently on a valid fixture and on the real repository", async () => {

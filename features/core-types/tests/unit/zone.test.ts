@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mostRestrictedZone, ZoneSchema } from "../../src/zone.js";
+import { mostRestrictedZone, ZoneSchema } from "../../src/access/zone.js";
 
 describe("zone", () => {
   it("takes the most restricted zone of the inputs", () => {

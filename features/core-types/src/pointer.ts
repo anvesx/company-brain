@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { AclSchema } from "./acl.js";
-import { IdSchema } from "./principal.js";
-import { ZoneSchema } from "./zone.js";
+import { AclSchema } from "./access/acl.js";
+import { IdSchema } from "./access/principal.js";
+import { ZoneSchema } from "./access/zone.js";
 
 /** One row per document. Holds where it is, never what it says. */
 export const PointerSchema = z

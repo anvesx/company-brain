@@ -1,13 +1,13 @@
 import { hasLiveRecheck } from "@anvesx/connectors";
 import { Hono } from "hono";
-import { checkZones } from "../accounts/widen.js";
+import { checkZones } from "../accounts/rules/widen.js";
 import { kindsOf } from "../catalog/kinds.js";
 import type { Deps } from "../deps.js";
-import { disconnect } from "../sync/disconnect.js";
+import { disconnect } from "../sync/data/disconnect.js";
 import { syncRoute } from "../sync/route.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
-import { type Env, requireCaller } from "./auth.js";
-import { parseNew, parsePatch } from "./validate.js";
+import { type Env, requireCaller } from "./guard/auth.js";
+import { parseNew, parsePatch } from "./guard/validate.js";
 
 const json = async (req: Request): Promise<unknown> => req.json().catch(() => undefined);
 

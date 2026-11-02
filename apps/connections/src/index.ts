@@ -1,14 +1,14 @@
-export { parseKey } from "./accounts/crypto.js";
+export { parseKey } from "./accounts/rules/crypto.js";
+export { checkZones } from "./accounts/rules/widen.js";
 export { openStore, type Store } from "./accounts/store.js";
 export type { Account, Caller, Kind, Zone } from "./accounts/types.js";
-export { checkZones } from "./accounts/widen.js";
 export { type Config, parseConfig } from "./cli/config.js";
 export { type Running, start } from "./cli/start.js";
 export type { Deps } from "./deps.js";
 export { createApp } from "./http/app.js";
 export { startServer } from "./http/serve.js";
 export { type OAuthProvider, oauthProvider } from "./oauth/providers.js";
-export { type RefreshResult, refreshAccount } from "./oauth/refresh.js";
-export { disconnect } from "./sync/disconnect.js";
+export { type RefreshResult, refreshAccount } from "./oauth/state/refresh.js";
+export { disconnect } from "./sync/data/disconnect.js";
 export { syncRoute } from "./sync/route.js";
 export { writeTokenFile } from "./tokens/write-token-file.js";

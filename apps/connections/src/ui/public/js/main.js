@@ -1,7 +1,7 @@
 import { setToken, token, who } from "./api.js";
 import { mount } from "./dom.js";
+import { detail } from "./views/account/detail.js";
 import { add } from "./views/add.js";
-import { detail } from "./views/detail.js";
 import { list } from "./views/list.js";
 import { signin } from "./views/signin.js";
 

@@ -1,14 +1,14 @@
 import { hasLiveRecheck } from "@anvesx/connectors";
 import { generateCodeVerifier, generateState } from "arctic";
 import { Hono } from "hono";
-import { checkZones } from "../accounts/widen.js";
+import { checkZones } from "../accounts/rules/widen.js";
 import type { Deps } from "../deps.js";
-import { type Env, requireCaller } from "../http/auth.js";
-import { parseStart } from "../http/validate.js";
+import { type Env, requireCaller } from "../http/guard/auth.js";
+import { parseStart } from "../http/guard/validate.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, credentialOf, exchange } from "./flow.js";
-import { createPending } from "./pending.js";
 import { appOf, manifestFor, providerFor } from "./providers.js";
+import { createPending } from "./state/pending.js";
 
 /** `/oauth/:provider/start` (bearer) and `/oauth/:provider/callback` (the browser redirect; the caller is the one who started). */
 export function oauthRoutes(d: Deps): Hono<Env> {

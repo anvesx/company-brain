@@ -6,9 +6,13 @@ under `features`, `services`, `modules`, `apps`, and `tools`, then prints determ
 
 ## Rules
 
-- `.ts` and `.mjs` files below `src/` and `tests/` are limited to 80 physical lines.
-- Source/test folders are limited to five implementation files; required README files are docs.
-- Each package needs `src/`, `tests/`, and `README.md`; each source folder needs `README.md`.
+- Code files (`.ts .mjs .cjs .js .css .html`) below `src/`, `tests/`, `bin/` and `scripts/` are
+  limited to 80 physical lines.
+- Each of those folders, nested ones included, holds at most five files, the README counted.
+- Each of those folders has its own `README.md`. The only exemption is a folder made purely of
+  `.json` data files, which may omit it so a full fixture folder stays within five files.
+- Each package needs `README.md`, `src/` and `tests/`, side by side. `src` code needs a `.test`
+  file in that `tests/` folder, and `.test`/`.spec` files outside `tests/` are violations.
 - Workspace dependencies must point down: feature to core-types, service to feature, module to
   service/feature, app to module, and tool to feature, service or module (a tool is a leaf: nothing depends on it, and it never depends on an app).
 
@@ -19,7 +23,7 @@ node tools/structure-lint/bin/cli.mjs [--root /path/to/workspace]
 ```
 
 Exit `0` means clean, `1` means violations or invalid package metadata, and `2` means zero packages
-were found. Every run prints package and checked-file counts, so an empty gate cannot look green.
+were found. Every run prints package, file and folder counts, so an empty gate cannot look green.
 
 ## Limits and development
 

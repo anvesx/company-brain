@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AclSchema } from "../../src/acl.js";
-import { PrincipalSchema } from "../../src/principal.js";
+import { AclSchema } from "../../src/access/acl.js";
+import { PrincipalSchema } from "../../src/access/principal.js";
 
 describe("PrincipalSchema", () => {
   it("defaults groups to empty", () => {

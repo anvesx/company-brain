@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkLines } from "../../src/lines.ts";
-import { cleanFixtures, fixture } from "./fixture.js";
+import { checkLines } from "../../src/checks/lines.ts";
+import { cleanFixtures, fixture } from "../support/fixture.ts";
 
 afterEach(cleanFixtures);
 
@@ -21,6 +21,19 @@ describe("line rule", () => {
     expect(found).toHaveLength(2);
     expect(found.every((item) => item.rule === "lines")).toBe(true);
     expect(found[0]?.message).toContain("81 lines exceeds 80");
+  });
+
+  it("also checks bin and scripts files, including .cjs", () => {
+    const body = Array(81).fill("x").join("\n");
+    const root = fixture({ "pkg/bin/cli.mjs": body, "pkg/scripts/run.cjs": body });
+    expect(checkLines(root, [join(root, "pkg")]).map((item) => item.file)).toEqual(["pkg/bin/cli.mjs", "pkg/scripts/run.cjs"]);
+  });
+
+  it("checks browser assets (.js, .css, .html) but not data (.json)", () => {
+    const body = Array(81).fill("x").join("\n");
+    const files = { "pkg/src/ui/a.js": body, "pkg/src/ui/b.css": body, "pkg/src/ui/c.html": body, "pkg/src/ui/d.json": body };
+    const root = fixture(files);
+    expect(checkLines(root, [join(root, "pkg")]).map((item) => item.file)).toEqual(["pkg/src/ui/a.js", "pkg/src/ui/b.css", "pkg/src/ui/c.html"]);
   });
 
   it("ignores non-source extensions and empty files", () => {

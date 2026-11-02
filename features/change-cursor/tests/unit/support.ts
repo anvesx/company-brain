@@ -1,4 +1,4 @@
-import { CursorError } from "../../src/errors.js";
+import { CursorError } from "../../src/model/errors.js";
 
 /** Returns the CursorError that fn throws. Fails if fn throws anything else or throws nothing. */
 export function thrownBy(fn: () => unknown): CursorError {

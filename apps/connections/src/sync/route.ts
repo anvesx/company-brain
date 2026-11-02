@@ -1,8 +1,8 @@
 import type { Hono } from "hono";
 import type { Deps } from "../deps.js";
-import type { Env } from "../http/auth.js";
+import type { Env } from "../http/guard/auth.js";
 import { providerFor } from "../oauth/providers.js";
-import { refreshAccount } from "../oauth/refresh.js";
+import { refreshAccount } from "../oauth/state/refresh.js";
 import { accessTokenOf } from "../tokens/access-token.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { runAccountSync } from "./run.js";

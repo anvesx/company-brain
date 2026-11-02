@@ -1,5 +1,5 @@
 import type { Connector } from "@anvesx/connector-kit";
-import type { Caller } from "../auth.js";
+import type { Caller } from "../gate/auth.js";
 import type { Recheck } from "./recheck.js";
 
 export interface SourceRecheckDeps {

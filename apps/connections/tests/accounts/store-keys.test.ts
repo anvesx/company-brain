@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseKey } from "../../src/accounts/crypto.js";
+import { parseKey } from "../../src/accounts/rules/crypto.js";
 import { openStore } from "../../src/accounts/store.js";
 import { input, key, tempStore } from "./fixture.js";
 

@@ -1,4 +1,4 @@
-import { CursorError } from "./errors.js";
+import { CursorError } from "./model/errors.js";
 
 /** What changed between the known listing and the listing the source reports now. */
 export interface ListingDiff {

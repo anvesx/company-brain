@@ -1,5 +1,5 @@
 import { type Connector, ConnectorError, type FakeDoc, type ListedDoc } from "../../src/core/contract.js";
-import { pageItems } from "../../src/core/paging.js";
+import { pageItems } from "../../src/core/paging/paging.js";
 
 export type { FakeDoc };
 

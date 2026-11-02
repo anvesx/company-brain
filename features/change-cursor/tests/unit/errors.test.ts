@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CursorError } from "../../src/errors.js";
+import { CursorError } from "../../src/model/errors.js";
 
 describe("CursorError", () => {
   it("is an Error with a name, a message and a typed code", () => {

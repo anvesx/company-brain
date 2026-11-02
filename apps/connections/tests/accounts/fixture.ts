@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseKey } from "../../src/accounts/crypto.js";
+import { parseKey } from "../../src/accounts/rules/crypto.js";
 import { openStore, type Store } from "../../src/accounts/store.js";
 
 export const key = parseKey("ab".repeat(32));

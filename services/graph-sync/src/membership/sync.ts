@@ -1,6 +1,6 @@
-import { principal } from "../access.js";
-import type { Ctx } from "../document.js";
 import { SyncError } from "../types.js";
+import { principal } from "../write/access.js";
+import type { Ctx } from "../write/document.js";
 
 /** Makes the connector's `member-of` edges equal its membership list: adds missing ones, closes the ones it no longer reports. */
 export async function syncMemberships(c: Ctx): Promise<void> {

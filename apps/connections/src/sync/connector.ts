@@ -2,7 +2,7 @@ import type { Connector } from "@anvesx/connector-kit";
 import type { Registry } from "@anvesx/connectors";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
-import { REPO } from "./repo.js";
+import { REPO } from "./data/repo.js";
 
 /** The graph `source` of everything one account writes, so one disconnect closes only its edges. */
 export const sourceOf = (a: Pick<Account, "provider" | "id">): string => `${a.provider}:${a.id}`;
