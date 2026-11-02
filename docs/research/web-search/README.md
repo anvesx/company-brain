@@ -2,7 +2,7 @@
 
 **Do not copy Google's crawl stack. Copy its discipline.** 
 
-Company-brain reads connector change feeds over a small, permission-bound corpus. BM25 stays a strong baseline: on [BEIR](https://arxiv.org/abs/2104.08663) (a zero-shot retrieval benchmark) it beats dense passage retrieval (DPR) by 47.7% and trails most dense models by about 3%. 
+Company-brain reads connector change feeds over a small, permission-bound corpus. BM25 stays a strong baseline: on [BEIR](https://arxiv.org/abs/2104.08663) (a zero-shot retrieval benchmark) it beats dense passage retrieval (DPR) by 44.0% (paper prints 47.7%). Stronger dense models sit 2 to 8% below BM25. 
 
 Phase 1 is SQLite FTS5 BM25 with column weights plus recency, link and closeness signals. Phase 2 adds embeddings fused by reciprocal rank fusion (RRF). Phase 3 trains LambdaMART from agent-open feedback. Apply the access control list (ACL) filter inside the candidate query, before ranking. Every phase must raise normalized discounted cumulative gain at 10 (nDCG@10) on an offline set first.
 

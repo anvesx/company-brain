@@ -24,7 +24,7 @@ The court splits systems into two kinds. **Memorizers** (Navboost, QBST) learn f
 
 ## What this means for pointer search
 
-1. **Text match leads.** On the Benchmarking IR (BEIR) retrieval set, BM25 averages within about 3% of most dense models zero-shot. See [alternatives-to-bm25.md](alternatives-to-bm25.md).
+1. **Text match leads.** On the Benchmarking IR (BEIR) retrieval set, stronger dense models sit 2 to 8% below BM25 zero-shot (recomputed from Table 2). See [alternatives-to-bm25.md](alternatives-to-bm25.md).
 2. **Links help when they exist.** In files, links are folder parents, shared mentions and doc-to-doc references. Use them as a small prior, not PageRank over the web.
 3. **Clicks need volume.** Navboost works on huge query logs. A team of 50 has too few clicks per query. Agent-open feedback needs aggregation across similar queries.
 4. **Spam is not the threat.** Stale and duplicate files are. Recency and canonical-version signals matter more.
