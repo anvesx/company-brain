@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+env:
+  NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
 jobs:
   verify:
     runs-on: ubuntu-latest
