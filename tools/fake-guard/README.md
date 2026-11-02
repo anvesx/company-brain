@@ -20,3 +20,12 @@ Fails the build when tests or production code lean on fakes. It exists because g
 ```bash
 pnpm guard:fakes
 ```
+
+## Mutation testing
+
+```bash
+pnpm --filter @anvesx/fake-guard mutation
+```
+
+Stryker breaks below 80. Current score 98.25. One survivor is an equivalent mutant (a regex tail that
+matches the empty string either way) and one is an unreachable `?? ""` fallback.
