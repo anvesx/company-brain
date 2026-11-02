@@ -13,8 +13,17 @@ describe("promote", () => {
     expect(promote(personal("ana"), company, ana)).toEqual(company);
   });
 
-  it("promotes team to company with any non-empty consent", () => {
-    expect(promote(team("infra"), company, { by: "bo", at: 2 })).toEqual(company);
+  // M6: this used to accept any non-empty `by`. A team zone now needs a proven member.
+  it("promotes team to company when the consenting user is a proven team member", () => {
+    const member = (user: string, t: string) => user === "bo" && t === "infra";
+    expect(promote(team("infra"), company, { by: "bo", at: 2 }, member)).toEqual(company);
+  });
+
+  it("throws NOT_MEMBER for team promotion by a non-member, or with no membership proof", () => {
+    const member = (user: string) => user === "bo";
+    const by = { by: "intern", at: 2 };
+    expect(captureError(() => promote(team("infra"), company, by, member))).toMatchObject({ code: "NOT_MEMBER" });
+    expect(captureError(() => promote(team("infra"), company, by))).toMatchObject({ code: "NOT_MEMBER" });
   });
 
   it("does not validate the consent timestamp", () => {

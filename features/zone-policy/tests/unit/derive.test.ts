@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { derive, PromotionError } from "../../src/index.js";
+import { canSee, derive, PromotionError } from "../../src/index.js";
 import { captureError, company, personal, team } from "../support/zones.js";
 
 describe("derive", () => {
@@ -16,8 +16,25 @@ describe("derive", () => {
     expect(derive([team("infra"), company])).toEqual(team("infra"));
   });
 
-  it("takes the strictest zone: personal over team", () => {
-    expect(derive([team("infra"), personal("ana")])).toEqual(personal("ana"));
+  // H4: this used to assert derive([team, personal]) === personal, which let a
+  // non-member of the team see team data. Personal is stricter only for a member.
+  it("returns personal for personal + team only when the owner is proven in the team", () => {
+    const member = (user: string, t: string) => user === "ana" && t === "infra";
+    expect(derive([team("infra"), personal("ana")], member)).toEqual(personal("ana"));
+  });
+
+  it("throws NO_COMMON_ZONE for personal + team without proof or for a non-member", () => {
+    const nobody = () => false;
+    for (const call of [() => derive([team("finance"), personal("bob")]), () => derive([team("finance"), personal("bob")], nobody)]) {
+      expect(captureError(call)).toMatchObject({ code: "NO_COMMON_ZONE" });
+    }
+  });
+
+  it("never lets a non-finance user see data derived from finance + personal(bob)", () => {
+    const isMember = (user: string, t: string) => user === "bob" && t === "finance";
+    const zone = derive([team("finance"), personal("bob")], isMember);
+    const outsider = { user: "eve", teams: ["eng"] };
+    expect(canSee(zone, outsider)).toBe(false);
   });
 
   it("accepts the same personal owner twice", () => {

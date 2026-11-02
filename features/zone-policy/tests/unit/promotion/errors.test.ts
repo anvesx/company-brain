@@ -11,8 +11,8 @@ describe("PromotionError", () => {
     expect(error.name).toBe("PromotionError");
   });
 
-  it("accepts every promotion code, including NO_COMMON_ZONE", () => {
-    const codes = ["NO_CONSENT", "NOT_OUTWARD", "NOT_OWNER", "NO_COMMON_ZONE"] as const;
+  it("accepts every promotion code, including NO_COMMON_ZONE and NOT_MEMBER", () => {
+    const codes = ["NO_CONSENT", "NOT_OUTWARD", "NOT_OWNER", "NO_COMMON_ZONE", "NOT_MEMBER"] as const;
     expect(codes.map((code) => new PromotionError(code, "x").code)).toEqual([...codes]);
   });
 });

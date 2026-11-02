@@ -1,4 +1,4 @@
-export type PromotionErrorCode = "NO_CONSENT" | "NOT_OUTWARD" | "NOT_OWNER" | "NO_COMMON_ZONE";
+export type PromotionErrorCode = "NO_CONSENT" | "NOT_OUTWARD" | "NOT_OWNER" | "NO_COMMON_ZONE" | "NOT_MEMBER";
 
 /** Thrown by promote and derive. The code says which rule failed. */
 export class PromotionError extends Error {

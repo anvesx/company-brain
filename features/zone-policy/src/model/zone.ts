@@ -13,3 +13,9 @@ export type Principal = { user: string; teams: string[] };
 
 /** The owner's consent to promote data. `at` is recorded by the caller and not validated here. */
 export type Consent = { by: string; at: number };
+
+/** Caller-supplied proof that a user belongs to a team. Absent proof means no membership. */
+export type Membership = (user: string, team: string) => boolean;
+
+/** An identity is a non-empty string. The empty string matches nothing. */
+export const hasId = (id: string): boolean => id !== "";
