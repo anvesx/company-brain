@@ -42,6 +42,16 @@ export const createDriveConnector = (config: DriveConfig): SourceConnector => {
         return { text: String(body.data), version: meta.version ?? "0" };
       });
     },
+    async canRead(address, { token }) {
+      try {
+        await client(token).files.get({ fileId: address, fields: "id", supportsAllDrives: true });
+        return true;
+      } catch (error) {
+        const status = statusOf(error);
+        if (status === 404 || status === 403) return false;
+        throw toConnectorError(error, "canRead");
+      }
+    },
     async changes({ token, cursor }) {
       return guarded("changes", () => changesSince(client(token), cursor));
     },
