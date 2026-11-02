@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createFakeConnector, type FakeDoc } from "../../src/index.js";
+import type { FakeDoc } from "../../src/index.js";
+import { createFakeConnector } from "../support/fake.js";
 
 const doc = (address: string): FakeDoc => ({
   address,

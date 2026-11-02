@@ -1,5 +1,6 @@
 import { createCursorStore } from "@brain/change-cursor";
-import { createFakeConnector, type FakeDoc } from "@brain/connector-kit";
+import type { FakeDoc } from "@brain/connector-kit";
+import { createFakeConnector } from "@brain/connector-kit/testing";
 import type { Principal } from "@brain/core-types";
 import { MIN_SECRET_CHARS } from "./auth/token.js";
 import type { BrainDeps } from "./types.js";

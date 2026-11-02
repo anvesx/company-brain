@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ConnectorError, createConnectorRegistry, createFakeConnector } from "../../src/index.js";
+import { ConnectorError, createConnectorRegistry } from "../../src/index.js";
+import { createFakeConnector } from "../support/fake.js";
 
 describe("connector registry", () => {
   it("registers and retrieves a connector", () => {

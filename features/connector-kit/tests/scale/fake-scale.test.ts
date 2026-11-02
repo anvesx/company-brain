@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { expect, it } from "vitest";
-import { createFakeConnector, type FakeDoc } from "../../src/index.js";
+import { createFakeConnector, type FakeDoc } from "../support/fake.js";
 
 it("pages 50k fake docs under 2 seconds", async () => {
   const docs: FakeDoc[] = Array.from({ length: 50_000 }, (_, index) => ({

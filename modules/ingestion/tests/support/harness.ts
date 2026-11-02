@@ -1,6 +1,7 @@
 import { createCursorStore } from "@brain/change-cursor";
 import { chunkText } from "@brain/chunker";
-import { type Connector, createFakeConnector, type FakeDoc } from "@brain/connector-kit";
+import type { Connector, FakeDoc } from "@brain/connector-kit";
+import { createFakeConnector } from "@brain/connector-kit/testing";
 import { createSearchIndex } from "@brain/hybrid-search";
 import { createIndexService, type IndexDeps, type IndexService } from "@brain/index-service";
 import { createRegistry } from "@brain/pointer-registry";
