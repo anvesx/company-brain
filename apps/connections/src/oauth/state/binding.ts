@@ -1,8 +1,14 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Caller } from "../../accounts/types.js";
 
-export const BIND_COOKIE = "oauth_bind";
 export const BIND_TTL = 600;
+
+/** True when the browser reached us over https: directly, or through a proxy that says so with `x-forwarded-proto`. */
+export const isSecure = (url: string, forwarded: string | undefined): boolean =>
+  new URL(url).protocol === "https:" || (forwarded ?? "").split(",")[0]?.trim().toLowerCase() === "https";
+
+/** Over https the cookie is `__Host-` prefixed (Secure, Path=/, no Domain), so a sibling subdomain cannot plant one. */
+export const bindCookie = (secure: boolean): string => (secure ? "__Host-oauth_bind" : "oauth_bind");
 
 const digest = (state: string) => createHash("sha256").update(state).digest("hex");
 const mac = (secret: string, hash: string, c: Caller) => createHmac("sha256", secret).update(`oauth-bind:${hash}:${c.user}:${c.tenant}`).digest("hex");

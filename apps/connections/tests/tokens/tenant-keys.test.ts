@@ -43,4 +43,11 @@ describe("token file tenant keys", () => {
     ] as const)
       expect(userKey(tn, u)).toBe(brainKey(tn, u));
   });
+  it("encodes a lone surrogate instead of throwing, and keeps it apart from U+FFFD", () => {
+    for (const k of [userKey, brainKey]) {
+      expect(k("t", "a\ud800b")).toBe("t:a%UD800b");
+      expect(k("t", "a\ud800b")).not.toBe(k("t", "a\ufffdb"));
+      expect(k("t", "\u{1f600}")).toBe("t:%F0%9F%98%80");
+    }
+  });
 });

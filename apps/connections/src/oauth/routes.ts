@@ -9,7 +9,7 @@ import { parseStart } from "../http/guard/validate.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, credentialOf, exchange } from "./flow.js";
 import { appOf, manifestFor, providerFor } from "./providers.js";
-import { BIND_COOKIE, BIND_TTL, bindingHolds, bindValue } from "./state/binding.js";
+import { BIND_TTL, bindCookie, bindingHolds, bindValue, isSecure } from "./state/binding.js";
 import { createPending } from "./state/pending.js";
 
 /** `/oauth/:provider/start` (bearer) and `/oauth/:provider/callback` (the browser redirect; the caller is the one who started, proved by the `oauth_bind` cookie). */
@@ -29,17 +29,18 @@ export function oauthRoutes(d: Deps): Hono<Env> {
     const state = generateState();
     const verifier = generateCodeVerifier();
     pending.put(state, { provider: name, caller, verifier, ...q.value });
-    const secure = new URL(c.req.url).protocol === "https:";
-    setCookie(c, BIND_COOKIE, bindValue(d.secret, state, caller), { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: BIND_TTL });
+    const secure = isSecure(c.req.url, c.req.header("x-forwarded-proto"));
+    setCookie(c, bindCookie(secure), bindValue(d.secret, state, caller), { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: BIND_TTL });
     return c.redirect(authorizeURL(p, state, verifier).toString(), 302);
   });
   r.get("/:provider/callback", async (c) => {
     const name = c.req.param("provider");
     const state = c.req.query("state") ?? "";
     const pend = pending.take(state);
-    deleteCookie(c, BIND_COOKIE, { path: "/" });
-    if (pend && !bindingHolds(d.secret, getCookie(c, BIND_COOKIE), state, pend.caller))
-      return c.json({ error: "sign-in was not started in this browser" }, 400);
+    const ckName = bindCookie(isSecure(c.req.url, c.req.header("x-forwarded-proto")));
+    const bound = getCookie(c, ckName);
+    deleteCookie(c, ckName, { path: "/", secure: ckName.startsWith("__Host-") });
+    if (pend && !bindingHolds(d.secret, bound, state, pend.caller)) return c.json({ error: "sign-in was not started in this browser" }, 400);
     const m = pend && manifestFor(d.catalog, pend.provider, pend.caller.tenant);
     const p = m && providerFor(d.oauth, m);
     if (!m || !p || !pend || (pend.provider !== name && appOf(m) !== name)) return c.json({ error: "unknown or expired state" }, 400);

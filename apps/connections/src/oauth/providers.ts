@@ -35,11 +35,13 @@ export const reservedNames = (): Set<string> => new Set(BUILTIN.list().flatMap((
 
 /**
  * The sign-in for one manifest: the app's client, redirect and endpoints as configured (a test can point them at a local server),
- * with the manifest's own scopes, PKCE flag and extra parameters. Undefined when the manifest is not oauth2 or its app has no client.
+ * with the manifest's own scopes, PKCE flag and extra parameters. Undefined when the manifest is not oauth2 or its app has no client,
+ * and for a manifest that is not built in but uses a built-in id or app name: a tenant never reaches a server client, whatever the route did.
  */
 export function providerFor(oauth: Record<string, OAuthProvider> | undefined, m: Manifest): OAuthProvider | undefined {
   const app = oauth?.[appOf(m)];
   if (m.auth.kind !== "oauth2" || !app) return undefined;
+  if (!BUILTIN.list().some((e) => e.manifest.id === m.id) && [m.id, appOf(m)].some((n) => reservedNames().has(n))) return undefined;
   return { ...app, source: m.id, scopes: [...m.auth.scopes], pkce: m.auth.pkce, extraParams: { ...m.auth.extraParams } };
 }
 

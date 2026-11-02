@@ -1,4 +1,9 @@
-const part = (s: string): string => encodeURIComponent(s).replaceAll(".", "%2E");
+/** Percent-encodes one part. A lone surrogate (which `encodeURIComponent` rejects) becomes `%U` plus its code unit in hex; a real `%` is `%25`, so it cannot collide. */
+const part = (s: string): string =>
+  s
+    .split(/(\p{Surrogate})/u)
+    .map((x, i) => (i % 2 ? `%U${x.charCodeAt(0).toString(16).toUpperCase()}` : encodeURIComponent(x).replaceAll(".", "%2E")))
+    .join("");
 
 /**
  * The token file's top-level key for one caller: `<tenant>:<user>`, each part percent-encoded.
