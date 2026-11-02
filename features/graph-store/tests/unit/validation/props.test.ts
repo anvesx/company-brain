@@ -5,6 +5,12 @@ describe("props are metadata only", () => {
   it.each(["text", "body", "content", "Text", "BODY"])("rejects key %s", (k) => {
     expect(code(() => openStore().upsertNode(node("a", { props: { [k]: "x" } }), 1))).toBe("BAD_INPUT");
   });
+  it.each(["summary", "Excerpt", "transcript", "raw_text", "html-body", "snippet", "markdown", "payload", "message"])("rejects body alias %s", (k) => {
+    expect(code(() => openStore().upsertNode(node("a", { props: { [k]: "x" } }), 1))).toBe("BAD_INPUT");
+  });
+  it("accepts metadata keys such as zone and updatedAt", () => {
+    openStore().upsertNode(node("a", { props: { zone: "public", updatedAt: "2026" } }), 1);
+  });
   it("accepts a value of exactly 1 KiB and rejects one byte more", () => {
     const s = openStore();
     s.upsertNode(node("a", { props: { k: "x".repeat(1024) } }), 1);

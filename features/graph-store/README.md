@@ -28,7 +28,7 @@ g.close();
 - `tombstone` closes the node and every current edge touching it, in one transaction. A removal dated before the add leaves an edge that was never visible.
 - `neighbors` returns both directions unless `dir` is given, in insertion order.
 - `reach` follows outgoing edges of the given kinds, breadth-first, cycle-safe, never returns the start node. Missing nodes are skipped and not expanded. `depth` is 0 to 6 (more throws `DEPTH_LIMIT`), `limit` caps the result size.
-- `props` are metadata only: string values of at most 1 KiB (UTF-8 bytes), and the keys `text`, `body`, `content` (any case) throw `BAD_INPUT`.
+- `props` are metadata only: string values of at most 1 KiB (UTF-8 bytes), and body-like keys throw `BAD_INPUT`: `text`, `body`, `content`, `summary`, `excerpt`, `transcript`, `snippet`, `markdown`, `payload`, `message`, `preview`, `abstract`, `rawtext`, `htmlbody`, compared without case or punctuation. This is a denylist; see `src/validation/README.md`.
 - After `close()` every call, including a second `close()`, throws `CLOSED`. SQLite removes the `-wal` and `-shm` files when the last handle closes.
 - `path: ":memory:"` is refused unless `NODE_ENV=test` or running under vitest.
 

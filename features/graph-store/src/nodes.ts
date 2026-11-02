@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { bad, type GraphNode, NODE_KINDS, NOW, oneOf, text, time } from "./schema.js";
+import { checkProps } from "./validation/props.js";
 
 /** Runs fn in one write transaction; BEGIN IMMEDIATE serialises writers across processes. */
 export function tx(db: DatabaseSync, fn: () => void): void {
@@ -13,19 +14,7 @@ export function tx(db: DatabaseSync, fn: () => void): void {
   }
 }
 
-const FORBIDDEN_KEYS = ["text", "body", "content"];
-const MAX_VALUE_BYTES = 1024;
 type Row = Record<string, unknown>;
-
-function checkProps(props: unknown): Record<string, string> {
-  if (typeof props !== "object" || props === null || Array.isArray(props)) return bad("props must be an object");
-  for (const [k, v] of Object.entries(props)) {
-    if (FORBIDDEN_KEYS.includes(k.toLowerCase())) bad(`props key "${k}" is not allowed: metadata only`);
-    if (typeof v !== "string") bad(`props["${k}"] must be a string`);
-    if (Buffer.byteLength(v, "utf8") > MAX_VALUE_BYTES) bad(`props["${k}"] is over 1 KiB`);
-  }
-  return props as Record<string, string>;
-}
 
 // Entries sorted by key so equal props always serialise to the same string.
 const canon = (p: Record<string, string>): string => JSON.stringify(Object.entries(p).sort(([a], [b]) => (a < b ? -1 : 1)));
