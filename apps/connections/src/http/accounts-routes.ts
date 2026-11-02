@@ -1,9 +1,10 @@
 import { hasLiveRecheck } from "@anvesx/connectors";
 import { Hono } from "hono";
+import { narrows } from "../accounts/rules/narrow.js";
 import { checkZones } from "../accounts/rules/widen.js";
 import { kindsOf } from "../catalog/kinds.js";
 import type { Deps } from "../deps.js";
-import { disconnect } from "../sync/data/disconnect.js";
+import { closeAccountEdges, disconnect } from "../sync/data/disconnect.js";
 import { syncRoute } from "../sync/route.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { type Env, requireCaller } from "./guard/auth.js";
@@ -43,6 +44,8 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const liveRecheck = manifest ? hasLiveRecheck(manifest) : false; // no manifest: fail closed
     const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
+    // Edges written at the wider zone must not outlive it; the next sync rewrites them at the new zone.
+    if (d.sync && narrows(cur.dataZone, next.dataZone)) closeAccountEdges(d.sync.graph, cur, d.now() * 1000);
     const changed = d.store.update(cur.id, p.value);
     rewriteTokens(d);
     return c.json(changed);

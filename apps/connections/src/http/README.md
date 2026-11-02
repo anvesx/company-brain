@@ -1,7 +1,7 @@
 # http
 
 - `guard/`: `auth.ts` (the `user:tenant:exp:hmac` bearer check, same shape as the brain app, and the Hono middleware) and `validate.ts` (request checks for create, patch and oauth start; no extra fields accepted).
-- `accounts-routes.ts`: `GET/POST /accounts`, `PATCH/DELETE /accounts/:id`. Applies the widening rule and answers 403 with the reason. A provider with no manifest in the catalog counts as having no live recheck (fail closed): it can never be made company.
+- `accounts-routes.ts`: `GET/POST /accounts`, `PATCH/DELETE /accounts/:id`. Applies the widening rule and answers 403 with the reason. A provider with no manifest in the catalog counts as having no live recheck (fail closed): it can never be made company. A PATCH that narrows `dataZone` closes the account's `can-read` and `member-of` edges first (when a graph is configured); the next sync rewrites them at the new zone.
 - `app.ts`: `createApp`, mounts everything under `/v1`; the catalog defaults to the built-in registry.
 - `serve.ts`: `startServer`, a loopback listener for the app.
 
