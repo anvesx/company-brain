@@ -22,7 +22,7 @@ const rows = (path: string): number => {
 
 describe("seen is scoped by tenant", () => {
   it("does not let one tenant's event id suppress another tenant's", () => {
-    const s = createCursorStore(":memory:", () => 0);
+    const s = createCursorStore(join(dir, "cursor.db"), () => 0);
     expect(s.seen("tenant-a", "evt-1")).toBe(false);
     expect(s.seen("tenant-b", "evt-1")).toBe(false);
     expect(s.seen("tenant-a", "evt-1")).toBe(true);
@@ -30,13 +30,13 @@ describe("seen is scoped by tenant", () => {
   });
 
   it("does not collide on separator characters in tenant or event id", () => {
-    const s = createCursorStore(":memory:", () => 0);
+    const s = createCursorStore(join(dir, "cursor.db"), () => 0);
     expect(s.seen("a:b", "c")).toBe(false);
     expect(s.seen("a", "b:c")).toBe(false);
   });
 
   it("rejects an empty or non-string tenant", () => {
-    const s = createCursorStore(":memory:", () => 0);
+    const s = createCursorStore(join(dir, "cursor.db"), () => 0);
     for (const bad of ["", null, 5]) expect(() => s.seen(bad as never, "evt")).toThrow(/tenantId/);
   });
 });
