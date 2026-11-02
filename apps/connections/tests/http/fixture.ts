@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { dirname } from "node:path";
 import { createApp } from "../../src/http/app.js";
 import { startServer } from "../../src/http/serve.js";
 import { tempStore } from "../accounts/fixture.js";
@@ -23,6 +24,7 @@ export async function boot(extra: Partial<Parameters<typeof createApp>[0]> = {})
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   return {
+    dir: dirname(t.path),
     base,
     call,
     store: t.store,

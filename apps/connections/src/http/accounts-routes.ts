@@ -1,11 +1,9 @@
 import { Hono } from "hono";
-import type { Store } from "../accounts/store.js";
-import type { Caller } from "../accounts/types.js";
 import { checkZones } from "../accounts/widen.js";
+import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "./auth.js";
 import { parseNew, parsePatch } from "./validate.js";
 
-export type Deps = { store: Store; secret: string; now: () => number; isAdmin: (c: Caller) => boolean };
 const json = async (req: Request): Promise<unknown> => req.json().catch(() => undefined);
 
 /** `/accounts` routes. The credential goes in on POST and is never returned. */

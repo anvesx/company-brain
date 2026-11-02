@@ -37,3 +37,11 @@ export function parsePatch(body: unknown): Parsed<Patch> {
     return { error: "access and dataZone must be private, personal or company" };
   return { value: b as Patch };
 }
+
+export function parseStart(q: Record<string, string>, provider: string): Parsed<{ label: string; access: Zone; dataZone: Zone }> {
+  const access = q.access ?? "private";
+  const dataZone = q.dataZone ?? "private";
+  if (!zone(access) || !zone(dataZone)) return { error: "access and dataZone must be private, personal or company" };
+  const label = q.label ?? `${provider} account`;
+  return text(label) ? { value: { label, access, dataZone } } : { error: "label must be a non-empty string" };
+}
