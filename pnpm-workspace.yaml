@@ -3,5 +3,4 @@ packages:
   - "services/*"
   - "modules/*"
   - "apps/*"
-  - "!apps/rag"
   - "tools/*"

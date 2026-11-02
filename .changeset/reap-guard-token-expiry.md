@@ -1,5 +1,4 @@
 ---
-"@anvesx/ingestion": minor
 "@anvesx/brain-app": minor
 ---
 

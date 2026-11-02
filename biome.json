@@ -19,7 +19,7 @@
   "linter": { "enabled": true, "rules": { "recommended": true, "complexity": { "useLiteralKeys": "off" }, "style": { "noNonNullAssertion": "off" } } },
   "overrides": [
     {
-      "includes": ["features/change-cursor/tests/unit/diff.test.ts", "features/audit-chain/tests/unit/canonical.test.ts", ".changeset/*.md"],
+      "includes": ["features/change-cursor/tests/unit/diff.test.ts", ".changeset/*.md"],
       "formatter": { "enabled": false }
     }
   ]

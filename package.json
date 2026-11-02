@@ -13,7 +13,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
-    "deps": "depcruise features services modules apps --config .dependency-cruiser.cjs",
+    "deps": "depcruise features services apps --config .dependency-cruiser.cjs",
     "integration": "turbo run integration",
     "mutation": "turbo run mutation",
     "changeset": "changeset",
@@ -36,10 +36,8 @@
   },
   "pnpm": {
     "overrides": {
-      "@anvesx/connectors": "link:../connectors/packages/connectors",
       "qs": ">=6.16.1",
-      "minimatch@10": "^11.0.1",
-      "uuid@8": "^11.1.1"
+      "minimatch@10": "^11.0.1"
     }
   },
   "license": "MIT"
