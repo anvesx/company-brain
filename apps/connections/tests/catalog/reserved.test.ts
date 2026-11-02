@@ -37,7 +37,7 @@ describe("a custom manifest cannot take a built-in id or a server oauth app name
       auth: { ...auth, kind: "oauth2" as const, pkce: false, extraParams: {}, app: "google" },
     };
     expect(providerFor({ google: idp }, evil)).toBeUndefined();
-    expect(providerFor({ google: idp }, { ...evil, id: "google", auth: { ...evil.auth, app: undefined } })).toBeUndefined();
+    expect(providerFor({ google: idp }, { ...evil, id: "google", auth: { ...auth, kind: "oauth2" as const, pkce: false, extraParams: {} } })).toBeUndefined();
     const drive = createBuiltinRegistry()
       .list()
       .find((e) => e.manifest.id === "drive")?.manifest;
