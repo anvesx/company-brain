@@ -6,19 +6,19 @@
 
 | Signal | Claim | Status |
 |---|---|---|
-| PageRank | Pages score higher when important pages link to them | Documented in the [PageRank paper](http://ilpubs.stanford.edu:8090/422/); damping 0.85 and link counts not verified |
+| PageRank | Pages score higher when important pages link to them | Documented in the [PageRank paper](http://ilpubs.stanford.edu:8090/422/) (original URL erroring; [Wayback copy](https://web.archive.org/web/2024/http://ilpubs.stanford.edu:8090/422/)); damping 0.85 and link counts not verified |
 | Trust propagation | Seed good pages, spread trust along links to demote spam | Documented in [TrustRank](https://www.vldb.org/conf/2004/RS15P3.PDF); Google use not verified |
-| Navboost | Memorizes past clicks on query-result pairs | **Court-documented**: [US v. Google findings of fact](https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc), Doc 1033, paras 91 to 98 |
-| Click window | 13 months of data now; 18 months before 2017 | Same findings of fact |
-| Generalizing models | RankBrain, DeepRank, RankEmbed, RankBERT and Multitask Unified Model (MUM) generalize from text | Same findings; internals not verified |
+| Navboost | Memorizes past clicks on query-result pairs | **Court-documented**: [Memorandum Opinion](https://storage.courtlistener.com/recap/gov.uscourts.dcd.223205/gov.uscourts.dcd.223205.1033.0.pdf) (Doc 1033, 5 Aug 2024), findings of fact para 96 |
+| Click window | 13 months of data now; 18 months before 2017 | Same opinion, para 96 |
+| Generalizing models | RankBrain, DeepRank, RankEmbed, RankBERT and Multitask Unified Model (MUM) generalize from text | Same opinion, para 97 (QBST in para 95); internals not verified |
 | Bidirectional Encoder Representations from Transformers (BERT) in Search | Used to understand queries | Documented in [Google's 2019 post](https://blog.google/products/search/search-language-understanding-bert/) |
-| Spam | SpamBrain demotes spam | Documented in [Google's spam docs](https://developers.google.com/search/docs/essentials/spam-policies); model internals not public |
+| Spam | SpamBrain demotes spam | Documented in [Google's spam updates page](https://developers.google.com/search/updates/spam-updates); model internals not public |
 
 The court splits systems into two kinds. **Memorizers** (Navboost, QBST) learn from clicks. **Generalizers** (RankBrain, MUM and others) handle new queries. Company-brain will see both problems.
 
 ## Unconfirmed
 
-- **2024 leak.** About 14,000 attributes were reported across API docs. Google confirmed authenticity with a caveat, per [The Verge](https://www.theverge.com/2024/5/29/24167407/google-search-algorithm-documents-leak-confirmation). Names such as goodClicks and badClicks show that click signals are stored. Weights, use and recency are **unconfirmed**.
+- **2024 leak.** [The Verge](https://www.theverge.com/2024/5/29/24167407/google-search-algorithm-documents-leak-confirmation) supports only this: about 2,500 leaked documents; Google confirmed authenticity, with a caveat that they may be out of context, outdated or incomplete. Reports of 14,000 attributes and names such as goodClicks and badClicks come from SEO blogs and are **unconfirmed**. Weights and use are unknown.
 - **Marketing claims.** Domain authority scores, dwell-time boosts and author rank come from search engine optimization blogs. All **unconfirmed**.
 - **Count of signals.** "200 ranking factors" is a folk number. Not verified.
 
@@ -36,10 +36,10 @@ The court splits systems into two kinds. **Memorizers** (Navboost, QBST) learn f
 
 ## Sources
 
-- [PageRank citation ranking (Page et al.)](http://ilpubs.stanford.edu:8090/422/)
+- [PageRank citation ranking (Page et al.)](http://ilpubs.stanford.edu:8090/422/), [Wayback copy](https://web.archive.org/web/2024/http://ilpubs.stanford.edu:8090/422/)
 - [Combating web spam with TrustRank](https://www.vldb.org/conf/2004/RS15P3.PDF)
-- [US v. Google, findings of fact (DOJ case page)](https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc)
+- [US v. Google, Memorandum Opinion, Doc 1033](https://storage.courtlistener.com/recap/gov.uscourts.dcd.223205/gov.uscourts.dcd.223205.1033.0.pdf)
 - [BERT in Search, Google blog](https://blog.google/products/search/search-language-understanding-bert/)
-- [Google spam policies](https://developers.google.com/search/docs/essentials/spam-policies)
+- [Google spam updates](https://developers.google.com/search/updates/spam-updates)
 - [The Verge on the 2024 leak](https://www.theverge.com/2024/5/29/24167407/google-search-algorithm-documents-leak-confirmation)
 - [BEIR (Thakur et al.)](https://arxiv.org/abs/2104.08663)

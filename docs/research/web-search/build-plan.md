@@ -23,7 +23,7 @@ query + user token -> ACL check (live) -> candidates (BM25F) -> signals -> point
 | [LightGBM](https://github.com/microsoft/LightGBM) | MIT | LambdaRank objective | Python train, export model | Not applicable |
 | [Transformers.js](https://github.com/huggingface/transformers.js) | Apache-2.0 | Local embeddings | Pure JS runtime | Not applicable |
 
-Licenses come from each project's repo page. Qdrant filter-during-search behavior and XGBoost rank objective support: not verified.
+Meilisearch core is MIT but its EE parts (LICENSE-EE, commercial) are not OSI: do not adopt. Typesense is GPL-3.0 (OSI, copyleft). pgvector uses the PostgreSQL License (OSI). Qdrant filter-during-search behavior and XGBoost rank objective support: not verified.
 
 ## Permission filtering: before or after ranking
 
@@ -33,7 +33,7 @@ Licenses come from each project's repo page. Qdrant filter-during-search behavio
 | **Post-filter** (rank, then drop) | Score and count leaks. Top-k can shrink to zero, a recall loss seen in pgvector filtering. | Fast, simple |
 | **Index-time ACL only** | Stale after permission changes | Cheap, wrong on revoke |
 
-Elastic [document-level security](https://www.elastic.co/guide/en/elasticsearch/reference/current/document-level-security.html) filters at query time. [Google Cloud Search](https://developers.google.com/cloud-search/docs/guides/acls) stores access control lists (ACLs) with each item. [Microsoft Graph connectors](https://learn.microsoft.com/en-us/graph/connecting-external-content-connectors-overview) ingest ACLs with items. Glean's live-versus-snapshot behavior is third-party and **unconfirmed**.
+Elastic [document-level security](https://www.elastic.co/docs/deploy-manage/users-roles/cluster-or-deployment-auth/controlling-access-at-document-field-level) filters at query time. [Google Cloud Search](https://developers.google.com/workspace/cloud-search/docs/guides/acls) stores access control lists (ACLs) with each item. [Microsoft Graph connectors](https://learn.microsoft.com/en-us/graph/api/resources/externalconnectors-externalitem) ingest ACLs with items. Glean's live-versus-snapshot behavior is third-party and **unconfirmed**.
 
 ## Ranked signals for pointers
 
@@ -72,9 +72,9 @@ Elastic [document-level security](https://www.elastic.co/guide/en/elasticsearch/
 ## Sources
 
 - [SQLite FTS5](https://www.sqlite.org/fts5.html)
-- [Elastic document-level security](https://www.elastic.co/guide/en/elasticsearch/reference/current/document-level-security.html)
-- [Google Cloud Search ACLs](https://developers.google.com/cloud-search/docs/guides/acls)
-- [Microsoft Graph connectors](https://learn.microsoft.com/en-us/graph/connecting-external-content-connectors-overview)
+- [Elastic document-level security](https://www.elastic.co/docs/deploy-manage/users-roles/cluster-or-deployment-auth/controlling-access-at-document-field-level)
+- [Google Cloud Search ACLs](https://developers.google.com/workspace/cloud-search/docs/guides/acls)
+- [Microsoft Graph connectors](https://learn.microsoft.com/en-us/graph/api/resources/externalconnectors-externalitem)
 - [Joachims, optimizing search engines using clickthrough data](https://www.cs.cornell.edu/people/tj/publications/joachims_02c.pdf)
 - [ADR 0004](../../adr/0004-rag-and-brain-are-separate.md)
 - Library repo pages linked in the table

@@ -8,11 +8,11 @@ Labels: **documented** means a primary source (Google docs, paper, court record)
 
 | Piece | What it does | Status | Use in company-brain |
 |---|---|---|---|
-| URL frontier | Queue of URLs to fetch, ordered by priority | Documented in the [Anatomy paper](http://infolab.stanford.edu/~backrub/google.html) (1998 design); current design not verified | None. Connectors push changes. |
+| URL frontier | Queue of URLs to fetch, ordered by priority | Documented in the [Anatomy paper](https://snap.stanford.edu/class/cs224w-readings/Brin98Anatomy.pdf) (1998 design); current design not verified | None. Connectors push changes. |
 | Politeness | Googlebot limits fetch rate per host so it does not overload servers | Documented in [Google's crawl docs](https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers) | Rate-limit connector API calls instead |
 | robots.txt | Site owner tells crawlers which paths to skip | Documented, standard is Request for Comments (RFC) [9309](https://www.rfc-editor.org/rfc/rfc9309) | Replace with source access control lists (ACLs) |
 | Recrawl | Revisit pages to catch edits; rate depends on how often a page changes | Inferred from [Caffeine post](https://googleblog.blogspot.com/2010/06/our-new-search-index-caffeine.html); exact policy not verified | Webhook or delta token per connector |
-| Duplicate detection | Cluster near-identical pages, pick a canonical | Documented: [SimHash, 64-bit fingerprints, 8B pages](https://research.google/pubs/detecting-near-duplicates-for-web-crawling/); production use inferred | Hash content per file version |
+| Duplicate detection | Cluster near-identical pages, pick a canonical | [SimHash, 64-bit fingerprints, 8B pages](https://research.google/pubs/detecting-near-duplicates-for-web-crawling/) (figures not verified); production use inferred | Hash content per file version |
 | JS rendering | Render pages with JavaScript (JS) in a headless browser after the first fetch | Documented in [Google's JS docs](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) | None. Files, not web pages. |
 | Sitemaps and links | Discover new URLs | Documented in [How Search works](https://developers.google.com/search/docs/fundamentals/how-search-works) | Folder and link edges from the connector |
 
@@ -38,7 +38,7 @@ Labels: **documented** means a primary source (Google docs, paper, court record)
 
 ## Sources
 
-- [The Anatomy of a Large-Scale Hypertextual Web Search Engine](http://infolab.stanford.edu/~backrub/google.html)
+- [The Anatomy of a Large-Scale Hypertextual Web Search Engine](https://snap.stanford.edu/class/cs224w-readings/Brin98Anatomy.pdf)
 - [Google: How Search works](https://developers.google.com/search/docs/fundamentals/how-search-works)
 - [Google crawlers overview](https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers)
 - [RFC 9309, Robots Exclusion Protocol](https://www.rfc-editor.org/rfc/rfc9309)
