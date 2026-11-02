@@ -1,0 +1,20 @@
+{
+  "name": "@anvesx/integration",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anvesx/change-cursor": "workspace:*",
+    "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/graph-store": "workspace:*",
+    "@anvesx/graph-sync": "workspace:*",
+    "@anvesx/rank": "workspace:*",
+    "@anvesx/zone-policy": "workspace:*"
+  },
+  "license": "MIT"
+}
