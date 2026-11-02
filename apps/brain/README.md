@@ -31,13 +31,13 @@ The graph is filled by `services/graph-sync` (in progress). Until it lands the f
 
 `brain sync` reads one connector and writes metadata and access edges into the graph.
 
-| Variable | Meaning |
-| --- | --- |
-| `BRAIN_TENANT` | tenant the nodes belong to |
-| `BRAIN_GRAPH_PATH` | SQLite graph file shared with the API |
-| `BRAIN_CONNECTOR` | `folder`, `github` or `drive` |
-| `BRAIN_FOLDER_ROOT` | folder source: directory with `<file>.acl.json` sidecars |
-| `GITHUB_TOKEN`, `BRAIN_GITHUB_REPO` | github source: token and `owner/repo` |
-| `DRIVE_ACCESS_TOKEN` | drive source: access token |
+| Variable                            | Meaning                                                  |
+| ----------------------------------- | -------------------------------------------------------- |
+| `BRAIN_TENANT`                      | tenant the nodes belong to                               |
+| `BRAIN_GRAPH_PATH`                  | SQLite graph file shared with the API                    |
+| `BRAIN_CONNECTOR`                   | `folder`, `github` or `drive`                            |
+| `BRAIN_FOLDER_ROOT`                 | folder source: directory with `<file>.acl.json` sidecars |
+| `GITHUB_TOKEN`, `BRAIN_GITHUB_REPO` | github source: token and `owner/repo`                    |
+| `DRIVE_ACCESS_TOKEN`                | drive source: access token                               |
 
 `tests/e2e/sync-then-serve.test.ts` runs the whole path: real folder, real graph file, real HTTP.
