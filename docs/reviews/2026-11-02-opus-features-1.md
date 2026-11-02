@@ -48,3 +48,19 @@ Mutation runs were not repeated (swap pressure).
 | 13 | LOW | acl-filter `src/clause.ts:15-17` | Unqualified columns: joined with any table that has `tenant_id`, the query fails "ambiguous column name" (verified). Open since last review. |
 
 Rest (14-24): test honesty, temp-dir leaks and coupling, in the details file.
+
+## Fixed (2 Nov 2026, follow-up)
+
+Each fix was test-first: the new test failed, then the change made it pass.
+
+| # | Status | What changed |
+| --- | --- | --- |
+| 1 | fixed | graph-store caps `title` 512, `address` 2048, `version` 256, `source` 128 bytes; props at most 32 entries, keys are identifiers of at most 64 bytes, values at most 1 KiB, 4 KiB in total; no control characters anywhere. Limits are in the package README. |
+| 2 | docs only | README now says one caller-supplied validity axis, no recorded-at, not bi-temporal. The spec wording (`graph-store.md`) and the Meta citation are untouched and still open. |
+| 3 | fixed | `list` skips an entry with a bad sidecar (`BAD_ACL`) or one that vanished mid-scan (`VANISHED`) and returns it in `skipped`. `PATH_ESCAPE` still aborts. |
+| 4 | fixed | `tombstone` before the current row's `validFrom` throws `BAD_INPUT`, with no partial write. |
+| 5 | fixed | core-types `IdSchema` refines with `isWellFormed()`; used by principal, ACL and pointer ids. Property test generates lone surrogates. tsconfig lib is ES2024. |
+| 6 | fixed | `fetch` of any `*.acl.json` (by name, dotted path or symlink) throws `NOT_FOUND`. |
+| 14 | fixed | graph-store `lifecycle.test.ts` restores env vars exactly through `withEnv` (an absent variable stays absent). |
+
+Still open: 2 (spec wording), 7 to 13, and 15 to 24.
