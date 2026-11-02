@@ -23,11 +23,11 @@ describe("DELETE /v1/accounts/:id after a sync", () => {
     expect(edges(a)[1]).toBeGreaterThan(0);
     expect((await h.s.call("DELETE", `/v1/accounts/${a}`, root)).status).toBe(204);
     expect(edges(a)).toEqual([0, 0]);
-    expect(h.graph.neighbors("t1", "README.md", { kind: "can-read", dir: "in" })).toEqual([]);
+    expect(h.graph.neighbors("t1", `github:${a}/README.md`, { kind: "can-read", dir: "in" })).toEqual([]);
     expect(h.graph.neighbors("t1", "octocat", { kind: "member-of", dir: "out" })).toEqual([]);
-    expect(h.graph.node("t1", "README.md")).toBeDefined();
+    expect(h.graph.node("t1", `github:${a}/README.md`)).toBeDefined();
     expect(edges(b)).toEqual([1, 0]);
-    expect(h.graph.neighbors("t1", "other.md", { kind: "can-read", dir: "in" }).map((e) => e.from)).toEqual(["zed"]);
+    expect(h.graph.neighbors("t1", `github:${b}/other.md`, { kind: "can-read", dir: "in" }).map((e) => e.from)).toEqual(["zed"]);
   });
   it("does not touch the graph when a non-owner tries", async () => {
     h = await bootSync();
@@ -63,7 +63,7 @@ describe("DELETE /v1/accounts/:id after a sync", () => {
     t += 100;
     await cur().s.call("DELETE", `/v1/accounts/${a}`, root);
     const ms = t * 1000;
-    const live = (asOf: number) => cur().graph.neighbors("t1", "README.md", { kind: "can-read", dir: "in", asOf }).length;
+    const live = (asOf: number) => cur().graph.neighbors("t1", `github:${a}/README.md`, { kind: "can-read", dir: "in", asOf }).length;
     expect(live(ms - 1)).toBeGreaterThan(0);
     expect(live(ms)).toBe(0);
   });

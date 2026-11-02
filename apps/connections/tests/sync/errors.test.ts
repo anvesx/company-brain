@@ -57,10 +57,11 @@ describe("sync error bodies", () => {
 describe("sync clock and oauth refresh", () => {
   it("stamps edges at the request clock in milliseconds", async () => {
     h = await bootSync();
-    await sync(mk().id);
+    const id = mk().id;
+    await sync(id);
     const ms = 1_800_000_000_000;
-    expect(cur().graph.neighbors("t1", "README.md", { kind: "can-read", dir: "in", asOf: ms - 1 })).toEqual([]);
-    expect(cur().graph.neighbors("t1", "README.md", { kind: "can-read", dir: "in", asOf: ms }).length).toBeGreaterThan(0);
+    expect(cur().graph.neighbors("t1", `github:${id}/README.md`, { kind: "can-read", dir: "in", asOf: ms - 1 })).toEqual([]);
+    expect(cur().graph.neighbors("t1", `github:${id}/README.md`, { kind: "can-read", dir: "in", asOf: ms }).length).toBeGreaterThan(0);
   });
   it("refreshes only oauth accounts that have a refresh token, and rewrites the token file after", async () => {
     const idp = await startReplay({ id: "cid", secret: "csecret" }, { refresh: true });

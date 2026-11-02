@@ -3,7 +3,13 @@
 How an account's documents are written into the shared graph.
 
 - `zone.ts`: `coreZone`, the map from account zones (`private`, `personal`, `company`) to `@brain/core-types` zones (`personal`, `team`, `company`), and `keepsSourceAcl`.
-- `stamp.ts`: `withZone` stamps every document with the mapped zone; `withOwner` adds the account owner to each document node.
+- `stamp.ts`: `withZone` stamps every document with the mapped zone.
+- `namespace.ts`: `docId`, `withNamespace` and `resolveFor` give documents and groups an id per account.
+- `store.ts`: `forAccount` wraps the graph store for one account: adds the owner to each document and hides the pieces that differ between accounts, so a re-run writes nothing.
+
+## Ids per account
+
+A document's graph id is `<provider>:<accountId>/<address>`, for example `github:ab12/README.md`; its `address` prop stays the source's own (`README.md`). A team is `<source>/<raw>` as well, so `acme/docs` in two accounts is two groups. People (`octocat`) keep their own id and are shared. Two accounts that list the same path therefore never share a node or an edge: disconnecting one closes only its edges (graph-store needed no change). Documents written before this change keep their old plain ids; the next sync of the account tombstones them.
 
 ## Rule for private
 

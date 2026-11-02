@@ -22,14 +22,14 @@ describe("drive oauth account, end to end", () => {
 
     const brain = createGraphStore({ path: h.graphPath });
     try {
-      for (const id of ["doc1", "txt1", "txt2"]) expect(brain.node("t1", id)?.props).toMatchObject({ zone: "company" });
-      expect(brain.neighbors("t1", "doc1", { kind: "can-read", dir: "in" }).length).toBeGreaterThan(0);
+      for (const id of ["doc1", "txt1", "txt2"]) expect(brain.node("t1", `drive:${account.id}/${id}`)?.props).toMatchObject({ zone: "company" });
+      expect(brain.neighbors("t1", `drive:${account.id}/doc1`, { kind: "can-read", dir: "in" }).length).toBeGreaterThan(0);
       const source = `drive:${account.id}`;
       expect(brain.edgesBySource("t1", source, "can-read").length).toBeGreaterThan(0);
 
       expect((await h.s.call("DELETE", `/v1/accounts/${account.id}`, root)).status).toBe(204);
       expect(brain.edgesBySource("t1", source, "can-read")).toEqual([]);
-      for (const id of ["doc1", "txt1", "txt2"]) expect(brain.neighbors("t1", id, { kind: "can-read", dir: "in" })).toEqual([]);
+      for (const id of ["doc1", "txt1", "txt2"]) expect(brain.neighbors("t1", `drive:${account.id}/${id}`, { kind: "can-read", dir: "in" })).toEqual([]);
     } finally {
       brain.close();
     }

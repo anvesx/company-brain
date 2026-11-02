@@ -70,7 +70,7 @@ describe("launcher wiring", () => {
     const r = await fetch(`http://127.0.0.1:${s.port}/v1/accounts/${id}/sync`, { method: "POST", headers: h, body: JSON.stringify({ repo: "acme/handbook" }) });
     expect(r.status).toBe(200);
     const g = createGraphStore({ path: e.env.CONNECTIONS_GRAPH_PATH });
-    expect(g.node("t1", "README.md")?.props).toMatchObject({ zone: "company" });
+    expect(g.node("t1", `github:${id}/README.md`)?.props).toMatchObject({ zone: "company" });
     g.close();
   });
 });

@@ -20,15 +20,16 @@ describe("POST /v1/accounts/:id/sync", () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ pages: 1, removed: 0 });
     expect(h.gh.seen.some((s) => s.authorization === "token ghp_secret")).toBe(true);
-    for (const doc of ["README.md", "docs/guide.md"]) {
+    for (const path of ["README.md", "docs/guide.md"]) {
+      const doc = `github:${id}/${path}`;
       const n = h.graph.node("t1", doc);
-      expect(n).toMatchObject({ kind: "document", source: `github:${id}`, props: { zone: "company", owner: "root" } });
+      expect(n).toMatchObject({ kind: "document", source: `github:${id}`, address: path, props: { zone: "company", owner: "root" } });
       expect(
         h.graph
           .neighbors("t1", doc, { kind: "can-read", dir: "in" })
           .map((e) => e.from)
           .sort(),
-      ).toEqual(["acme/docs", "acme/justice-league", "hubot", "octocat"]);
+      ).toEqual([`github:${id}/acme/docs`, `github:${id}/acme/justice-league`, "hubot", "octocat"]);
     }
   });
   it("converges: a second run writes nothing", async () => {

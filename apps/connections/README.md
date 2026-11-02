@@ -24,7 +24,7 @@ It listens on 127.0.0.1:8788, prints the address, and exits 1 with every bad set
 
 ## Sync
 
-`POST /v1/accounts/:id/sync` (owner only) runs the connector for that account with its stored token (an OAuth account is refreshed first) and writes the result into the graph file. Every document gets the account's `owner` and its `dataZone` as a core-types zone (`private` and `personal` become `personal` and are written owner-only; `company` stays `company` and keeps the source's readers; see [src/graph](src/graph/README.md)). For GitHub the body is `{"repo": "owner/repo"}`; the account has no repo field yet. Answers: 200 with the sync report, 400 bad body or no connector, 404, 403 not the owner, 409 account needs re-authorisation, 502 the source failed, 501 no graph configured.
+`POST /v1/accounts/:id/sync` (owner only) runs the connector for that account with its stored token (an OAuth account is refreshed first) and writes the result into the graph file. Every document gets the account's `owner` and its `dataZone` as a core-types zone (`private` and `personal` become `personal` and are written owner-only; `company` stays `company` and keeps the source's readers; see [src/graph](src/graph/README.md)). Documents are stored under `<provider>:<accountId>/<address>` so accounts never collide (see [src/graph](src/graph/README.md)). For GitHub the body is `{"repo": "owner/repo"}`; the account has no repo field yet. Answers: 200 with the sync report, 400 bad body or no connector, 404, 403 not the owner, 409 account needs re-authorisation, 502 the source failed, 501 no graph configured.
 
 `DELETE /v1/accounts/:id` first closes the `can-read` and `member-of` edges that account wrote, then removes it. Documents stay.
 

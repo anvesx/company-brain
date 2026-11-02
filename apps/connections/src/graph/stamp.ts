@@ -1,5 +1,4 @@
 import type { Connector } from "@brain/connector-kit";
-import type { GraphNode, GraphStore } from "@brain/graph-store";
 import type { Account } from "../accounts/types.js";
 import { coreZone, keepsSourceAcl } from "./zone.js";
 
@@ -22,20 +21,3 @@ export const withZone = (c: Connector, a: Pick<Account, "dataZone" | "owner">): 
   if (!open) delete out.listMemberships;
   return out;
 };
-
-const bare = (n: GraphNode | undefined): GraphNode | undefined => {
-  if (n === undefined || n.kind !== "document") return n;
-  const props = { ...n.props };
-  delete props["owner"];
-  return { ...n, props };
-};
-
-/**
- * The real graph store, with the account's owner added to each document node on write.
- * Reads hide the owner so graph-sync's "unchanged" check still sees equal nodes and a re-run writes nothing.
- */
-export const withOwner = (g: GraphStore, owner: string): GraphStore => ({
-  ...g,
-  upsertNode: (n, at) => g.upsertNode(n.kind === "document" ? { ...n, props: { ...n.props, owner } } : n, at),
-  node: (...a) => bare(g.node(...a)),
-});
