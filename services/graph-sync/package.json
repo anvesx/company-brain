@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "mutation": "stryker run"
+    "mutation": "stryker run",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@anvesx/connector-kit": "workspace:*",
@@ -19,5 +20,13 @@
     "@anvesx/graph-store": "workspace:*"
   },
   "license": "MIT",
-  "private": true
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "services/graph-sync"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
 }

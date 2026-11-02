@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "bench": "pnpm build && node scripts/bench/run.mjs",
-    "mutation": "stryker run"
+    "mutation": "stryker run",
+    "prepack": "pnpm run build"
   },
   "devDependencies": {
     "fast-check": "4.10.2",
@@ -24,5 +25,8 @@
     "directory": "features/rank"
   },
   "license": "MIT",
-  "private": true
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
 }

@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "mutation": "stryker run"
+    "mutation": "stryker run",
+    "prepack": "pnpm run build"
   },
   "repository": {
     "type": "git",
@@ -19,5 +20,8 @@
     "directory": "features/graph-store"
   },
   "license": "MIT",
-  "private": true
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
 }

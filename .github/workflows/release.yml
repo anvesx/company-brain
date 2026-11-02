@@ -19,8 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: pnpm, registry-url: "https://npm.pkg.github.com", scope: "@anvesx" }
       - run: pnpm install --frozen-lockfile
-      # Only the shared contract packages are public; the rest are private.
-      - run: pnpm turbo run build --filter=@anvesx/core-types --filter=@anvesx/connector-kit
+      # Every package under features/ and services/ is public; apps/ and tools/ are not (docs/registry.md).
+      - run: pnpm turbo run build --filter=@anvesx/core-types --filter=@anvesx/connector-kit --filter=@anvesx/change-cursor --filter=@anvesx/graph-store --filter=@anvesx/query-router --filter=@anvesx/rank --filter=@anvesx/zone-policy --filter=@anvesx/graph-sync
       # Publishes every public package whose version is not on the registry yet.
       # Bump versions with `pnpm changeset version` and commit; no PR bot needed.
       - run: pnpm release
@@ -28,7 +28,7 @@ jobs:
           NODE_AUTH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       - name: confirm the packages exist on GitHub Packages
         run: |
-          for p in core-types connector-kit; do
+          for p in core-types connector-kit change-cursor graph-store query-router rank zone-policy graph-sync; do
             npm view "@anvesx/$p" name version dist.tarball
             gh api "/orgs/anvesx/packages/npm/$p" --jq '.name + " " + .visibility + " " + .html_url'
           done
