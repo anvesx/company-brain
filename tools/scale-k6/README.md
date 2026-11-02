@@ -17,7 +17,7 @@ node tools/scale-k6/bin/run.mjs --only rank     # or --only catalog; --docs N ch
 RATE=20 DURATION=60s k6 run ...                 # scripts read RATE and DURATION from the environment
 ```
 
-Exit code 0 means every threshold held, 99 means a threshold was crossed.
+Exit code 0 means every threshold held, 99 means a threshold was crossed, 1 means k6 did not start or was killed by a signal.
 
 ## Thresholds as code
 
@@ -51,7 +51,7 @@ Rank saturates near 37 queries per second (see `features/rank/scripts/bench`). A
 
 ## Layout
 
-- `bin/run.mjs`: starts the servers, runs k6, stops them.
+- `bin/run.mjs`: starts the servers, runs k6, stops them. Summaries land in `reports/<script>.json` (ignored by version control).
 - `src/`: rank HTTP wrapper, server launchers, bearer minting, host description. See [src](src/README.md).
 - `scripts/`: the k6 scripts and thresholds. See [scripts](scripts/README.md).
 - `tests/`: `node --test` checks of the wrapper and the bearer.
