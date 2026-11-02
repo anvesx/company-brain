@@ -1,4 +1,4 @@
-import { createFakeConnector } from "@brain/connector-kit";
+import { createFakeConnector } from "@brain/connector-kit/testing";
 import { describe, expect, it } from "vitest";
 import { bounded } from "../../src/runtime/timeouts.js";
 import { call, connect, docs, start } from "../harness.js";
