@@ -2,6 +2,8 @@
 
 Tier: feature. Design cards: zn_tag, zn_scope, zn_promote, zn_taint. Core types already hold `zone.ts`.
 
+Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
+
 ## Purpose
 Personal, team and company zones. Anything in a personal zone is visible to its owner only; moving outward needs the owner's consent; derived data inherits the strictest zone of its inputs.
 

@@ -1,6 +1,8 @@
 # Spec: structure-lint
 
 Ticket: #38   Tier: tool   Milestone: M0
+
+Exact source: repository tooling, not a company-brain requirement. Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 CLI that fails CI when the folder rules or tier direction are broken.
 ## Reuse decision

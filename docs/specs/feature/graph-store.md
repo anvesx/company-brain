@@ -1,6 +1,8 @@
 # Spec: graph-store
 
-Tier: feature. Design cards: ix_link, ix_fresh, ix_att. ADR 0004. Research: zep, temporal-validity, lightrag.
+Tier: feature. Design cards: ix_link, ix_fresh, ix_att. ADR 0004. Legacy research (removed from the repo, not an exact source): zep, temporal-validity, lightrag.
+
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Meta](../../brain/research/exact/meta-organizational-second-brain.md) (bi-temporal validity), [GBrain](../../brain/research/exact/gbrain.md) (typed edges, no LLM extraction). Audit table: [exact research README](../../brain/research/exact/README.md).
 
 ## Purpose
 Metadata-only property graph for the brain app. Nodes and typed edges, tenant id on every row, bi-temporal validity so a changed fact closes the old one instead of overwriting it. No document text, no embeddings.

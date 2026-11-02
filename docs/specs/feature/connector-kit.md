@@ -1,6 +1,8 @@
 # Spec: connector-kit
 
 Ticket: #31   Tier: feature   Milestone: M0   Design cards: src.rt
+
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (signals in from canonical sources). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 The contract every source app connector implements, a registry of connectors, and two real
 connectors for tests and demos: an in-memory fake and a local-folder connector.

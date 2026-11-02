@@ -1,6 +1,8 @@
 # Spec: chunker
 
 Ticket: #33   Tier: feature   Milestone: M0 (used by M2)   Design cards: idx.derive
+
+Exact source: our proposal, no exact source backs it. It serves the separate RAG layer ([Meta](../../brain/research/exact/meta-organizational-second-brain.md), claim 2). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Split document text into overlapping chunks with stable ids and exact offsets.
 ## Reuse decision

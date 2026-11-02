@@ -1,6 +1,8 @@
 # Spec: audit-chain
 
 Ticket: #36   Tier: feature   Milestone: M0   Design cards: sec.audit
+
+Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Append-only log where each entry's hash covers the previous one, so any edit or delete is detectable. Deleting the newest rows, or rewriting rows and recomputing every later hash, is detectable only against an externally stored anchor (the chain head); without one it is inherently undetectable.
 ## Reuse decision

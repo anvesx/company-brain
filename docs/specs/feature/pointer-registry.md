@@ -1,6 +1,8 @@
 # Spec: pointer-registry
 
 Ticket: #30   Tier: feature   Milestone: M0   Design cards: idx.reg
+
+Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Store one pointer row per document: where it is, its version, hash, zone and ACL. Never body text.
 ## Reuse decision

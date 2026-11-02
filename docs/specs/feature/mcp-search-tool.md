@@ -1,6 +1,8 @@
 # Spec: mcp-search-tool
 
 Ticket: #37   Tier: feature   Milestone: M0   Design cards: ifc.mcp
+
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [GBrain](../../brain/research/exact/gbrain.md) (MCP interface). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Register one MCP tool, `search`, on any MCP server. It returns pointers only: the agent fetches text itself.
 ## Reuse decision

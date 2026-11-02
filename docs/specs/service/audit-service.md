@@ -1,4 +1,6 @@
 # audit-service
 Goal: durable audit with external anchors. `createAuditService({chain, anchorStore, clock})` exposes `record(tenantId, event)`, `checkpoint(tenantId)` (writes chain.head to an append-only anchor file via injected store), `verify(tenantId)` (verifies chain against latest anchor, reports ok/mismatch/truncated). Uses @brain/audit-chain, @brain/core-types.
+
+Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
 Acceptance: record+verify ok; tamper detected; tail truncation after checkpoint detected; anchor store failure typed error; tenants independent; concurrent record ordering.
 Rules: package services/NAME, name @brain/NAME, depends ONLY on @brain/* features + third-party libs (never another service). TDD: write failing tests first under tests/{unit,integration}. Files <=80 lines, folders <=5 files (README exempt), src/ + tests/ + README.md in every package and README in every src subfolder. ESM TypeScript, node:sqlite, vitest 5, zod. Copy package.json/tsconfig/vitest/stryker config shape from features/mcp-search-tool. Inject clock/IO. Typed errors. Run pnpm structure, pnpm exec biome check ., pnpm --filter @brain/NAME test/typecheck before reporting.

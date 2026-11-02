@@ -1,6 +1,8 @@
 # Spec: acl-filter
 
 Ticket: #35   Tier: feature   Milestone: M0   Design cards: sec.acl
+
+Exact source: [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (permissions enforced at retrieval), [Slite](../../brain/research/exact/slite-company-brain-solutions.md). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Turn a principal into a SQL predicate and an equivalent pure check. Deny by default.
 ## Reuse decision

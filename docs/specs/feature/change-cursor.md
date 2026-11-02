@@ -1,6 +1,8 @@
 # Spec: change-cursor
 
 Ticket: #32   Tier: feature   Milestone: M0 (used by M1)   Design cards: chg.trig, chg.flow
+
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (scheduled pull and webhook signals). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Remember where each source sync stopped, drop duplicate events, and find what changed when we
 compare what we know with what the source lists now (the reconciliation sweep).

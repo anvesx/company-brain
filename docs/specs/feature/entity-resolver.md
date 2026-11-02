@@ -1,6 +1,8 @@
 # Spec: entity-resolver
 
-Tier: feature. Design cards: ix_ent. Research: graphrag, hipporag.
+Tier: feature. Design cards: ix_ent. Legacy research (removed from the repo, not an exact source): graphrag, hipporag.
+
+Exact source: our proposal, no exact source backs it, informed by [GBrain](../../brain/research/exact/gbrain.md) (people dedupe in the dream cycle). Audit table: [exact research README](../../brain/research/exact/README.md).
 
 ## Purpose
 Decide that "rachit@x.com" in Slack, a GitHub login and a Drive owner are one person node. Pure functions over metadata, no store, no network.

@@ -1,6 +1,8 @@
 # Spec: integration suite
 
 Ticket: n/a   Tier: tool   Milestone: M5
+
+Exact source: repository tooling, not a company-brain requirement. Audit table: [exact research README](../../brain/research/exact/README.md).
 Design cards: none
 
 ## Purpose

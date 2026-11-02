@@ -1,6 +1,8 @@
 # Spec: hybrid-search
 
 Ticket: #34   Tier: feature   Milestone: M0   Design cards: idx.search
+
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [GBrain](../../brain/research/exact/gbrain.md), [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (keyword plus vector plus graph). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose
 Keyword + vector search over derived chunks, fused with Reciprocal Rank Fusion. The ACL filter
 arrives as an opaque SQL fragment, so this package never imports `acl-filter`.

@@ -2,6 +2,8 @@
 
 Tier: service. ADR 0004. Design cards: ix_link, ix_fresh. Depends on `@brain/core-types`, `@brain/connector-kit` (types only) and `@brain/graph-store`.
 
+Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Meta](../../brain/research/exact/meta-organizational-second-brain.md), [GBrain](../../brain/research/exact/gbrain.md) (graph filled from connectors, metadata only). Audit table: [exact research README](../../brain/research/exact/README.md).
+
 ## Purpose
 When a user connects an account, turn the connector's listing into graph metadata: document nodes, owner and group nodes, `can-read` edges from the ACL, `belongs-to` edges from the parent. Never read document text. This is the write path of the graph-only brain.
 
