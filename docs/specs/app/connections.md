@@ -6,10 +6,14 @@ Tier: app. Design cards: src.rt, acl.sync. Exact source: our proposal. [Vectoriz
 A web UI and small API where a person signs in to their accounts (Google Drive, GitHub, then Slack and Gmail), sees every connection in one list, and decides who may use each one and who may read what it syncs. It writes the per-user tokens that `brain serve` reads for live rechecks, and the connector config that `brain sync` reads.
 
 ## Reuse decision
-- OAuth 2 flows: `arctic` (MIT, Google, GitHub, Slack providers). No hand-written OAuth.
-- Server: `hono` (MIT). UI: one static HTML page and one script, no framework.
-- Token storage: `node:crypto` AES-256-GCM with a key from `CONNECTIONS_KEY`; SQLite via `node:sqlite`.
-- Later swap-in: Nango (Elastic 2.0) if legal clears it; the store interface stays the same.
+Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Composio, LlamaIndex readers, Unstructured, Meltano, Steampipe. Most coverage marks came from search snippets, so only the license and fit findings below are relied on.
+- Adopt `arctic` (MIT) for OAuth, `hono` (MIT) for the server. No hand-written OAuth.
+- Keep the Drive and GitHub adapters: thin wrappers over the vendors' own SDKs (`googleapis`, `octokit`), already tested.
+- Rejected: Pipedream (source-available, bars platform use), Onyx permission sync (Enterprise-only `ee/` code), Airbyte (ELv2 core, connector licenses conflict), Steampipe core (AGPL), LlamaIndex and Unstructured (Python, pull only, no Gmail found).
+- Open, needs a decision: Nango (ELv2, TypeScript, ships a Connect UI) is the closest match to the Claude connectors screen. Internal self-hosting looks allowed; legal review is pending. Composio (MIT, TS) covers Slack and Gmail but its runtime is vendor-hosted, so company data would leave our network.
+- Slack and Gmail: wrap Nango or Composio behind the `Connector` contract once that decision is made. Not built until then.
+- Storage: `node:crypto` AES-256-GCM, key from `CONNECTIONS_KEY`; SQLite via `node:sqlite`.
+- Ours alone: account model, the widening rule, access and data zones, mapping to `can-read` and `member-of` edges.
 
 ## Model
 - `Account`: `{id, owner, provider, label, credential, access, dataZone, status}`.
