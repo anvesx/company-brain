@@ -1,4 +1,4 @@
-import type { Acl } from "@brain/core-types";
+import type { Acl } from "@anvesx/core-types";
 import { type Ctx, writeNode } from "./document.js";
 
 export const principal = (c: Ctx, kind: "person" | "team", raw: string): string => {

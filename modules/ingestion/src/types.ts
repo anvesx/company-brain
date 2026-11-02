@@ -1,6 +1,6 @@
-import type { Connector } from "@brain/connector-kit";
-import type { Failure, RuntimeDeps } from "@brain/connector-runtime";
-import type { IndexService } from "@brain/index-service";
+import type { Connector } from "@anvesx/connector-kit";
+import type { Failure, RuntimeDeps } from "@anvesx/connector-runtime";
+import type { IndexService } from "@anvesx/index-service";
 
 export interface IngestionDeps {
   /** Everything `createConnectorRuntime` takes except the connector and the sink, which ingestion supplies. */

@@ -1,5 +1,5 @@
 {
-  "name": "@brain/embedder",
+  "name": "@anvesx/embedder",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -15,8 +15,6 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.2"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  }
+  "license": "MIT",
+  "private": true
 }

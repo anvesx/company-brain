@@ -1,5 +1,5 @@
+import type { Connector } from "@anvesx/connector-kit";
 import type { Registry } from "@anvesx/connectors";
-import type { Connector } from "@brain/connector-kit";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
 import { REPO } from "./repo.js";

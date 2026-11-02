@@ -1,4 +1,4 @@
-import type { Connector } from "@brain/connector-kit";
+import type { Connector } from "@anvesx/connector-kit";
 import type { Caller } from "../auth.js";
 import type { Recheck } from "./recheck.js";
 

@@ -1,4 +1,4 @@
-import type { Anchor, AuditChain, AuditEvent } from "@brain/audit-chain";
+import type { Anchor, AuditChain, AuditEvent } from "@anvesx/audit-chain";
 
 export type { Anchor, AuditChain };
 

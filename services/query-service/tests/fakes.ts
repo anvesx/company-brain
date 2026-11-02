@@ -1,6 +1,6 @@
-import type { Pointer } from "@brain/core-types";
-import type { Hit } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
+import type { Pointer } from "@anvesx/core-types";
+import type { Hit } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
 import { createQueryService, type QueryDeps } from "../src/index.js";
 
 export const hit = (docId: string, n = 0): Hit => ({ chunkId: `${docId}-c${n}`, docId, score: 1 });

@@ -1,5 +1,5 @@
 {
-  "name": "@brain/ingestion",
+  "name": "@anvesx/ingestion",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,13 +14,15 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/change-cursor": "workspace:*",
-    "@brain/chunker": "workspace:*",
-    "@brain/connector-kit": "workspace:*",
-    "@brain/connector-runtime": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/index-service": "workspace:*",
-    "@brain/pointer-registry": "workspace:*"
-  }
+    "@anvesx/change-cursor": "workspace:*",
+    "@anvesx/chunker": "workspace:*",
+    "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/connector-runtime": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/hybrid-search": "workspace:*",
+    "@anvesx/index-service": "workspace:*",
+    "@anvesx/pointer-registry": "workspace:*"
+  },
+  "license": "MIT",
+  "private": true
 }

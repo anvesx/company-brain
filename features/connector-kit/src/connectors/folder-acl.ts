@@ -1,5 +1,5 @@
 import { readFile, realpath } from "node:fs/promises";
-import { type Acl, AclSchema } from "@brain/core-types";
+import { type Acl, AclSchema } from "@anvesx/core-types";
 import { ConnectorError } from "../core/contract.js";
 import { contentHash } from "../core/hash.js";
 import { escapes } from "./folder-path.js";

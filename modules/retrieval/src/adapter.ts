@@ -1,5 +1,5 @@
-import type { Pointer, Principal } from "@brain/core-types";
-import { type LiveQueryService, QueryError, type SearchResult, validate } from "@brain/query-service";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import { type LiveQueryService, QueryError, type SearchResult, validate } from "@anvesx/query-service";
 import { RetrievalError } from "./errors.js";
 
 export type SearchRequest = { query: string; limit: number; principal: Principal };

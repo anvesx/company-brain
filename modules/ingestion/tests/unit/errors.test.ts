@@ -1,4 +1,4 @@
-import { RuntimeError } from "@brain/connector-runtime";
+import { RuntimeError } from "@anvesx/connector-runtime";
 import { describe, expect, it } from "vitest";
 import { doc, setup } from "../support/harness.js";
 

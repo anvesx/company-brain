@@ -1,5 +1,5 @@
 {
-  "name": "@brain/zone-policy",
+  "name": "@anvesx/zone-policy",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -21,9 +21,6 @@
     "url": "git+https://github.com/anvesx/company-brain.git",
     "directory": "features/zone-policy"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "private": true
 }

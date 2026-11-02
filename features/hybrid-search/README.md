@@ -1,4 +1,4 @@
-# @brain/hybrid-search
+# @anvesx/hybrid-search
 
 Local keyword + vector retrieval for derived chunks. FTS5 ranks literal keyword
 queries with BM25; `sqlite-vec@0.1.9` ranks embeddings by L2 distance (same order as cosine for normalized embeddings); RRF
@@ -8,12 +8,12 @@ document body.
 ## Interface
 
 `createSearchIndex(dbPath, dim)` returns synchronous `add`, `search`, and
-`remove(docId, tenantId)`, `replace(docId, tenantId, chunks)`, and `updateAcl(docId, tenantId, acl)` operations. The index is pointer-only: `chunks` has no body text column and the FTS5 table is contentless (`content=''`), so only tokens and positions are stored, never the text. `add` takes `text` to tokenise it and discards it; hits carry `chunkId`, `docId` and `score`. `chunks` stores `tenant_id`, `allow_users`, and `allow_groups` (JSON text), so the `allowClause` output of `@brain/acl-filter` runs against it unchanged. `search` accepts an opaque parameterized SQL predicate over
+`remove(docId, tenantId)`, `replace(docId, tenantId, chunks)`, and `updateAcl(docId, tenantId, acl)` operations. The index is pointer-only: `chunks` has no body text column and the FTS5 table is contentless (`content=''`), so only tokens and positions are stored, never the text. `add` takes `text` to tokenise it and discards it; hits carry `chunkId`, `docId` and `score`. `chunks` stores `tenant_id`, `allow_users`, and `allow_groups` (JSON text), so the `allowClause` output of `@anvesx/acl-filter` runs against it unchanged. `search` accepts an opaque parameterized SQL predicate over
 `chunks`. The predicate executes inside both retrieval statements, so excluded
 chunks cannot enter either list. `rrf(lists, k = 60)` is also public.
 
 ```ts
-import { createSearchIndex } from "@brain/hybrid-search";
+import { createSearchIndex } from "@anvesx/hybrid-search";
 
 const index = createSearchIndex("./brain.sqlite", 3);
 index.add({

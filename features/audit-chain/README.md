@@ -1,4 +1,4 @@
-# @brain/audit-chain
+# @anvesx/audit-chain
 
 An append-only audit log in which every entry's hash covers the previous entry's hash. Editing,
 deleting or reordering any past entry changes every later hash, so `verify` finds it. Spec:
@@ -22,7 +22,7 @@ deleting or reordering any past entry changes every later hash, so `verify` find
 ## Interface
 
 ```ts
-import { createAuditChain, AuditError } from "@brain/audit-chain";
+import { createAuditChain, AuditError } from "@anvesx/audit-chain";
 
 const chain = createAuditChain("/var/lib/brain/audit.db"); // ":memory:" works for a single handle
 const { seq, hash } = chain.append({
@@ -75,9 +75,9 @@ cannot reach (another host, a signed log, a ticket) and pass it back as `verify(
 ## Test
 
 ```
-pnpm --filter @brain/audit-chain test        # unit, property (fast-check), integration, scale
-pnpm --filter @brain/audit-chain typecheck
-pnpm --filter @brain/audit-chain mutation    # Stryker, break below 80 (last run 87.70)
+pnpm --filter @anvesx/audit-chain test        # unit, property (fast-check), integration, scale
+pnpm --filter @anvesx/audit-chain typecheck
+pnpm --filter @anvesx/audit-chain mutation    # Stryker, break below 80 (last run 87.70)
 ```
 
 - `tests/unit`: validation, hashing vectors, API behaviour, paging, `head` and anchored `verify` (truncation, rewrite).

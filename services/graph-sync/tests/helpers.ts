@@ -1,9 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createFolderConnector } from "@brain/connector-kit";
-import type { Acl } from "@brain/core-types";
-import { createGraphStore, type GraphStore } from "@brain/graph-store";
+import { createFolderConnector } from "@anvesx/connector-kit";
+import type { Acl } from "@anvesx/core-types";
+import { createGraphStore, type GraphStore } from "@anvesx/graph-store";
 import { afterEach } from "vitest";
 import type { SyncDeps } from "../src/index.js";
 

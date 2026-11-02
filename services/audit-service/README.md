@@ -1,14 +1,14 @@
-# @brain/audit-service
+# @anvesx/audit-service
 
-Durable audit with external anchors. Wraps `@brain/audit-chain` (hash chain in SQLite) and adds
+Durable audit with external anchors. Wraps `@anvesx/audit-chain` (hash chain in SQLite) and adds
 checkpoints written to an append-only store outside the database, so deleting the newest rows is
 detected. Spec: `docs/specs/service/audit-service.md`.
 
 ## Interface
 
 ```ts
-import { createAuditChain } from "@brain/audit-chain";
-import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
+import { createAuditChain } from "@anvesx/audit-chain";
+import { createAuditService, createFileAnchorStore } from "@anvesx/audit-service";
 
 const svc = createAuditService({
   chain: createAuditChain("/var/lib/brain/audit.db"),
@@ -34,14 +34,14 @@ await svc.verify("acme"); // { status: "ok" } | { status: "mismatch" | "truncate
 
 - Only checkpointed history is protected. Rows added after the last checkpoint can be removed undetected.
 - The anchor store is only as trustworthy as its location. Someone who can rewrite it can hide tampering.
-- `@brain/core-types` is not imported: nothing here needs it.
+- `@anvesx/core-types` is not imported: nothing here needs it.
 
 ## Test
 
 ```
-pnpm --filter @brain/audit-service test
-pnpm --filter @brain/audit-service typecheck
-pnpm --filter @brain/audit-service mutation
+pnpm --filter @anvesx/audit-service test
+pnpm --filter @anvesx/audit-service typecheck
+pnpm --filter @anvesx/audit-service mutation
 ```
 
-`@brain/audit-chain` must be built first (`pnpm --filter @brain/audit-chain build`).
+`@anvesx/audit-chain` must be built first (`pnpm --filter @anvesx/audit-chain build`).

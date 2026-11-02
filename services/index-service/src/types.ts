@@ -1,7 +1,7 @@
-import type { Chunk } from "@brain/chunker";
-import type { Pointer } from "@brain/core-types";
-import type { SearchIndex } from "@brain/hybrid-search";
-import type { Registry } from "@brain/pointer-registry";
+import type { Chunk } from "@anvesx/chunker";
+import type { Pointer } from "@anvesx/core-types";
+import type { SearchIndex } from "@anvesx/hybrid-search";
+import type { Registry } from "@anvesx/pointer-registry";
 
 /** Text the caller already fetched. `contentHash` is sha-256 hex of `text` and must equal the pointer's. */
 export type Content = { text: string; contentHash: string };

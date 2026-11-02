@@ -1,4 +1,4 @@
-import { chunkText } from "@brain/chunker";
+import { chunkText } from "@anvesx/chunker";
 import { describe, expect, it } from "vitest";
 import { fail, withText } from "../support/content.js";
 import { A, setup, sha } from "../support/harness.js";

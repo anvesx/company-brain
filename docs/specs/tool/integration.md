@@ -6,7 +6,7 @@ Exact source: repository tooling, not a company-brain requirement. Audit table: 
 Design cards: none
 
 ## Purpose
-`@brain/integration` (tools/integration) wires the real packages together without the app and proves the
+`@anvesx/integration` (tools/integration) wires the real packages together without the app and proves the
 cross-package behaviour the unit suites cannot: pointer-registry, change-cursor, connector-kit,
 connector-runtime, ingestion, index-service, hybrid-search, query-service, governance, audit-chain and
 audit-service, plus retrieval over a real MCP client. It has no product logic and publishes nothing.

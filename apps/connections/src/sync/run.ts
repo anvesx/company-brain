@@ -1,5 +1,5 @@
 import type { Registry } from "@anvesx/connectors";
-import { type SyncReport, syncConnector } from "@brain/graph-sync";
+import { type SyncReport, syncConnector } from "@anvesx/graph-sync";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
 import { resolveFor, withNamespace } from "../graph/namespace.js";

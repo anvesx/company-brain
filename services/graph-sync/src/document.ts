@@ -1,5 +1,5 @@
-import type { ListedDoc } from "@brain/connector-kit";
-import type { GraphNode } from "@brain/graph-store";
+import type { ListedDoc } from "@anvesx/connector-kit";
+import type { GraphNode } from "@anvesx/graph-store";
 import type { SyncDeps, SyncReport } from "./types.js";
 
 export interface Ctx {

@@ -117,7 +117,7 @@ PICK: `@changesets/cli@3.0.3`. Why: per-package versions and changelogs, a PR bo
 | GitHub Packages (npm registry) | hosted service | n/a | n/a | n/a | Pick |
 | verdaccio | 7.0.2 | MIT | 17,965 | 2026-11-01 | Alternative. engines >=24, so Node 26 fine, but we run and back up a server |
 
-PICK: GitHub Packages. Why: no server to run, auth through the existing GitHub org and `GITHUB_TOKEN` in CI. We write: `.npmrc` (`@brain:registry=https://npm.pkg.github.com`), `publishConfig` in each package, a CI token with `packages:write`. Constraints (unverified, from memory of the docs): packages must be scoped to the org name, and consumers need a token with `read:packages`. Choose Verdaccio only if customers must install without GitHub accounts.
+PICK: GitHub Packages. Why: no server to run, auth through the existing GitHub org and `GITHUB_TOKEN` in CI. We write: `.npmrc` (`@anvesx:registry=https://npm.pkg.github.com`), `publishConfig` in each package, a CI token with `packages:write`. Constraints (unverified, from memory of the docs): packages must be scoped to the org name, and consumers need a token with `read:packages`. Choose Verdaccio only if customers must install without GitHub accounts.
 
 ## 12. Test stack
 

@@ -1,4 +1,4 @@
-import type { IndexService } from "@brain/index-service";
+import type { IndexService } from "@anvesx/index-service";
 import { describe, expect, it } from "vitest";
 import { doc, setup } from "../support/harness.js";
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { createBrainApp } from "./app.js";
 import { recheckFromEnv } from "./cli/recheck.js";
 import { runSync } from "./cli/sync.js";

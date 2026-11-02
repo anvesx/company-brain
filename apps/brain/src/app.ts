@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { GraphNode, GraphStore } from "@brain/graph-store";
+import type { GraphNode, GraphStore } from "@anvesx/graph-store";
 import { canRead, readableDocuments } from "./access.js";
 import { MIN_SECRET_CHARS, verify } from "./auth.js";
 import { type Recheck, stillReadable } from "./live/recheck.js";

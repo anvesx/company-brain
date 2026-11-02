@@ -1,6 +1,6 @@
-import { createCursorStore } from "@brain/change-cursor";
-import { ConnectorError } from "@brain/connector-kit";
-import { createFakeConnector } from "@brain/connector-kit/testing";
+import { createCursorStore } from "@anvesx/change-cursor";
+import { ConnectorError } from "@anvesx/connector-kit";
+import { createFakeConnector } from "@anvesx/connector-kit/testing";
 import { describe, expect, it } from "vitest";
 import { createConnectorRuntime } from "../../src/index.js";
 import { five, tmpDb } from "../helpers.js";

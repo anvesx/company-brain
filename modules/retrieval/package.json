@@ -1,5 +1,5 @@
 {
-  "name": "@brain/retrieval",
+  "name": "@anvesx/retrieval",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,15 +14,17 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/audit-service": "workspace:*",
-    "@brain/connector-kit": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/mcp-service": "workspace:*",
-    "@brain/query-service": "workspace:*"
+    "@anvesx/audit-service": "workspace:*",
+    "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/mcp-service": "workspace:*",
+    "@anvesx/query-service": "workspace:*"
   },
   "devDependencies": {
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/pointer-registry": "workspace:*",
+    "@anvesx/hybrid-search": "workspace:*",
+    "@anvesx/pointer-registry": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2"
-  }
+  },
+  "license": "MIT",
+  "private": true
 }

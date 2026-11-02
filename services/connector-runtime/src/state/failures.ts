@@ -1,4 +1,4 @@
-import type { CursorStore } from "@brain/change-cursor";
+import type { CursorStore } from "@anvesx/change-cursor";
 import type { Failure } from "../types.js";
 
 const MAX_DEAD = 20;

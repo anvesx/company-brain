@@ -1,5 +1,5 @@
 {
-  "name": "@brain/mcp-service",
+  "name": "@anvesx/mcp-service",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,13 +14,11 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/core-types": "workspace:*",
-    "@brain/mcp-search-tool": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/mcp-search-tool": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "^4.6.7"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  }
+  "license": "MIT",
+  "private": true
 }

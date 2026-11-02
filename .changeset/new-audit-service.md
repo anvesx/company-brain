@@ -1,5 +1,5 @@
 ---
-"@brain/audit-service": minor
+"@anvesx/audit-service": minor
 ---
 
-Initial release of @brain/audit-service.
+Initial release of @anvesx/audit-service.

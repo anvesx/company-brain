@@ -1,9 +1,9 @@
-# @brain/index-service
+# @anvesx/index-service
 
 Applies change events to the search index. Spec: `docs/specs/service/index-service.md`.
 
 ```ts
-import { createIndexService } from "@brain/index-service";
+import { createIndexService } from "@anvesx/index-service";
 
 const svc = createIndexService({ registry, index, chunk, embed, fetchText }); // fetchText is optional
 await svc.apply({ type: "upsert", pointer }); // { outcome: "created" | "updated" | "unchanged", chunks }
@@ -11,8 +11,8 @@ await svc.apply({ type: "upsert", pointer, content: { text, contentHash } }); //
 await svc.apply({ type: "delete", tenantId, id, at }); // { outcome: "deleted" | "absent", chunks: 0 }
 ```
 
-`registry` is `@brain/pointer-registry`, `index` is `@brain/hybrid-search`, `chunk(docId, text)` is
-`chunkText` from `@brain/chunker` (or a wrapper with options). `embed(texts)` and `fetchText(pointer)`
+`registry` is `@anvesx/pointer-registry`, `index` is `@anvesx/hybrid-search`, `chunk(docId, text)` is
+`chunkText` from `@anvesx/chunker` (or a wrapper with options). `embed(texts)` and `fetchText(pointer)`
 are injected, so the service does no network I/O of its own. `fetchText` is optional: without it, every
 upsert that needs indexing must carry `content`, else `INVALID_EVENT` (the registry row is restored, so a replay
 with content succeeds). `unchanged` upserts and deletes never need it.

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrainApp } from "../../src/app.js";
 import { runSync } from "../../src/cli/sync.js";

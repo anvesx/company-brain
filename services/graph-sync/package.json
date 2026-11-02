@@ -1,5 +1,5 @@
 {
-  "name": "@brain/graph-sync",
+  "name": "@anvesx/graph-sync",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,12 +14,10 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/connector-kit": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/graph-store": "workspace:*"
+    "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/graph-store": "workspace:*"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  }
+  "license": "MIT",
+  "private": true
 }

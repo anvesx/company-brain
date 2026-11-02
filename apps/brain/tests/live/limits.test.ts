@@ -1,4 +1,4 @@
-import type { GraphNode } from "@brain/graph-store";
+import type { GraphNode } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { stillReadable } from "../../src/live/recheck.js";
 

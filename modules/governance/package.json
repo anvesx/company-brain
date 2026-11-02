@@ -1,5 +1,5 @@
 {
-  "name": "@brain/governance",
+  "name": "@anvesx/governance",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,11 +14,13 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/audit-chain": "workspace:*",
-    "@brain/audit-service": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/pointer-registry": "workspace:*",
-    "@brain/query-service": "workspace:*"
-  }
+    "@anvesx/audit-chain": "workspace:*",
+    "@anvesx/audit-service": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/hybrid-search": "workspace:*",
+    "@anvesx/pointer-registry": "workspace:*",
+    "@anvesx/query-service": "workspace:*"
+  },
+  "license": "MIT",
+  "private": true
 }

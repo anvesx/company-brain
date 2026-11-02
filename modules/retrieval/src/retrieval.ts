@@ -1,7 +1,7 @@
-import type { AuditService } from "@brain/audit-service";
-import type { Principal } from "@brain/core-types";
-import { type McpServiceOptions, startMcpServer } from "@brain/mcp-service";
-import { createQueryService, type QueryDeps } from "@brain/query-service";
+import type { AuditService } from "@anvesx/audit-service";
+import type { Principal } from "@anvesx/core-types";
+import { type McpServiceOptions, startMcpServer } from "@anvesx/mcp-service";
+import { createQueryService, type QueryDeps } from "@anvesx/query-service";
 import { type EmbedQuery, type OutcomeFn, toOutcomeFn, toSearchFn } from "./adapter.js";
 import { type AuditKey, auditedOutcome } from "./audit.js";
 

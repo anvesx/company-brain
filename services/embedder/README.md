@@ -1,11 +1,11 @@
-# @brain/embedder
+# @anvesx/embedder
 
 A real local embedding model for the brain: `Xenova/all-MiniLM-L6-v2` (384-D) run by
 `@huggingface/transformers` 4.x (ONNX, in-process, no API key). Replaces the toy `[text.length, 1]`
 embedder in `apps/rag/src/config.ts`. `apps/rag` uses it as the embedder in every non-demo mode.
 
 ```ts
-import { createEmbedder } from "@brain/embedder";
+import { createEmbedder } from "@anvesx/embedder";
 
 const e = createEmbedder({ batchSize: 32, timeoutMs: 120000, cacheDir: "/var/cache/brain-models" });
 const vectors = await e.embed(["chunk one", "chunk two"]); // number[][], each length 384, unit L2 norm

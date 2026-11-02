@@ -1,6 +1,6 @@
-import type { AuditService } from "@brain/audit-service";
-import type { Pointer } from "@brain/core-types";
-import type { QueryService, SearchRequest } from "@brain/query-service";
+import type { AuditService } from "@anvesx/audit-service";
+import type { Pointer } from "@anvesx/core-types";
+import type { QueryService, SearchRequest } from "@anvesx/query-service";
 
 export interface GovernanceDeps {
   audit: AuditService;

@@ -1,4 +1,4 @@
-# @brain/acl-filter
+# @anvesx/acl-filter
 
 Turns a principal into a SQL predicate and an equivalent pure check. Deny by default.
 Spec: `docs/specs/feature/acl-filter.md` (ticket #35, design card sec.acl).
@@ -19,7 +19,7 @@ isAllowed(p: Principal, acl: Acl, rowTenant: string): boolean
 allowClause(p: Principal): { sql: string; params: unknown[] }
 ```
 
-Types come from `@brain/core-types`. `allowClause` expects columns `tenant_id` (text), `allow_users` and `allow_groups` (JSON arrays of strings stored as text).
+Types come from `@anvesx/core-types`. `allowClause` expects columns `tenant_id` (text), `allow_users` and `allow_groups` (JSON arrays of strings stored as text).
 
 ## Why the SQL is injection-proof
 
@@ -29,7 +29,7 @@ The SQL text is one constant string. Tenant, user id and the group list travel o
 
 ```ts
 import { DatabaseSync } from "node:sqlite";
-import { allowClause } from "@brain/acl-filter";
+import { allowClause } from "@anvesx/acl-filter";
 
 const { sql, params } = allowClause({ id: "alice", tenantId: "t1", groups: ["eng"] });
 const rows = db.prepare(`SELECT * FROM docs WHERE ${sql}`).all(...params);
@@ -54,4 +54,4 @@ pnpm mutation    # Stryker, break threshold 80
 
 The property test creates a real in-memory `node:sqlite` table per run and asserts the SQL result equals `isAllowed`. Tests write nothing to disk.
 
-`@brain/hybrid-search` stores `allow_users` and `allow_groups` on its `chunks` table, so `allowClause` runs against it unchanged (see its `tests/integration/acl-wiring.test.ts`).
+`@anvesx/hybrid-search` stores `allow_users` and `allow_groups` on its `chunks` table, so `allowClause` runs against it unchanged (see its `tests/integration/acl-wiring.test.ts`).

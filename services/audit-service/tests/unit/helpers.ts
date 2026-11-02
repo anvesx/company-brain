@@ -1,4 +1,4 @@
-import { type AuditChain, createAuditChain } from "@brain/audit-chain";
+import { type AuditChain, createAuditChain } from "@anvesx/audit-chain";
 import { type AnchorRecord, type AnchorStore, createAuditService } from "../../src/index.js";
 
 export const memStore = (): AnchorStore & { rows: AnchorRecord[] } => {

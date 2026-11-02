@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import type { AuditService } from "@brain/audit-service";
+import type { AuditService } from "@anvesx/audit-service";
 import type { Outcome, OutcomeFn, SearchFn, SearchRequest } from "./adapter.js";
 import { RetrievalError } from "./errors.js";
 
@@ -8,7 +8,7 @@ export type AuditKey = string | Uint8Array;
 /**
  * Wraps a search so results are returned only after one audit row is written; a failed write rejects.
  * `count` is the row's result count; `extra` adds detail fields (a refusal is recorded as outcome "failure", count 0).
- * Mirrors @brain/governance (a module cannot import another module, so this is a deliberate small duplicate).
+ * Mirrors @anvesx/governance (a module cannot import another module, so this is a deliberate small duplicate).
  * Target = HMAC(HMAC(master, tenant), trimmed query): keyed, per tenant, no raw query stored.
  */
 function audited<T>(

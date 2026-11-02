@@ -1,6 +1,6 @@
-import { type Connector, ConnectorError } from "@brain/connector-kit";
-import type { Pointer, Principal } from "@brain/core-types";
-import type { LiveAcl } from "@brain/query-service";
+import { type Connector, ConnectorError } from "@anvesx/connector-kit";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import type { LiveAcl } from "@anvesx/query-service";
 import { RetrievalError } from "../errors.js";
 
 export const DEFAULT_CONCURRENCY = 8;

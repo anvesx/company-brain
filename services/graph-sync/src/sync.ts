@@ -1,4 +1,4 @@
-import { GraphError } from "@brain/graph-store";
+import { GraphError } from "@anvesx/graph-store";
 import { syncAccess } from "./access.js";
 import { type Ctx, rootNode, syncDocument, writeNode } from "./document.js";
 import { syncMemberships } from "./membership/sync.js";

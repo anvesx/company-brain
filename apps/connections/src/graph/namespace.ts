@@ -1,4 +1,4 @@
-import type { Connector } from "@brain/connector-kit";
+import type { Connector } from "@anvesx/connector-kit";
 
 /** The graph id of a document: its source (`<provider>:<account id>`) in front of the address, so two accounts never share a node. */
 export const docId = (source: string, address: string): string => `${source}/${address}`;

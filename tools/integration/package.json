@@ -1,5 +1,5 @@
 {
-  "name": "@brain/integration",
+  "name": "@anvesx/integration",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -9,22 +9,23 @@
     "integration": "vitest run"
   },
   "dependencies": {
-    "@brain/audit-chain": "workspace:*",
-    "@brain/audit-service": "workspace:*",
-    "@brain/change-cursor": "workspace:*",
-    "@brain/chunker": "workspace:*",
-    "@brain/connector-kit": "workspace:*",
-    "@brain/connector-runtime": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/governance": "workspace:*",
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/index-service": "workspace:*",
-    "@brain/ingestion": "workspace:*",
-    "@brain/pointer-registry": "workspace:*",
-    "@brain/query-service": "workspace:*",
-    "@brain/retrieval": "workspace:*"
+    "@anvesx/audit-chain": "workspace:*",
+    "@anvesx/audit-service": "workspace:*",
+    "@anvesx/change-cursor": "workspace:*",
+    "@anvesx/chunker": "workspace:*",
+    "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/connector-runtime": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/governance": "workspace:*",
+    "@anvesx/hybrid-search": "workspace:*",
+    "@anvesx/index-service": "workspace:*",
+    "@anvesx/ingestion": "workspace:*",
+    "@anvesx/pointer-registry": "workspace:*",
+    "@anvesx/query-service": "workspace:*",
+    "@anvesx/retrieval": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2"
-  }
+  },
+  "license": "MIT"
 }

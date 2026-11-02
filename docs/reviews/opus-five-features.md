@@ -35,7 +35,7 @@ Read-only review. No source edited. Findings marked "verified" were reproduced w
 | LOW | `src/chunk.ts:36` | Code-point splitting means `size: 1` with emoji gives chunks of 2 UTF-16 units, larger than `size`. The library also writes a `console.warn` for each oversized chunk (verified). | Document that one code point can exceed `size`. Silence or route the library warning. |
 | LOW | `src/chunk.ts:29` | Every `RangeError` from the library becomes `TOO_MANY_CHUNKS`, including errors such as `Invalid string length`. | Match on the stack-overflow message, or check `pieces`/depth instead. |
 | LOW | `src/offsets.ts:20` | The bare `catch` retries with unbounded slack on any error, not only `OFFSET_LOST`. | `catch (e) { if (!(e instanceof ChunkError)) throw e; ... }`. |
-| LOW | `src/chunk.ts:43`, `package.json` | `docId: ""` is accepted. `@brain/core-types` is a dependency but never imported. | Require a non-empty `docId`. Drop the unused dependency. |
+| LOW | `src/chunk.ts:43`, `package.json` | `docId: ""` is accepted. `@anvesx/core-types` is a dependency but never imported. | Require a non-empty `docId`. Drop the unused dependency. |
 
 ## connector-kit
 
@@ -62,4 +62,4 @@ Read-only review. No source edited. Findings marked "verified" were reproduced w
 
 ## Layering
 
-No layering violations. Every package imports only `@brain/core-types`, `node:*`, and (chunker only) `@langchain/textsplitters`. No feature imports another feature. Hygiene only: unused `@brain/core-types` dependency in `chunker` and `change-cursor`.
+No layering violations. Every package imports only `@anvesx/core-types`, `node:*`, and (chunker only) `@langchain/textsplitters`. No feature imports another feature. Hygiene only: unused `@anvesx/core-types` dependency in `chunker` and `change-cursor`.

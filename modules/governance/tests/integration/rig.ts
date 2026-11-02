@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createAuditChain } from "@brain/audit-chain";
-import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
-import type { Pointer, Principal } from "@brain/core-types";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
-import { createQueryService } from "@brain/query-service";
+import { createAuditChain } from "@anvesx/audit-chain";
+import { createAuditService, createFileAnchorStore } from "@anvesx/audit-service";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
+import { createQueryService } from "@anvesx/query-service";
 import { afterAll } from "vitest";
 import { createGovernance } from "../../src/index.js";
 

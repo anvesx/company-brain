@@ -1,4 +1,4 @@
-import { DEFAULT_LIVE_TIMEOUT_MS, type LiveAcl } from "@brain/query-service";
+import { DEFAULT_LIVE_TIMEOUT_MS, type LiveAcl } from "@anvesx/query-service";
 import { afterEach, describe, expect, it } from "vitest";
 import { rig } from "../harness.js";
 

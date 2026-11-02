@@ -1,4 +1,4 @@
-# @brain/integration
+# @anvesx/integration
 
 Cross-package integration suite. It wires the real packages (pointer-registry, change-cursor, connector-kit,
 connector-runtime, ingestion, index-service, hybrid-search, query-service, governance, audit-service, retrieval)
@@ -8,7 +8,7 @@ without the app and checks the behaviour that only shows across packages. Spec: 
 
 ```sh
 pnpm -r build
-pnpm integration   # or: pnpm --filter @brain/integration test
+pnpm integration   # or: pnpm --filter @anvesx/integration test
 ```
 
 Dependencies must be built first: the suite imports each package's `dist`.

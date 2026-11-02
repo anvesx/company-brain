@@ -1,5 +1,5 @@
 {
-  "name": "@brain/index-service",
+  "name": "@anvesx/index-service",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,13 +14,11 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/chunker": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/pointer-registry": "workspace:*"
+    "@anvesx/chunker": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
+    "@anvesx/hybrid-search": "workspace:*",
+    "@anvesx/pointer-registry": "workspace:*"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  }
+  "license": "MIT",
+  "private": true
 }

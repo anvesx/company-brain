@@ -1,4 +1,4 @@
-import type { GraphStore } from "@brain/graph-store";
+import type { GraphStore } from "@anvesx/graph-store";
 
 /** The real store behind a thin counter of mutating calls. */
 export const counted = (store: GraphStore) => {

@@ -1,4 +1,4 @@
-import type { Acl, Zone } from "@brain/core-types";
+import type { Acl, Zone } from "@anvesx/core-types";
 
 export type ListedDoc = {
   address: string;

@@ -1,5 +1,5 @@
 {
-  "name": "@brain/audit-service",
+  "name": "@anvesx/audit-service",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -14,11 +14,9 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/audit-chain": "workspace:*",
+    "@anvesx/audit-chain": "workspace:*",
     "zod": "^4.6.7"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  }
+  "license": "MIT",
+  "private": true
 }

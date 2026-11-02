@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createAuditChain } from "@brain/audit-chain";
+import { createAuditChain } from "@anvesx/audit-chain";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createAuditService, createFileAnchorStore } from "../../src/index.js";
 

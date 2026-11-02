@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { runSync } from "../../src/cli/sync.js";
 

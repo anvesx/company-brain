@@ -1,5 +1,5 @@
-import type { CursorStore } from "@brain/change-cursor";
-import type { Connector, ListedDoc } from "@brain/connector-kit";
+import type { CursorStore } from "@anvesx/change-cursor";
+import type { Connector, ListedDoc } from "@anvesx/connector-kit";
 import { failureStore } from "./state/failures.js";
 import { eventIdOf } from "./state/identity.js";
 import { pendingStore } from "./state/pending.js";

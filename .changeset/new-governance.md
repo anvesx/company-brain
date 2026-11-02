@@ -1,5 +1,5 @@
 ---
-"@brain/governance": minor
+"@anvesx/governance": minor
 ---
 
-Initial release of @brain/governance.
+Initial release of @anvesx/governance.

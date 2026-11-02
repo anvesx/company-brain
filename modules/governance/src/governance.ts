@@ -1,5 +1,5 @@
-import type { Pointer } from "@brain/core-types";
-import type { SearchRequest } from "@brain/query-service";
+import type { Pointer } from "@anvesx/core-types";
+import type { SearchRequest } from "@anvesx/query-service";
 import { createTargetDigest } from "./digest.js";
 import { GovernanceError } from "./errors.js";
 import type { Governance, GovernanceDeps } from "./types.js";

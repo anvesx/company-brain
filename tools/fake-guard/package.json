@@ -1,5 +1,5 @@
 {
-  "name": "@brain/fake-guard",
+  "name": "@anvesx/fake-guard",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -9,5 +9,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
-  }
+  },
+  "license": "MIT"
 }

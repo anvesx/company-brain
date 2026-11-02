@@ -6,4 +6,4 @@
 - `errors.ts` holds `AuditServiceError` (`ANCHOR_STORE`, `CLOCK`) and `AnchorStoreError`.
 - `index.ts` exposes the supported package API.
 
-All runtime imports use ESM `.js` suffixes. Errors from `@brain/audit-chain` (`AuditError`) pass through unchanged.
+All runtime imports use ESM `.js` suffixes. Errors from `@anvesx/audit-chain` (`AuditError`) pass through unchanged.

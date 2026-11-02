@@ -1,5 +1,5 @@
-import { contentHash } from "@brain/connector-kit";
-import type { ChangeEvent, IndexService } from "@brain/index-service";
+import { contentHash } from "@anvesx/connector-kit";
+import type { ChangeEvent, IndexService } from "@anvesx/index-service";
 import { describe, expect, it } from "vitest";
 import { doc, setup } from "../support/harness.js";
 

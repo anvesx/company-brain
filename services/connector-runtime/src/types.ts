@@ -1,5 +1,5 @@
-import type { CursorStore } from "@brain/change-cursor";
-import type { Connector } from "@brain/connector-kit";
+import type { CursorStore } from "@anvesx/change-cursor";
+import type { Connector } from "@anvesx/connector-kit";
 
 /** One document at one version and ACL, delivered to the sink at most once per tenant. */
 export interface ChangeEvent {

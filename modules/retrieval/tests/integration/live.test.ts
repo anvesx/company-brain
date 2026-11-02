@@ -1,4 +1,4 @@
-import type { LiveAcl } from "@brain/query-service";
+import type { LiveAcl } from "@anvesx/query-service";
 import { afterEach, describe, expect, it } from "vitest";
 import { connect, idsOf, rig, type ToolResult } from "../harness.js";
 

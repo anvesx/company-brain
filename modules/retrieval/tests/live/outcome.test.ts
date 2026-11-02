@@ -1,5 +1,5 @@
-import type { Pointer, Principal } from "@brain/core-types";
-import type { SearchResult } from "@brain/query-service";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import type { SearchResult } from "@anvesx/query-service";
 import { describe, expect, it, vi } from "vitest";
 import { type Outcome, toOutcomeFn } from "../../src/adapter.js";
 import { auditedOutcome } from "../../src/index.js";

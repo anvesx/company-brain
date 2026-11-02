@@ -1,5 +1,5 @@
 {
-  "name": "@brain/audit-chain",
+  "name": "@anvesx/audit-chain",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/chain.js",
@@ -14,7 +14,7 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/core-types": "workspace:*",
+    "@anvesx/core-types": "workspace:*",
     "json-canonicalize": "3.0.0"
   },
   "devDependencies": {
@@ -25,9 +25,6 @@
     "url": "git+https://github.com/anvesx/company-brain.git",
     "directory": "features/audit-chain"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "private": true
 }

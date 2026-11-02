@@ -1,4 +1,4 @@
-import { createAuditChain } from "@brain/audit-chain";
+import { createAuditChain } from "@anvesx/audit-chain";
 import { describe, expect, it } from "vitest";
 import { createAuditService } from "../../src/index.js";
 import { ev, make, memStore } from "./helpers.js";

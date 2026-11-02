@@ -1,6 +1,6 @@
 # tests
 
-Tests for `@brain/graph-sync`. They use a real `createGraphStore` file and the real folder connector from `@brain/connector-kit`, both in temp directories removed after each test. No mocks.
+Tests for `@anvesx/graph-sync`. They use a real `createGraphStore` file and the real folder connector from `@anvesx/connector-kit`, both in temp directories removed after each test. No mocks.
 
 - `helpers.ts` temp dirs, document writer, store opener, reader lookup
 - `seed.ts` document seeding and SyncError code assertion

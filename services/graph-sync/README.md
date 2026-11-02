@@ -1,15 +1,15 @@
-# @brain/graph-sync
+# @anvesx/graph-sync
 
 Turns a connector's listing into graph metadata. It implements the company-brain idea of a metadata graph built from connectors, with per-user permissions kept as edges: when an account is connected, each listed document becomes a node, each reader or group becomes a person or team node, and each ACL entry becomes a `can-read` edge. Document text is never read or stored (ADR 0004).
 
 Source ideas, from the exact research cards in `docs/brain/research/exact/` (Slite, Meta, GBrain, Vectorize, Karpathy): a metadata-only graph filled from connectors, typed edges taken from explicit references (an ACL entry, a parent), no LLM extraction, and every fact keeps its source and validity (`source = connector.id`, `validTo` set instead of delete).
 
-Spec: `docs/specs/service/graph-sync.md`. Depends on `@brain/core-types`, `@brain/connector-kit` and `@brain/graph-store`.
+Spec: `docs/specs/service/graph-sync.md`. Depends on `@anvesx/core-types`, `@anvesx/connector-kit` and `@anvesx/graph-store`.
 
 ## Use
 
 ```ts
-import { syncConnector } from "@brain/graph-sync";
+import { syncConnector } from "@anvesx/graph-sync";
 
 const report = await syncConnector({ store, connector, tenant: "t1", now: Date.now, resolve }, { pageSize: 100, signal });
 // { nodes, edges, removed, pages }
@@ -29,8 +29,8 @@ const report = await syncConnector({ store, connector, tenant: "t1", now: Date.n
 ## Develop
 
 ```sh
-pnpm --filter @brain/graph-sync test
-pnpm --filter @brain/graph-sync mutation   # Stryker, break below 80
+pnpm --filter @anvesx/graph-sync test
+pnpm --filter @anvesx/graph-sync mutation   # Stryker, break below 80
 ```
 
 Out of scope: webhooks, change cursors, entity-resolver wiring, apps/brain wiring.

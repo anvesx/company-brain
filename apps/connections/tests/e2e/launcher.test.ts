@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fixture, startReplay } from "@anvesx/connectors/testing/replay";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { start } from "../../src/cli/start.js";
 import { mint, NOW } from "../http/fixture.js";

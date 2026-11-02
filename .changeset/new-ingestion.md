@@ -1,5 +1,5 @@
 ---
-"@brain/ingestion": minor
+"@anvesx/ingestion": minor
 ---
 
-Initial release of @brain/ingestion.
+Initial release of @anvesx/ingestion.

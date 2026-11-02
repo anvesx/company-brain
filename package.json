@@ -36,7 +36,8 @@
   },
   "pnpm": {
     "overrides": {
-      "@brain/connectors": "link:../connectors/packages/connectors"
+      "@anvesx/connectors": "link:../connectors/packages/connectors"
     }
-  }
+  },
+  "license": "MIT"
 }

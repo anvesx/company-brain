@@ -1,5 +1,5 @@
-import type { CursorStore } from "@brain/change-cursor";
-import { ConnectorError } from "@brain/connector-kit";
+import type { CursorStore } from "@anvesx/change-cursor";
+import { ConnectorError } from "@anvesx/connector-kit";
 import { createDeliver } from "./deliver.js";
 import { RuntimeError } from "./errors.js";
 import { createKeyedLock, type KeyedLock } from "./state/lock.js";

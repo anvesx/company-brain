@@ -1,4 +1,4 @@
-import { createAuditChain } from "@brain/audit-chain";
+import { createAuditChain } from "@anvesx/audit-chain";
 import { describe, expect, it } from "vitest";
 import { AnchorStoreError, createAuditService } from "../../src/index.js";
 import { clock, ev, make, memStore } from "./helpers.js";

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrainApp } from "../src/app.js";
 

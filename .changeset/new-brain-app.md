@@ -1,5 +1,5 @@
 ---
-"@brain/brain-app": minor
+"@anvesx/brain-app": minor
 ---
 
-Initial release of @brain/brain-app.
+Initial release of @anvesx/brain-app.

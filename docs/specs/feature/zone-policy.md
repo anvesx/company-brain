@@ -8,7 +8,7 @@ Exact source: our proposal, no exact source backs it. Audit table: [exact resear
 Personal, team and company zones. Anything in a personal zone is visible to its owner only; moving outward needs the owner's consent; derived data inherits the strictest zone of its inputs.
 
 ## Reuse decision
-Build on `@brain/core-types` zone types and `@brain/acl-filter`. Pure functions.
+Build on `@anvesx/core-types` zone types and `@anvesx/acl-filter`. Pure functions.
 
 ## Public interface
 ```ts

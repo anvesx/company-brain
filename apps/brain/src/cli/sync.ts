@@ -1,5 +1,5 @@
-import { createGraphStore } from "@brain/graph-store";
-import { type SyncReport, syncConnector } from "@brain/graph-sync";
+import { createGraphStore } from "@anvesx/graph-store";
+import { type SyncReport, syncConnector } from "@anvesx/graph-sync";
 import { connectorFromEnv } from "./connector.js";
 
 type Env = Record<string, string | undefined>;

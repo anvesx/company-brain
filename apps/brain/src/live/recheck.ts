@@ -1,4 +1,4 @@
-import type { GraphNode } from "@brain/graph-store";
+import type { GraphNode } from "@anvesx/graph-store";
 import type { Caller } from "../auth.js";
 
 /** Asks the source whether `caller` can still read `doc` right now. Throwing or returning false hides the document. */

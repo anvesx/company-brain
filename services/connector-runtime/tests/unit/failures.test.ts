@@ -1,4 +1,4 @@
-import type { CursorStore } from "@brain/change-cursor";
+import type { CursorStore } from "@anvesx/change-cursor";
 import { describe, expect, it } from "vitest";
 import { failureStore } from "../../src/state/failures.js";
 

@@ -1,4 +1,4 @@
-# @brain/mcp-search-tool
+# @anvesx/mcp-search-tool
 
 Registers one MCP tool named `search` on an SDK `McpServer`. The tool accepts a query and optional
 limit, delegates retrieval, and returns pointer metadata as JSON text. It never returns document
@@ -11,7 +11,7 @@ the tool. `search` receives `{ query, limit, principal }`. `principalFor` derive
 SDK request metadata; callers cannot provide a principal in tool input.
 
 ```ts
-import { registerSearchTool } from "@brain/mcp-search-tool";
+import { registerSearchTool } from "@anvesx/mcp-search-tool";
 
 registerSearchTool(server, {
   principalFor: (extra) => principalFromSession(extra),

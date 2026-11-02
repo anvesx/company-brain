@@ -1,4 +1,4 @@
-# @brain/chunker
+# @anvesx/chunker
 
 Splits document text into overlapping chunks. Each chunk has a stable id and exact offsets into the source text, so a caller can always recover the chunk from the document: `text.slice(chunk.start, chunk.end) === chunk.text`.
 
@@ -44,7 +44,7 @@ Gotcha: the default overlap is 100. If you pass `size` below 101 without an `ove
 ## Usage
 
 ```ts
-import { chunkText, ChunkError } from "@brain/chunker";
+import { chunkText, ChunkError } from "@anvesx/chunker";
 
 try {
   const chunks = await chunkText("doc-42", markdown, { size: 800, overlap: 80 });

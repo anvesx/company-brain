@@ -52,7 +52,7 @@ pnpm -r --no-bail --workspace-concurrency=1 test
 pnpm integration
 ```
 
-Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @brain/scale-test scale:node`.
+Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @anvesx/scale-test scale:node`.
 
 ## Progress
 

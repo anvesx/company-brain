@@ -1,4 +1,4 @@
-import type { Connector } from "@brain/connector-kit";
+import type { Connector } from "@anvesx/connector-kit";
 import type { Account } from "../accounts/types.js";
 import { coreZone, keepsSourceAcl } from "./zone.js";
 

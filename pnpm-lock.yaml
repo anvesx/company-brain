@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@brain/connectors': link:../connectors/packages/connectors
+  '@anvesx/connectors': link:../connectors/packages/connectors
 
 importers:
 
@@ -53,31 +53,31 @@ importers:
 
   apps/brain:
     dependencies:
+      '@anvesx/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
       '@anvesx/connectors':
         specifier: link:../../../connectors/packages/connectors
         version: link:../../../connectors/packages/connectors
-      '@brain/connector-kit':
-        specifier: workspace:*
-        version: link:../../features/connector-kit
-      '@brain/graph-store':
+      '@anvesx/graph-store':
         specifier: workspace:*
         version: link:../../features/graph-store
-      '@brain/graph-sync':
+      '@anvesx/graph-sync':
         specifier: workspace:*
         version: link:../../services/graph-sync
 
   apps/connections:
     dependencies:
+      '@anvesx/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
       '@anvesx/connectors':
         specifier: link:../../../connectors/packages/connectors
         version: link:../../../connectors/packages/connectors
-      '@brain/connector-kit':
-        specifier: workspace:*
-        version: link:../../features/connector-kit
-      '@brain/graph-store':
+      '@anvesx/graph-store':
         specifier: workspace:*
         version: link:../../features/graph-store
-      '@brain/graph-sync':
+      '@anvesx/graph-sync':
         specifier: workspace:*
         version: link:../../services/graph-sync
       '@hono/node-server':
@@ -90,64 +90,9 @@ importers:
         specifier: ^4.13.16
         version: 4.13.16
 
-  apps/rag:
-    dependencies:
-      '@brain/audit-chain':
-        specifier: workspace:*
-        version: link:../../features/audit-chain
-      '@brain/audit-service':
-        specifier: workspace:*
-        version: link:../../services/audit-service
-      '@brain/change-cursor':
-        specifier: workspace:*
-        version: link:../../features/change-cursor
-      '@brain/chunker':
-        specifier: workspace:*
-        version: link:../../features/chunker
-      '@brain/connector-kit':
-        specifier: workspace:*
-        version: link:../../features/connector-kit
-      '@brain/connectors':
-        specifier: link:../../../connectors/packages/connectors
-        version: link:../../../connectors/packages/connectors
-      '@brain/core-types':
-        specifier: workspace:*
-        version: link:../../features/core-types
-      '@brain/embedder':
-        specifier: workspace:*
-        version: link:../../services/embedder
-      '@brain/governance':
-        specifier: workspace:*
-        version: link:../../modules/governance
-      '@brain/hybrid-search':
-        specifier: workspace:*
-        version: link:../../features/hybrid-search
-      '@brain/index-service':
-        specifier: workspace:*
-        version: link:../../services/index-service
-      '@brain/ingestion':
-        specifier: workspace:*
-        version: link:../../modules/ingestion
-      '@brain/mcp-service':
-        specifier: workspace:*
-        version: link:../../services/mcp-service
-      '@brain/pointer-registry':
-        specifier: workspace:*
-        version: link:../../features/pointer-registry
-      '@brain/query-service':
-        specifier: workspace:*
-        version: link:../../services/query-service
-      '@brain/retrieval':
-        specifier: workspace:*
-        version: link:../../modules/retrieval
-    devDependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: 1.32.2
-        version: 1.32.2(zod@4.6.7)
-
   features/acl-filter:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
     devDependencies:
@@ -157,7 +102,7 @@ importers:
 
   features/audit-chain:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
       json-canonicalize:
@@ -170,13 +115,13 @@ importers:
 
   features/change-cursor:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
 
   features/chunker:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
       '@langchain/core':
@@ -192,7 +137,7 @@ importers:
 
   features/connector-kit:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
     devDependencies:
@@ -210,7 +155,7 @@ importers:
 
   features/hybrid-search:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
       sqlite-vec:
@@ -219,7 +164,7 @@ importers:
 
   features/mcp-search-tool:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
       '@modelcontextprotocol/sdk':
@@ -231,7 +176,7 @@ importers:
 
   features/pointer-registry:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../core-types
 
@@ -249,74 +194,74 @@ importers:
 
   modules/governance:
     dependencies:
-      '@brain/audit-chain':
+      '@anvesx/audit-chain':
         specifier: workspace:*
         version: link:../../features/audit-chain
-      '@brain/audit-service':
+      '@anvesx/audit-service':
         specifier: workspace:*
         version: link:../../services/audit-service
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
-      '@brain/query-service':
+      '@anvesx/query-service':
         specifier: workspace:*
         version: link:../../services/query-service
 
   modules/ingestion:
     dependencies:
-      '@brain/change-cursor':
+      '@anvesx/change-cursor':
         specifier: workspace:*
         version: link:../../features/change-cursor
-      '@brain/chunker':
+      '@anvesx/chunker':
         specifier: workspace:*
         version: link:../../features/chunker
-      '@brain/connector-kit':
+      '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
-      '@brain/connector-runtime':
+      '@anvesx/connector-runtime':
         specifier: workspace:*
         version: link:../../services/connector-runtime
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/index-service':
+      '@anvesx/index-service':
         specifier: workspace:*
         version: link:../../services/index-service
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
 
   modules/retrieval:
     dependencies:
-      '@brain/audit-service':
+      '@anvesx/audit-service':
         specifier: workspace:*
         version: link:../../services/audit-service
-      '@brain/connector-kit':
+      '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/mcp-service':
+      '@anvesx/mcp-service':
         specifier: workspace:*
         version: link:../../services/mcp-service
-      '@brain/query-service':
+      '@anvesx/query-service':
         specifier: workspace:*
         version: link:../../services/query-service
     devDependencies:
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
       '@modelcontextprotocol/sdk':
@@ -325,7 +270,7 @@ importers:
 
   services/audit-service:
     dependencies:
-      '@brain/audit-chain':
+      '@anvesx/audit-chain':
         specifier: workspace:*
         version: link:../../features/audit-chain
       zod:
@@ -334,13 +279,13 @@ importers:
 
   services/connector-runtime:
     dependencies:
-      '@brain/change-cursor':
+      '@anvesx/change-cursor':
         specifier: workspace:*
         version: link:../../features/change-cursor
-      '@brain/connector-kit':
+      '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
 
@@ -352,37 +297,37 @@ importers:
 
   services/graph-sync:
     dependencies:
-      '@brain/connector-kit':
+      '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/graph-store':
+      '@anvesx/graph-store':
         specifier: workspace:*
         version: link:../../features/graph-store
 
   services/index-service:
     dependencies:
-      '@brain/chunker':
+      '@anvesx/chunker':
         specifier: workspace:*
         version: link:../../features/chunker
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
 
   services/mcp-service:
     dependencies:
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/mcp-search-tool':
+      '@anvesx/mcp-search-tool':
         specifier: workspace:*
         version: link:../../features/mcp-search-tool
       '@modelcontextprotocol/sdk':
@@ -394,16 +339,16 @@ importers:
 
   services/query-service:
     dependencies:
-      '@brain/acl-filter':
+      '@anvesx/acl-filter':
         specifier: workspace:*
         version: link:../../features/acl-filter
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
       zod:
@@ -420,46 +365,46 @@ importers:
 
   tools/integration:
     dependencies:
-      '@brain/audit-chain':
+      '@anvesx/audit-chain':
         specifier: workspace:*
         version: link:../../features/audit-chain
-      '@brain/audit-service':
+      '@anvesx/audit-service':
         specifier: workspace:*
         version: link:../../services/audit-service
-      '@brain/change-cursor':
+      '@anvesx/change-cursor':
         specifier: workspace:*
         version: link:../../features/change-cursor
-      '@brain/chunker':
+      '@anvesx/chunker':
         specifier: workspace:*
         version: link:../../features/chunker
-      '@brain/connector-kit':
+      '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
-      '@brain/connector-runtime':
+      '@anvesx/connector-runtime':
         specifier: workspace:*
         version: link:../../services/connector-runtime
-      '@brain/core-types':
+      '@anvesx/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
-      '@brain/governance':
+      '@anvesx/governance':
         specifier: workspace:*
         version: link:../../modules/governance
-      '@brain/hybrid-search':
+      '@anvesx/hybrid-search':
         specifier: workspace:*
         version: link:../../features/hybrid-search
-      '@brain/index-service':
+      '@anvesx/index-service':
         specifier: workspace:*
         version: link:../../services/index-service
-      '@brain/ingestion':
+      '@anvesx/ingestion':
         specifier: workspace:*
         version: link:../../modules/ingestion
-      '@brain/pointer-registry':
+      '@anvesx/pointer-registry':
         specifier: workspace:*
         version: link:../../features/pointer-registry
-      '@brain/query-service':
+      '@anvesx/query-service':
         specifier: workspace:*
         version: link:../../services/query-service
-      '@brain/retrieval':
+      '@anvesx/retrieval':
         specifier: workspace:*
         version: link:../../modules/retrieval
     devDependencies:

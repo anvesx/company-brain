@@ -1,5 +1,5 @@
 ---
-"@brain/retrieval": minor
+"@anvesx/retrieval": minor
 ---
 
-Initial release of @brain/retrieval.
+Initial release of @anvesx/retrieval.

@@ -1,5 +1,5 @@
-import type { Chunk } from "@brain/chunker";
-import type { Pointer } from "@brain/core-types";
+import type { Chunk } from "@anvesx/chunker";
+import type { Pointer } from "@anvesx/core-types";
 import { type IndexDeps, type IndexErrorCode, IndexServiceError } from "../types.js";
 import { verifyFetched } from "./content.js";
 

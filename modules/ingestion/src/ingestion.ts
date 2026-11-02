@@ -1,5 +1,5 @@
-import { contentHash } from "@brain/connector-kit";
-import { type ChangeEvent, createConnectorRuntime, createKeyedLock } from "@brain/connector-runtime";
+import { contentHash } from "@anvesx/connector-kit";
+import { type ChangeEvent, createConnectorRuntime, createKeyedLock } from "@anvesx/connector-runtime";
 import { IngestionError } from "./errors.js";
 import { reapSkip } from "./pipeline/guard.js";
 import { watchListing } from "./pipeline/listing.js";

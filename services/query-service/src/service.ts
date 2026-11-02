@@ -1,5 +1,5 @@
-import { allowClause, isAllowed } from "@brain/acl-filter";
-import { MAX_WINDOW } from "@brain/hybrid-search";
+import { allowClause, isAllowed } from "@anvesx/acl-filter";
+import { MAX_WINDOW } from "@anvesx/hybrid-search";
 import { QueryError, wrap } from "./errors.js";
 import { realTimer, verifyNeeded } from "./paging/live.js";
 import { DEFAULT_MAX_CANDIDATES, ids, scan } from "./paging/scan.js";

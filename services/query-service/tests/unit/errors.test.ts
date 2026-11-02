@@ -1,4 +1,4 @@
-import { SearchError } from "@brain/hybrid-search";
+import { SearchError } from "@anvesx/hybrid-search";
 import { describe, expect, it } from "vitest";
 import { wrap } from "../../src/errors.js";
 import { QueryError } from "../../src/index.js";

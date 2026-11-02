@@ -1,5 +1,5 @@
 {
-  "name": "@brain/brain-app",
+  "name": "@anvesx/brain-app",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -17,9 +17,11 @@
     "mutation": "stryker run"
   },
   "dependencies": {
-    "@brain/connector-kit": "workspace:*",
+    "@anvesx/connector-kit": "workspace:*",
     "@anvesx/connectors": "link:../../../connectors/packages/connectors",
-    "@brain/graph-store": "workspace:*",
-    "@brain/graph-sync": "workspace:*"
-  }
+    "@anvesx/graph-store": "workspace:*",
+    "@anvesx/graph-sync": "workspace:*"
+  },
+  "license": "MIT",
+  "private": true
 }

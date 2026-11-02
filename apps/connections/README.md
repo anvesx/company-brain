@@ -1,4 +1,4 @@
-# @brain/connections-app
+# @anvesx/connections-app
 
 Accounts for the sources the brain reads (GitHub, Google Drive). Stores each credential encrypted, enforces who may widen an account to the whole company, serves a small `/v1` HTTP API, runs OAuth sign-in with `arctic`, refreshes expired tokens, syncs an account's source into the graph, and writes the `BRAIN_USER_TOKENS_FILE` that `brain serve` reads.
 
@@ -7,14 +7,14 @@ Spec: [docs/specs/app/connections.md](../../docs/specs/app/connections.md). Slac
 ## Run the tests
 
 ```sh
-pnpm --filter @brain/connections-app test
-pnpm --filter @brain/connections-app typecheck
+pnpm --filter @anvesx/connections-app test
+pnpm --filter @anvesx/connections-app typecheck
 ```
 
 ## Run it
 
 ```sh
-pnpm --filter @brain/connections-app build
+pnpm --filter @anvesx/connections-app build
 CONNECTIONS_KEY=$(openssl rand -hex 32) CONNECTIONS_AUTH_SECRET=$(openssl rand -hex 32) \
   CONNECTIONS_DB_PATH=./connections.db CONNECTIONS_GRAPH_PATH=./graph.db \
   CONNECTIONS_ADMINS=acme:root node apps/connections/dist/bin.js
@@ -30,7 +30,7 @@ It listens on 127.0.0.1:8788, prints the address, and exits 1 with every bad set
 
 ## Mutation tests
 
-`pnpm --filter @brain/connections-app mutation` runs Stryker (break below 80). Last run: 84.58 overall; src/cli 94.8, src/sync 87.7, src/tokens 93.8, src/oauth/refresh.ts 94.4.
+`pnpm --filter @anvesx/connections-app mutation` runs Stryker (break below 80). Last run: 84.58 overall; src/cli 94.8, src/sync 87.7, src/tokens 93.8, src/oauth/refresh.ts 94.4.
 
 ## Config
 

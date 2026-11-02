@@ -1,6 +1,6 @@
 # src
 
-Source for `@brain/zone-policy`. Public entry is `index.ts`.
+Source for `@anvesx/zone-policy`. Public entry is `index.ts`.
 
 - `visibility.ts`: `canSee`. Personal is owner-only, team is members-only, company is everyone.
 - `promote.ts`: `promote`. Outward moves only, with consent. Personal consent must come from the owner.

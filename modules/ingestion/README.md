@@ -1,13 +1,13 @@
-# @brain/ingestion
+# @anvesx/ingestion
 
-Connector to index pipeline. Spec: `docs/specs/module/ingestion.md`. Composes `@brain/connector-runtime` and `@brain/index-service`; it adds no core logic.
+Connector to index pipeline. Spec: `docs/specs/module/ingestion.md`. Composes `@anvesx/connector-runtime` and `@anvesx/index-service`; it adds no core logic.
 
 ## Interface
 
 ```ts
 const ingestion = createIngestion({
   runtime: { cursors, clock, pageSize, maxAttempts }, // RuntimeDeps without the sink and connector
-  indexService, // @brain/index-service
+  indexService, // @anvesx/index-service
   connectorFor: (tenantId) => connectors.get(tenantId), // undefined for an unknown tenant
   tokenFor: (tenantId) => tokens.get(tenantId),
   known: (tenantId) => ids, // optional: pointer ids already indexed, e.g. from the registry
@@ -42,4 +42,4 @@ const { emitted, indexed, failed, failures, quarantined } = await ingestion.runO
 
 ## Test
 
-`pnpm --filter @brain/ingestion test`, `typecheck`, `mutation`. Tests use in-memory databases. Build the dependencies first: core-types, change-cursor, chunker, connector-kit, hybrid-search, pointer-registry, connector-runtime, index-service.
+`pnpm --filter @anvesx/ingestion test`, `typecheck`, `mutation`. Tests use in-memory databases. Build the dependencies first: core-types, change-cursor, chunker, connector-kit, hybrid-search, pointer-registry, connector-runtime, index-service.

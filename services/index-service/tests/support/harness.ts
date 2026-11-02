@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { chunkText } from "@brain/chunker";
-import type { Pointer } from "@brain/core-types";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
+import { chunkText } from "@anvesx/chunker";
+import type { Pointer } from "@anvesx/core-types";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
 import { createIndexService, type IndexDeps } from "../../src/index.js";
 
 export function pointer(over: Partial<Pointer> = {}): Pointer {

@@ -1,4 +1,4 @@
-import type { GraphNode, GraphStore } from "@brain/graph-store";
+import type { GraphNode, GraphStore } from "@anvesx/graph-store";
 import type { Account } from "../accounts/types.js";
 import { docId } from "./namespace.js";
 

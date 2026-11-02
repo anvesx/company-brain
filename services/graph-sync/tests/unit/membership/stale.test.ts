@@ -1,4 +1,4 @@
-import type { Connector } from "@brain/connector-kit";
+import type { Connector } from "@anvesx/connector-kit";
 import { describe, expect, it } from "vitest";
 import { syncConnector } from "../../../src/index.js";
 import { put, setup } from "../../helpers.js";

@@ -1,5 +1,5 @@
 ---
-"@brain/mcp-service": minor
+"@anvesx/mcp-service": minor
 ---
 
-Initial release of @brain/mcp-service.
+Initial release of @anvesx/mcp-service.

@@ -1,6 +1,6 @@
-import type { Pointer, Principal } from "@brain/core-types";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createRetrieval, type RetrievalOptions } from "../src/index.js";

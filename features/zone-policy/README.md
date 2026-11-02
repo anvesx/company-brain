@@ -1,4 +1,4 @@
-# @brain/zone-policy
+# @anvesx/zone-policy
 
 Pure rules for personal, team and company zones. Anything in a personal zone is visible to its owner only. Moving data outward needs the owner's consent. Derived data takes the strictest zone of its inputs.
 
@@ -6,7 +6,7 @@ Spec: `docs/specs/feature/zone-policy.md`.
 
 ## Dependencies
 
-None. The package does not depend on `@brain/acl-filter`, because feature packages may not depend on other feature packages (`tools/structure-lint`). It also does not use `@brain/core-types`: its `Zone` is a bare enum with no owner or team, so the spec's `Zone` is defined locally in `src/model/zone.ts`.
+None. The package does not depend on `@anvesx/acl-filter`, because feature packages may not depend on other feature packages (`tools/structure-lint`). It also does not use `@anvesx/core-types`: its `Zone` is a bare enum with no owner or team, so the spec's `Zone` is defined locally in `src/model/zone.ts`.
 
 ## API
 
@@ -32,4 +32,4 @@ class PromotionError extends Error { code: "NO_CONSENT" | "NOT_OUTWARD" | "NOT_O
 
 `tests/unit`: example tests plus fast-check properties. `derive` is commutative and idempotent.
 
-Run `pnpm --filter @brain/zone-policy test` and `pnpm --filter @brain/zone-policy mutation`.
+Run `pnpm --filter @anvesx/zone-policy test` and `pnpm --filter @anvesx/zone-policy mutation`.

@@ -1,4 +1,4 @@
-# @brain/query-service
+# @anvesx/query-service
 
 ACL-safe search over the hybrid index. Spec: `docs/specs/service/query-service.md`.
 
@@ -16,7 +16,7 @@ type LiveAcl = (tenantId, docIds, principal) => Promise<Map<docId, "allow" | "de
 class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "EMBEDDING" | "BACKEND" | "CONFIG" | "LIVE_ACL" }
 ```
 
-`index` is a `@brain/hybrid-search` index; `registry` is a `@brain/pointer-registry` registry. `search` is synchronous and unchanged for callers without a live verifier; wrap it in a promise for `@brain/mcp-search-tool`. When `liveAcl` is configured, `search` throws `LIVE_ACL` (it would otherwise skip the live check, which fails open); use `searchLive`.
+`index` is a `@anvesx/hybrid-search` index; `registry` is a `@anvesx/pointer-registry` registry. `search` is synchronous and unchanged for callers without a live verifier; wrap it in a promise for `@anvesx/mcp-search-tool`. When `liveAcl` is configured, `search` throws `LIVE_ACL` (it would otherwise skip the live check, which fails open); use `searchLive`.
 
 ## Behaviour
 
@@ -30,7 +30,7 @@ class QueryError extends Error { code: "EMPTY_QUERY" | "LIMIT" | "PRINCIPAL" | "
 
 ## Index API gap
 
-Closed. `@brain/hybrid-search` `SearchQuery` now has optional `offset` (integer >= 0) applied to the fused RRF ranking, with ACL applied inside both lists as before. Every page fuses the same top `MAX_WINDOW` (1000) of each list, so the ranking is identical across pages. The window bounds paging: `offset + limit` must be at most 1000, so construction rejects a `maxCandidates` above 1000.
+Closed. `@anvesx/hybrid-search` `SearchQuery` now has optional `offset` (integer >= 0) applied to the fused RRF ranking, with ACL applied inside both lists as before. Every page fuses the same top `MAX_WINDOW` (1000) of each list, so the ranking is identical across pages. The window bounds paging: `offset + limit` must be at most 1000, so construction rejects a `maxCandidates` above 1000.
 
 ## Limits
 
@@ -48,4 +48,4 @@ Mutation score is 98.4. The three survivors cannot change behaviour:
 
 ## Test
 
-`pnpm test`, `pnpm typecheck`, `pnpm mutation` from this folder. Tests use in-memory databases only. Build the features first: `pnpm --filter @brain/core-types build`, then acl-filter, hybrid-search, pointer-registry.
+`pnpm test`, `pnpm typecheck`, `pnpm mutation` from this folder. Tests use in-memory databases only. Build the features first: `pnpm --filter @anvesx/core-types build`, then acl-filter, hybrid-search, pointer-registry.

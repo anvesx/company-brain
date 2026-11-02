@@ -1,5 +1,5 @@
 {
-  "name": "@brain/graph-store",
+  "name": "@anvesx/graph-store",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -18,9 +18,6 @@
     "url": "git+https://github.com/anvesx/company-brain.git",
     "directory": "features/graph-store"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "private": true
 }

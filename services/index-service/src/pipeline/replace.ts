@@ -1,6 +1,6 @@
-import type { Acl, Pointer } from "@brain/core-types";
-import type { SearchIndex } from "@brain/hybrid-search";
-import type { Registry } from "@brain/pointer-registry";
+import type { Acl, Pointer } from "@anvesx/core-types";
+import type { SearchIndex } from "@anvesx/hybrid-search";
+import type { Registry } from "@anvesx/pointer-registry";
 import { IndexServiceError } from "../types.js";
 import type { Row } from "./prepare.js";
 

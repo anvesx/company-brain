@@ -1,4 +1,4 @@
-import { createGraphStore, type GraphNode } from "@brain/graph-store";
+import { createGraphStore, type GraphNode } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { canRead, readableDocuments } from "../src/access.js";
 

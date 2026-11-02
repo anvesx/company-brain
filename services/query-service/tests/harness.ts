@@ -1,6 +1,6 @@
-import type { Pointer, Principal, Zone } from "@brain/core-types";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
+import type { Pointer, Principal, Zone } from "@anvesx/core-types";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
 import { createQueryService } from "../src/index.js";
 
 export const alice: Principal = { id: "alice", tenantId: "t1", groups: ["eng"] };

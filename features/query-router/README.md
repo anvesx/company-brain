@@ -1,4 +1,4 @@
-# @brain/query-router
+# @anvesx/query-router
 
 Routes a question to graph retrieval, RAG retrieval, both, or neither without an LLM.
 
@@ -24,7 +24,7 @@ code point, so matching is Unicode-safe. Unmatched non-conversational questions 
 ## Usage
 
 ```ts
-import { route } from "@brain/query-router";
+import { route } from "@anvesx/query-router";
 
 route("Who owns the handbook in Drive?", {
   sources: ["slack", "drive"],
@@ -34,5 +34,5 @@ route("Who owns the handbook in Drive?", {
 // { mode: "both", sources: ["drive"], depth: "multi" }
 ```
 
-Run `pnpm --filter @brain/query-router build`, `typecheck`, `test`, or `mutation` from the repo root.
+Run `pnpm --filter @anvesx/query-router build`, `typecheck`, `test`, or `mutation` from the repo root.
 The package has no runtime dependencies. LLM routing and feedback learning are out of scope.

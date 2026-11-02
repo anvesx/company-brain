@@ -1,4 +1,4 @@
-import type { IndexService } from "@brain/index-service";
+import type { IndexService } from "@anvesx/index-service";
 import type { IngestionCounts } from "../types.js";
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));

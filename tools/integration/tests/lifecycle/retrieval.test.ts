@@ -1,8 +1,8 @@
-import { createAuditChain } from "@brain/audit-chain";
-import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createRegistry } from "@brain/pointer-registry";
-import { createRetrieval } from "@brain/retrieval";
+import { createAuditChain } from "@anvesx/audit-chain";
+import { createAuditService, createFileAnchorStore } from "@anvesx/audit-service";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createRegistry } from "@anvesx/pointer-registry";
+import { createRetrieval } from "@anvesx/retrieval";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";

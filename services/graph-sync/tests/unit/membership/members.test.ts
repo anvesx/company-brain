@@ -1,5 +1,5 @@
-import type { Connector } from "@brain/connector-kit";
-import type { GraphStore } from "@brain/graph-store";
+import type { Connector } from "@anvesx/connector-kit";
+import type { GraphStore } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { syncConnector } from "../../../src/index.js";
 import { put, setup } from "../../helpers.js";

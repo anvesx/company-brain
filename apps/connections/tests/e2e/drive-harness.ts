@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DFile, DOC, startDrive } from "@anvesx/connectors/testing/drive-server";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { oauthProvider } from "../../src/oauth/providers.js";
 import { boot, root } from "../http/fixture.js";
 import { startReplay } from "../oauth/replay-provider.js";

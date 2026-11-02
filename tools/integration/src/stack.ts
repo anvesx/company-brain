@@ -1,16 +1,16 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAuditChain } from "@brain/audit-chain";
-import { createAuditService, createFileAnchorStore } from "@brain/audit-service";
-import { createCursorStore } from "@brain/change-cursor";
-import { chunkText } from "@brain/chunker";
-import type { Pointer, Principal } from "@brain/core-types";
-import { createGovernance } from "@brain/governance";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createIndexService } from "@brain/index-service";
-import { createIngestion, type IngestionCounts } from "@brain/ingestion";
-import { createRegistry } from "@brain/pointer-registry";
-import { createQueryService } from "@brain/query-service";
+import { createAuditChain } from "@anvesx/audit-chain";
+import { createAuditService, createFileAnchorStore } from "@anvesx/audit-service";
+import { createCursorStore } from "@anvesx/change-cursor";
+import { chunkText } from "@anvesx/chunker";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import { createGovernance } from "@anvesx/governance";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createIndexService } from "@anvesx/index-service";
+import { createIngestion, type IngestionCounts } from "@anvesx/ingestion";
+import { createRegistry } from "@anvesx/pointer-registry";
+import { createQueryService } from "@anvesx/query-service";
 import { type LiveOptions, liveSearch } from "./live.js";
 import type { Source } from "./source.js";
 

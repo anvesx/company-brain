@@ -1,5 +1,5 @@
 import type { Registry } from "@anvesx/connectors";
-import type { GraphStore } from "@brain/graph-store";
+import type { GraphStore } from "@anvesx/graph-store";
 import type { Store } from "./accounts/store.js";
 import type { Caller } from "./accounts/types.js";
 import type { OAuthProvider } from "./oauth/providers.js";

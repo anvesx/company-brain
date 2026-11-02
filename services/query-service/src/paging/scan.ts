@@ -1,5 +1,5 @@
-import type { Pointer } from "@brain/core-types";
-import type { Hit } from "@brain/hybrid-search";
+import type { Pointer } from "@anvesx/core-types";
+import type { Hit } from "@anvesx/hybrid-search";
 
 export const PAGE_SIZE = 100;
 export const DEFAULT_MAX_CANDIDATES = 1000;

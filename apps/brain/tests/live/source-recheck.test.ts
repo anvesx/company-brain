@@ -1,5 +1,5 @@
-import type { Connector } from "@brain/connector-kit";
-import type { GraphNode } from "@brain/graph-store";
+import type { Connector } from "@anvesx/connector-kit";
+import type { GraphNode } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { sourceRecheck } from "../../src/live/source-recheck.js";
 

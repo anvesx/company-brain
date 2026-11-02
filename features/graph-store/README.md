@@ -1,4 +1,4 @@
-# @brain/graph-store
+# @anvesx/graph-store
 
 Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`). Nodes and typed edges carry a tenant id on every row and bi-temporal validity: a changed fact closes the old row instead of overwriting it. No document text, no embeddings (ADR 0004).
 
@@ -7,7 +7,7 @@ Spec: `docs/specs/feature/graph-store.md`. Decision: `docs/adr/0004-rag-and-brai
 ## Use
 
 ```ts
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 
 const g = createGraphStore({ path: "/var/brain/graph.db" });
 g.upsertNode(
@@ -39,8 +39,8 @@ WAL mode, 10 s busy timeout, writes inside `BEGIN IMMEDIATE`. Several processes 
 ## Develop
 
 ```sh
-pnpm --filter @brain/graph-store test
-pnpm --filter @brain/graph-store mutation   # Stryker, break below 80
+pnpm --filter @anvesx/graph-store test
+pnpm --filter @anvesx/graph-store mutation   # Stryker, break below 80
 ```
 
 Out of scope: entity resolution, connector sync, LLM extraction, Kuzu.

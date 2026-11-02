@@ -1,4 +1,4 @@
-import type { GraphNode, GraphStore } from "@brain/graph-store";
+import type { GraphNode, GraphStore } from "@anvesx/graph-store";
 
 /** The asker plus every team they belong to. A person or team with no node simply has no edges. */
 function principals(store: GraphStore, tenant: string, user: string): string[] {

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fixture, startReplay } from "@anvesx/connectors/testing/replay";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { boot } from "../http/fixture.js";
 
 const TREE = "9fb037999f264ba9281fc6cbd2d9dff8d1c1d5b1";

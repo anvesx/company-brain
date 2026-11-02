@@ -1,4 +1,4 @@
-import { SearchError } from "@brain/hybrid-search";
+import { SearchError } from "@anvesx/hybrid-search";
 
 export type QueryErrorCode = "BACKEND" | "CONFIG" | "EMBEDDING" | "EMPTY_QUERY" | "LIMIT" | "LIVE_ACL" | "PRINCIPAL";
 

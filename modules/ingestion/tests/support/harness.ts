@@ -1,10 +1,10 @@
-import { createCursorStore } from "@brain/change-cursor";
-import { chunkText } from "@brain/chunker";
-import type { Connector, FakeDoc } from "@brain/connector-kit";
-import { createFakeConnector } from "@brain/connector-kit/testing";
-import { createSearchIndex } from "@brain/hybrid-search";
-import { createIndexService, type IndexDeps, type IndexService } from "@brain/index-service";
-import { createRegistry } from "@brain/pointer-registry";
+import { createCursorStore } from "@anvesx/change-cursor";
+import { chunkText } from "@anvesx/chunker";
+import type { Connector, FakeDoc } from "@anvesx/connector-kit";
+import { createFakeConnector } from "@anvesx/connector-kit/testing";
+import { createSearchIndex } from "@anvesx/hybrid-search";
+import { createIndexService, type IndexDeps, type IndexService } from "@anvesx/index-service";
+import { createRegistry } from "@anvesx/pointer-registry";
 import { createIngestion, type IngestionDeps } from "../../src/index.js";
 
 export const doc = (address: string, version = "v1", text = `text of ${address}`): FakeDoc => ({

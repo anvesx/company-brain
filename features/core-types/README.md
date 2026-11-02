@@ -1,4 +1,4 @@
-# @brain/core-types
+# @anvesx/core-types
 
 The shared shapes of Company Brain. Every other feature may import this package and nothing else
 from the repo, which keeps each feature reusable on its own.
@@ -15,7 +15,7 @@ from the repo, which keeps each feature reusable on its own.
 ## Use
 
 ```ts
-import { PointerSchema } from "@brain/core-types";
+import { PointerSchema } from "@anvesx/core-types";
 const pointer = PointerSchema.parse(row); // throws ZodError on bad input
 ```
 
@@ -25,5 +25,5 @@ Ids up to 256 chars, addresses up to 2048, groups up to 1000 per principal.
 
 ## Test
 
-`pnpm --filter @brain/core-types test` (unit), `... exec stryker run` (mutation, break below 80).
+`pnpm --filter @anvesx/core-types test` (unit), `... exec stryker run` (mutation, break below 80).
 Last run: 23 tests, mutation score 97.3.

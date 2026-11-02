@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { syncConnector } from "../../src/index.js";
 import { drop, openStore, put, readers, setup, tmp } from "../helpers.js";

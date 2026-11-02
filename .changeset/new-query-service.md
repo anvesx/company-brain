@@ -1,5 +1,5 @@
 ---
-"@brain/query-service": minor
+"@anvesx/query-service": minor
 ---
 
-Initial release of @brain/query-service.
+Initial release of @anvesx/query-service.

@@ -1,5 +1,5 @@
 ---
-"@brain/index-service": minor
+"@anvesx/index-service": minor
 ---
 
-Initial release of @brain/index-service.
+Initial release of @anvesx/index-service.

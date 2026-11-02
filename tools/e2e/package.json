@@ -1,5 +1,5 @@
 {
-  "name": "@brain/e2e",
+  "name": "@anvesx/e2e",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -9,5 +9,6 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"
-  }
+  },
+  "license": "MIT"
 }

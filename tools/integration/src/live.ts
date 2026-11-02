@@ -1,7 +1,7 @@
-import type { AuditService } from "@brain/audit-service";
-import type { Pointer, Principal } from "@brain/core-types";
-import { createQueryService, type QueryDeps } from "@brain/query-service";
-import { auditedOutcome, createConnectorLiveAcl, toOutcomeFn, toSearchFn } from "@brain/retrieval";
+import type { AuditService } from "@anvesx/audit-service";
+import type { Pointer, Principal } from "@anvesx/core-types";
+import { createQueryService, type QueryDeps } from "@anvesx/query-service";
+import { auditedOutcome, createConnectorLiveAcl, toOutcomeFn, toSearchFn } from "@anvesx/retrieval";
 import type { Source } from "./source.js";
 
 export type LiveOptions = {

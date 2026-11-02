@@ -1,9 +1,9 @@
-# @brain/connector-runtime
+# @anvesx/connector-runtime
 
 Spec: [docs/specs/service/connector-runtime.md](../../docs/specs/service/connector-runtime.md).
 
 Polls one connector for a tenant and delivers each document change to an injected sink exactly once.
-Depends only on `@brain/connector-kit`, `@brain/change-cursor` and `@brain/core-types`.
+Depends only on `@anvesx/connector-kit`, `@anvesx/change-cursor` and `@anvesx/core-types`.
 
 ## Interface
 
@@ -45,6 +45,6 @@ const { emitted, skipped, restarted, failures, quarantined } = await runtime.run
 ## Test
 
 ```sh
-pnpm --filter @brain/connector-runtime test
-pnpm --filter @brain/connector-runtime typecheck
+pnpm --filter @anvesx/connector-runtime test
+pnpm --filter @anvesx/connector-runtime typecheck
 ```

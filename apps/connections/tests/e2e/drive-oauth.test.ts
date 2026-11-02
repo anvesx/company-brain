@@ -1,4 +1,4 @@
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { root } from "../http/fixture.js";
 import { bootDrive } from "./drive-harness.js";

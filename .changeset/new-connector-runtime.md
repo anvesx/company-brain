@@ -1,5 +1,5 @@
 ---
-"@brain/connector-runtime": minor
+"@anvesx/connector-runtime": minor
 ---
 
-Initial release of @brain/connector-runtime.
+Initial release of @anvesx/connector-runtime.

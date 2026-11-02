@@ -1,6 +1,6 @@
-import { type Pointer, type Principal, PrincipalSchema } from "@brain/core-types";
-import type { SearchIndex } from "@brain/hybrid-search";
-import type { Registry } from "@brain/pointer-registry";
+import { type Pointer, type Principal, PrincipalSchema } from "@anvesx/core-types";
+import type { SearchIndex } from "@anvesx/hybrid-search";
+import type { Registry } from "@anvesx/pointer-registry";
 import { QueryError } from "./errors.js";
 import type { LiveAcl, Timer } from "./paging/live.js";
 import type { ScanResult } from "./paging/scan.js";

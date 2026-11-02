@@ -1,6 +1,6 @@
 # Spec: graph-sync
 
-Tier: service. ADR 0004. Design cards: ix_link, ix_fresh, ac_grp, ac_scim (membership sync, step 3a, our proposal for the mechanism; the cards require it). Depends on `@brain/core-types`, `@brain/connector-kit` (types only) and `@brain/graph-store`.
+Tier: service. ADR 0004. Design cards: ix_link, ix_fresh, ac_grp, ac_scim (membership sync, step 3a, our proposal for the mechanism; the cards require it). Depends on `@anvesx/core-types`, `@anvesx/connector-kit` (types only) and `@anvesx/graph-store`.
 
 Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Meta](../../brain/research/exact/meta-organizational-second-brain.md), [GBrain](../../brain/research/exact/gbrain.md) (graph filled from connectors, metadata only). Audit table: [exact research README](../../brain/research/exact/README.md).
 
@@ -8,7 +8,7 @@ Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.m
 When a user connects an account, turn the connector's listing into graph metadata: document nodes, owner and group nodes, `can-read` edges from the ACL, `belongs-to` edges from the parent. Never read document text. This is the write path of the graph-only brain.
 
 ## Reuse decision
-No library fits. Reuses `Connector.list` from connector-kit and `GraphStore` from graph-store. Entity resolution is injected as a function so this package does not depend on `@brain/entity-resolver`.
+No library fits. Reuses `Connector.list` from connector-kit and `GraphStore` from graph-store. Entity resolution is injected as a function so this package does not depend on `@anvesx/entity-resolver`.
 
 ## Public interface
 ```ts
@@ -31,7 +31,7 @@ class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT" }
 
 ## Acceptance tests (written first)
 - unit: ACL to edges, group nodes, resolve hook, no text props, idempotent re-sync (spy on store counts via real store), ACL narrowing closes edges, deletion tombstones, abort, connector failure, page size bounds, unicode addresses.
-- integration: real `createGraphStore` file, real folder connector from `@brain/connector-kit` over a temp directory; sync, mutate files and ACLs, re-sync, assert `reach` and `neighbors` results.
+- integration: real `createGraphStore` file, real folder connector from `@anvesx/connector-kit` over a temp directory; sync, mutate files and ACLs, re-sync, assert `reach` and `neighbors` results.
 - scale: 5k documents with 20 readers each syncs under 20 s.
 - mutation: Stryker score >= 80.
 

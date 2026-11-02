@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createGraphStore } from "@brain/graph-store";
+import { createGraphStore } from "@anvesx/graph-store";
 import { openStore } from "../accounts/store.js";
 import { type AppOptions, createApp } from "../http/app.js";
 import { startServer } from "../http/serve.js";

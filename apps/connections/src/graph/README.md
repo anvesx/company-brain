@@ -2,7 +2,7 @@
 
 How an account's documents are written into the shared graph.
 
-- `zone.ts`: `coreZone`, the map from account zones (`private`, `personal`, `company`) to `@brain/core-types` zones (`personal`, `team`, `company`), and `keepsSourceAcl`.
+- `zone.ts`: `coreZone`, the map from account zones (`private`, `personal`, `company`) to `@anvesx/core-types` zones (`personal`, `team`, `company`), and `keepsSourceAcl`.
 - `stamp.ts`: `withZone` stamps every document with the mapped zone.
 - `namespace.ts`: `docId`, `withNamespace` and `resolveFor` give documents and groups an id per account.
 - `store.ts`: `forAccount` wraps the graph store for one account: adds the owner to each document and hides the pieces that differ between accounts, so a re-run writes nothing.

@@ -1,7 +1,7 @@
-import type { ListedDoc } from "@brain/connector-kit";
+import type { ListedDoc } from "@anvesx/connector-kit";
 import type { Zone } from "../accounts/types.js";
 
-/** A `@brain/core-types` zone: personal, team or company. */
+/** A `@anvesx/core-types` zone: personal, team or company. */
 export type CoreZone = ListedDoc["zone"];
 
 /**

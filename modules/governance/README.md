@@ -1,13 +1,13 @@
-# @brain/governance
+# @anvesx/governance
 
 Audited access. Wraps a query service so every search leaves one audit row. Spec: `docs/specs/module/governance.md`.
 
 ## Interface
 
 ```ts
-import { createGovernance } from "@brain/governance";
+import { createGovernance } from "@anvesx/governance";
 
-const gov = createGovernance({ audit, query, auditKey }); // audit: @brain/audit-service, query: @brain/query-service, auditKey: required non-empty secret (string | Uint8Array)
+const gov = createGovernance({ audit, query, auditKey }); // audit: @anvesx/audit-service, query: @anvesx/query-service, auditKey: required non-empty secret (string | Uint8Array)
 await gov.search({ query, principal, embedding }); // Pointer[]
 await gov.checkpoint("acme"); // Anchor
 await gov.verify("acme"); // { status: "ok" } | { status: "mismatch" | "truncated", brokenAt }

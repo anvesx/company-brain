@@ -1,5 +1,5 @@
-import type { Connector } from "@brain/connector-kit";
-import type { GraphStore } from "@brain/graph-store";
+import type { Connector } from "@anvesx/connector-kit";
+import type { GraphStore } from "@anvesx/graph-store";
 
 export interface SyncDeps {
   store: GraphStore;

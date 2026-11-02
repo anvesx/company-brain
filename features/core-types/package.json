@@ -1,5 +1,5 @@
 {
-  "name": "@brain/core-types",
+  "name": "@anvesx/core-types",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "mutation": "stryker run"
+    "mutation": "stryker run",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "zod": "^4.6.7"
@@ -23,7 +24,7 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

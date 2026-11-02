@@ -1,5 +1,5 @@
-import type { Principal } from "@brain/core-types";
-import { QueryError, type SearchResult } from "@brain/query-service";
+import type { Principal } from "@anvesx/core-types";
+import { QueryError, type SearchResult } from "@anvesx/query-service";
 import { describe, expect, it, vi } from "vitest";
 import { toOutcomeFn, toSearchFn } from "../../src/adapter.js";
 import { RetrievalError } from "../../src/index.js";

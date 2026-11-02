@@ -1,10 +1,10 @@
-# @brain/mcp-service
+# @anvesx/mcp-service
 
-Runs the `search` MCP tool from `@brain/mcp-search-tool` over real MCP transports, using the
+Runs the `search` MCP tool from `@anvesx/mcp-search-tool` over real MCP transports, using the
 `@modelcontextprotocol/sdk` stdio and Streamable HTTP transports (nothing hand-rolled).
 
 ```ts
-import { startMcpServer } from "@brain/mcp-service";
+import { startMcpServer } from "@anvesx/mcp-service";
 
 const server = await startMcpServer({
   transport: "http", // or "stdio"

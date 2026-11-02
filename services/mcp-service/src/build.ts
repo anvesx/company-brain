@@ -1,5 +1,5 @@
-import type { Principal } from "@brain/core-types";
-import { registerSearchTool, type SearchFn } from "@brain/mcp-search-tool";
+import type { Principal } from "@anvesx/core-types";
+import { registerSearchTool, type SearchFn } from "@anvesx/mcp-search-tool";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 export type McpServerDeps = {
