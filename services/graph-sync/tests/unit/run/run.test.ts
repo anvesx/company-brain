@@ -1,4 +1,3 @@
-import { GraphError } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { type SyncError, syncConnector } from "../../../src/index.js";
 import { doc, listing } from "../../docs.js";

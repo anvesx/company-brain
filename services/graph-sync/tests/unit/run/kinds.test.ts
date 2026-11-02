@@ -55,7 +55,12 @@ describe("deleting", () => {
     s.store.addEdge(edge("other", "links-to"), 1);
     const rival = () => syncConnector(s.deps, { signal: AbortSignal.abort() }).catch(() => undefined);
     const item = doc("new");
-    Object.defineProperty(item, "acl", { get: () => (void rival(), { allowUsers: [], allowGroups: [], version: 1 }) });
+    Object.defineProperty(item, "acl", {
+      get: () => {
+        void rival();
+        return { allowUsers: [], allowGroups: [], version: 1 };
+      },
+    });
     const err = await fail(syncConnector({ ...s.deps, connector: listing("folder", () => [item]) }));
     expect(err?.code).toBe("SUPERSEDED");
     expect(s.store.node("t1", "old")).toBeDefined();

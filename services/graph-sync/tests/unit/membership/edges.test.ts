@@ -37,7 +37,10 @@ describe("membership sync details", () => {
   it("stops when a newer run claimed the connector while memberships were listed", async () => {
     const s = setup();
     const rival = () => syncConnector(s.deps, { signal: AbortSignal.abort() }).catch(() => undefined);
-    const connector = withMembers(s.connector, async () => (void rival(), [{ group: "eng", user: "ana" }]));
+    const connector = withMembers(s.connector, async () => {
+      void rival();
+      return [{ group: "eng", user: "ana" }];
+    });
     const err = (await syncConnector({ ...s.deps, connector }).catch((e: unknown) => e)) as SyncError;
     expect(err.code).toBe("SUPERSEDED");
     expect(s.store.neighbors("t1", "ana", { kind: "member-of", dir: "out" })).toHaveLength(0);
