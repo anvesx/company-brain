@@ -21,6 +21,7 @@ Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Compos
 - `credential` is `oauth` (user consent), `admin-token` (org admin or service account that can list every user's data) or `pat` (pasted personal token). Stored encrypted, never returned by the API.
 - `access` says who may use the connection: `private` (owner only), `personal` (owner and the agents the owner runs), `company` (anyone in the tenant, through the tenant's ACLs).
 - `dataZone` says who may read what it syncs, same three values, and is set separately from `access`. An admin-token account defaults to `company` data and `company` access only after an admin confirms.
+- In the graph, `dataZone` maps to a core-types zone: `company` stays `company`; `private` and `personal` become `personal` and the documents are written owner-only (one `can-read` edge, the owner; the source ACL is not copied).
 - `dataZone` can never be wider than the credential allows: a `pat` or `oauth` account cannot be `company` unless its owner is a tenant admin.
 
 ## Screens
