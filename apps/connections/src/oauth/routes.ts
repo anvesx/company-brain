@@ -1,6 +1,7 @@
 import { hasLiveRecheck } from "@anvesx/connectors";
 import { generateCodeVerifier, generateState } from "arctic";
 import { Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { checkZones } from "../accounts/rules/widen.js";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/guard/auth.js";
@@ -8,9 +9,10 @@ import { parseStart } from "../http/guard/validate.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, credentialOf, exchange } from "./flow.js";
 import { appOf, manifestFor, providerFor } from "./providers.js";
+import { BIND_COOKIE, BIND_TTL, bindingHolds, bindValue } from "./state/binding.js";
 import { createPending } from "./state/pending.js";
 
-/** `/oauth/:provider/start` (bearer) and `/oauth/:provider/callback` (the browser redirect; the caller is the one who started). */
+/** `/oauth/:provider/start` (bearer) and `/oauth/:provider/callback` (the browser redirect; the caller is the one who started, proved by the `oauth_bind` cookie). */
 export function oauthRoutes(d: Deps): Hono<Env> {
   const r = new Hono<Env>();
   const pending = createPending(d.now);
@@ -27,11 +29,17 @@ export function oauthRoutes(d: Deps): Hono<Env> {
     const state = generateState();
     const verifier = generateCodeVerifier();
     pending.put(state, { provider: name, caller, verifier, ...q.value });
+    const secure = new URL(c.req.url).protocol === "https:";
+    setCookie(c, BIND_COOKIE, bindValue(d.secret, state, caller), { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: BIND_TTL });
     return c.redirect(authorizeURL(p, state, verifier).toString(), 302);
   });
   r.get("/:provider/callback", async (c) => {
     const name = c.req.param("provider");
-    const pend = pending.take(c.req.query("state") ?? "");
+    const state = c.req.query("state") ?? "";
+    const pend = pending.take(state);
+    deleteCookie(c, BIND_COOKIE, { path: "/" });
+    if (pend && !bindingHolds(d.secret, getCookie(c, BIND_COOKIE), state, pend.caller))
+      return c.json({ error: "sign-in was not started in this browser" }, 400);
     const m = pend && manifestFor(d.catalog, pend.provider, pend.caller.tenant);
     const p = m && providerFor(d.oauth, m);
     if (!m || !p || !pend || (pend.provider !== name && appOf(m) !== name)) return c.json({ error: "unknown or expired state" }, 400);

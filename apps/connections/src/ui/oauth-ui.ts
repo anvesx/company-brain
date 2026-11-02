@@ -3,7 +3,7 @@ import type { Env } from "../http/guard/auth.js";
 
 /**
  * Two additions for a browser around the bearer-only OAuth routes:
- * `GET /:provider/start-url` answers `{url}` where `start` would redirect, because a page cannot send the bearer on a navigation;
+ * `GET /:provider/start-url` answers `{url}` where `start` would redirect, because a page cannot send the bearer on a navigation, and passes on the `oauth_bind` cookie `start` set;
  * with `redirect` set, `callback` sends the browser back to the page instead of answering json.
  */
 export function oauthUi(oauth: Hono<Env>, redirect?: string): Hono<Env> {
@@ -13,7 +13,9 @@ export function oauthUi(oauth: Hono<Env>, redirect?: string): Hono<Env> {
     const search = new URL(c.req.url).search;
     const res = await oauth.request(`/${c.req.param("provider")}/start${search}`, { headers: auth ? { authorization: auth } : {} });
     const url = res.headers.get("location");
-    return res.status === 302 && url ? c.json({ url }) : new Response(res.body, res);
+    if (res.status !== 302 || !url) return new Response(res.body, res);
+    for (const cookie of res.headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
+    return c.json({ url });
   });
   if (redirect !== undefined) {
     r.use("/:provider/callback", async (c, next) => {
