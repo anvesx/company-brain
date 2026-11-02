@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { checkZones } from "../../../src/accounts/rules/widen.js";
 
-const base = { credential: "pat", access: "private", dataZone: "private", ownerIsAdmin: false } as const;
+const base = { credential: "pat", access: "private", dataZone: "private", ownerIsAdmin: false, liveRecheck: true } as const;
+const { liveRecheck: _omitted, ...unflagged } = base;
 
 describe("checkZones", () => {
   it("allows private and personal for a pat owner who is not admin", () => {
@@ -35,8 +36,33 @@ describe("checkZones without a live recheck", () => {
   it.each([{ access: "company" }, { dataZone: "company" }] as const)("refuses %o even for a tenant admin, naming canRead", (wide) => {
     expect(checkZones({ ...base, ...wide, ownerIsAdmin: true, liveRecheck: false })).toEqual({ ok: false, reason: expect.stringContaining("canRead") });
   });
-  it("allows private and personal, and treats an unset flag as recheck present", () => {
+  it("allows private and personal", () => {
     expect(checkZones({ ...base, access: "personal", dataZone: "personal", liveRecheck: false })).toEqual({ ok: true });
-    expect(checkZones({ ...base, dataZone: "company", ownerIsAdmin: true })).toEqual({ ok: true });
+  });
+});
+
+describe("checkZones with an explicit live recheck", () => {
+  it("allows company for a tenant admin when liveRecheck is true", () => {
+    expect(checkZones({ ...base, access: "company", dataZone: "company", ownerIsAdmin: true, liveRecheck: true })).toEqual({ ok: true });
+  });
+  it("keeps the admin rule when liveRecheck is true", () => {
+    expect(checkZones({ ...base, dataZone: "company", liveRecheck: true })).toEqual({ ok: false, reason: expect.stringContaining("dataZone") });
+  });
+});
+
+// Untyped callers (JavaScript, casts) can omit the flag or pass anything else; every such call must be denied.
+const untyped = (extra: object) => checkZones({ ...unflagged, ...extra } as unknown as Parameters<typeof checkZones>[0]);
+
+describe("checkZones fails closed without a boolean liveRecheck", () => {
+  it.each([
+    ["omitted", {}],
+    ["undefined", { liveRecheck: undefined }],
+    ["null", { liveRecheck: null }],
+    ['the string "true"', { liveRecheck: "true" }],
+  ])("denies a private account when liveRecheck is %s, naming liveRecheck", (_label, extra) => {
+    expect(untyped(extra)).toEqual({ ok: false, reason: expect.stringContaining("liveRecheck") });
+  });
+  it.each([{ access: "company" }, { dataZone: "company" }] as const)("denies %o for a tenant admin when liveRecheck is omitted", (wide) => {
+    expect(untyped({ ...wide, ownerIsAdmin: true })).toEqual({ ok: false, reason: expect.stringContaining("liveRecheck") });
   });
 });

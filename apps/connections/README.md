@@ -4,6 +4,8 @@ Accounts for the sources the brain reads (GitHub, Google Drive). Stores each cre
 
 Spec: [docs/specs/app/connections.md](../../docs/specs/app/connections.md). Slack and Gmail are not built yet.
 
+`checkZones` (`src/accounts/rules/widen.ts`) requires an explicit `liveRecheck` boolean. Omitting it, or passing null, undefined or a non-boolean, returns `{ ok: false }` (fail closed).
+
 ## Run the tests
 
 ```sh
