@@ -21,3 +21,9 @@ export async function call(method, path, body) {
     return { ok: false, status: 0, data: null, error: "could not reach the server" };
   }
 }
+
+/** What this tenant can connect, from the server's catalog, as `[id, name]` pairs for a select. Empty when the call fails. */
+export async function catalog() {
+  const r = await call("GET", "/v1/catalog");
+  return r.ok ? r.data.providers : [];
+}

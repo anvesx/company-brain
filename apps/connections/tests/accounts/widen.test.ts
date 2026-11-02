@@ -30,3 +30,13 @@ describe("checkZones", () => {
     expect(checkZones({ ...base, credential: "admin-token", dataZone: "company", ownerIsAdmin: true })).toEqual({ ok: true });
   });
 });
+
+describe("checkZones without a live recheck", () => {
+  it.each([{ access: "company" }, { dataZone: "company" }] as const)("refuses %o even for a tenant admin, naming canRead", (wide) => {
+    expect(checkZones({ ...base, ...wide, ownerIsAdmin: true, liveRecheck: false })).toEqual({ ok: false, reason: expect.stringContaining("canRead") });
+  });
+  it("allows private and personal, and treats an unset flag as recheck present", () => {
+    expect(checkZones({ ...base, access: "personal", dataZone: "personal", liveRecheck: false })).toEqual({ ok: true });
+    expect(checkZones({ ...base, dataZone: "company", ownerIsAdmin: true })).toEqual({ ok: true });
+  });
+});

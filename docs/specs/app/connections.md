@@ -23,7 +23,7 @@ The user wants nearly every app available, and companies must be able to add the
 - A custom connector gets no extra trust. It runs through the same widening rule, the same zone to ACL mapping, and the same live `canRead` recheck. A connector with no `canRead` can only be `personal`.
 - The sign-in screen lists the catalog, so adding an entry adds a tile.
 - Tests: two manifests share one OAuth flow; a tenant entry is invisible to another tenant; a custom connector without `canRead` cannot be set to `company`.
-- Not built yet. Build order: registry and manifest type, move Drive and GitHub onto it, then Slack, Gmail, and the first custom-connector test.
+- Built: the manifest type and registry (`services/connectors/src/catalog`), Drive and GitHub on manifests, `GET/POST /v1/catalog`, HTTP custom connectors per tenant (in memory), and the no-`canRead` rule (never company). Not built yet: Slack, Gmail, persisted custom entries, module-path custom connectors.
 
 ## Model
 - `Account`: `{id, owner, provider, label, credential, access, dataZone, status}`.

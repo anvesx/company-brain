@@ -1,9 +1,5 @@
 import { field, h, select } from "../dom.js";
 
-export const PROVIDERS = [
-  ["github", "GitHub"],
-  ["drive", "Google Drive"],
-];
 export const KINDS = [
   ["oauth", "Sign in with the provider (oauth)"],
   ["pat", "Personal access token (pat)"],

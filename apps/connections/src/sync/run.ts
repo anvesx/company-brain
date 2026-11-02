@@ -1,3 +1,4 @@
+import type { Registry } from "@brain/connectors";
 import { type SyncReport, syncConnector } from "@brain/graph-sync";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
@@ -13,8 +14,9 @@ export async function runAccountSync(
   token: string,
   repo: string | undefined,
   nowMs: number,
+  catalog: Registry,
 ): Promise<SyncReport | { error: string }> {
-  const connector = connectorFor(a, token, repo, cfg);
+  const connector = connectorFor(a, token, repo, cfg, catalog);
   if ("error" in connector) return connector;
   return syncConnector({
     store: forAccount(cfg.graph, a),

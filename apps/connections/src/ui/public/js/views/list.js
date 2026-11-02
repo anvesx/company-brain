@@ -1,17 +1,17 @@
 import { when } from "../actions.js";
-import { call } from "../api.js";
+import { call, catalog } from "../api.js";
 import { h, mount, select } from "../dom.js";
-import { PROVIDERS, ZONES } from "./hints.js";
+import { ZONES } from "./hints.js";
 
 const name = (pairs, v) => pairs.find(([k]) => k === v)?.[1] ?? v;
 const fact = (term, value) => [h("dt", {}, term), h("dd", {}, value)].map((n) => n);
 
-const card = (a) =>
+const card = (a, pairs) =>
   h(
     "a",
     { class: "card", href: `#/account/${a.id}` },
     h("h3", {}, a.label),
-    h("p", { class: "sub" }, `${name(PROVIDERS, a.provider)}, owned by ${a.owner}`),
+    h("p", { class: "sub" }, `${name(pairs, a.provider)}, owned by ${a.owner}`),
     h(
       "dl",
       { class: "facts" },
@@ -26,13 +26,14 @@ const card = (a) =>
 export async function list(root, flash) {
   const r = await call("GET", "/v1/accounts");
   if (!r.ok) return mount(root, h("p", { class: "note bad" }, r.error));
+  const pairs = (await catalog()).map((e) => [e.id, e.name]);
   const rows = h("div", { id: "rows" });
-  const provider = select("f-provider", [["", "All providers"], ...PROVIDERS], "");
+  const provider = select("f-provider", [["", "All providers"], ...pairs], "");
   const zone = select("f-zone", [["", "Any data zone"], ...ZONES], "");
   const draw = () => {
     const shown = r.data.accounts.filter((a) => (!provider.value || a.provider === provider.value) && (!zone.value || a.dataZone === zone.value));
     const none = r.data.accounts.length === 0 ? "No connections yet. Add one to start." : "No connections match these filters.";
-    mount(rows, ...(shown.length ? shown.map(card) : [h("p", { class: "empty" }, none)]));
+    mount(rows, ...(shown.length ? shown.map((a) => card(a, pairs)) : [h("p", { class: "empty" }, none)]));
   };
   provider.addEventListener("change", draw);
   zone.addEventListener("change", draw);

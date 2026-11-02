@@ -1,5 +1,7 @@
+import { hasLiveRecheck } from "@brain/connectors";
 import { Hono } from "hono";
 import { checkZones } from "../accounts/widen.js";
+import { kindsOf } from "../catalog/kinds.js";
 import type { Deps } from "../deps.js";
 import { disconnect } from "../sync/disconnect.js";
 import { syncRoute } from "../sync/route.js";
@@ -16,10 +18,13 @@ export function accountsRoutes(d: Deps): Hono<Env> {
   r.get("/", (c) => c.json({ accounts: d.store.listVisible(c.get("caller")) }));
   r.post("/", async (c) => {
     const caller = c.get("caller");
-    const p = parseNew(await json(c.req.raw));
+    const apps = d.catalog.list(caller.tenant).map(({ manifest: m }) => ({ id: m.id, kinds: kindsOf(m), needsRepo: m.needsRepo === true }));
+    const p = parseNew(await json(c.req.raw), apps);
     if ("error" in p) return c.json({ error: p.error }, 400);
     const { token, ...a } = p.value;
-    const zones = checkZones({ credential: a.kind, access: a.access, dataZone: a.dataZone, ownerIsAdmin: d.isAdmin(caller) });
+    const manifest = d.catalog.get(a.provider, caller.tenant);
+    const liveRecheck = manifest ? hasLiveRecheck(manifest) : true;
+    const zones = checkZones({ credential: a.kind, access: a.access, dataZone: a.dataZone, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     const made = d.store.create({ ...a, tenant: caller.tenant, owner: caller.user, secret: token });
     rewriteTokens(d);
@@ -32,9 +37,11 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can change this account" }, 403);
     const p = parsePatch(await json(c.req.raw));
     if ("error" in p) return c.json({ error: p.error }, 400);
-    if (p.value.repo && cur.provider !== "github") return c.json({ error: "only a github account has a repo" }, 400);
+    const manifest = d.catalog.get(cur.provider, cur.tenant);
+    if (p.value.repo && !manifest?.needsRepo) return c.json({ error: "only a github account has a repo" }, 400);
     const next = { access: p.value.access ?? cur.access, dataZone: p.value.dataZone ?? cur.dataZone };
-    const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller) });
+    const liveRecheck = manifest ? hasLiveRecheck(manifest) : true;
+    const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     const changed = d.store.update(cur.id, p.value);
     rewriteTokens(d);

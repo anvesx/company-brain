@@ -1,10 +1,11 @@
-import { ROUTE } from "../actions.js";
-import { call } from "../api.js";
+import { call, catalog } from "../api.js";
 import { field, h, mount, select } from "../dom.js";
-import { KINDS, PROVIDERS, WIDENING, warning, zoneField } from "./hints.js";
+import { KINDS, WIDENING, warning, zoneField } from "./hints.js";
 
 /** The add form. oauth asks the server for a provider url and navigates to it; the others post the pasted token. */
-export function add(root) {
+export async function add(root) {
+  const entries = await catalog();
+  const pairs = entries.map((e) => [e.id, e.name]);
   const el = (id) => root.querySelector(`#${id}`);
   const say = (text, bad) => {
     const m = el("msg");
@@ -12,6 +13,9 @@ export function add(root) {
     m.className = `hint${bad ? " bad" : ""}`;
   };
   const sync = () => {
+    const kinds = entries.find((e) => e.id === el("provider").value)?.kinds ?? [];
+    for (const o of el("kind").options) o.hidden = !kinds.includes(o.value);
+    if (!kinds.includes(el("kind").value)) el("kind").value = kinds[0] ?? "";
     el("token-field").hidden = el("kind").value === "oauth";
     el("go").textContent = el("kind").value === "oauth" ? "Continue to sign in" : "Add connection";
     say(warning(el("kind").value, el("access").value, el("dataZone").value), true);
@@ -22,7 +26,7 @@ export function add(root) {
     const kind = el("kind").value;
     const provider = el("provider").value;
     if (kind === "oauth") {
-      const r = await call("GET", `/v1/oauth/${ROUTE[provider]}/start-url?${new URLSearchParams(v)}`);
+      const r = await call("GET", `/v1/oauth/${provider}/start-url?${new URLSearchParams(v)}`);
       if (r.ok) return location.assign(r.data.url);
       return say(r.status === 404 ? "Sign-in for this provider is not set up on this server." : r.error, true);
     }
@@ -33,7 +37,7 @@ export function add(root) {
   const form = h(
     "form",
     { onsubmit: submit, onchange: sync },
-    field("Provider", "provider", select("provider", PROVIDERS, "github")),
+    field("Provider", "provider", select("provider", pairs, pairs[0]?.[0])),
     field("Credential", "kind", select("kind", KINDS, "oauth")),
     field("Label", "label", h("input", { id: "label", required: true, maxlength: 200, placeholder: "Work GitHub" })),
     h(
@@ -50,4 +54,5 @@ export function add(root) {
     h("button", { id: "go", type: "submit" }, "Continue to sign in"),
   );
   mount(root, h("h1", {}, "Add connection"), h("p", { class: "lede" }, "Link an account, then decide who may use it and who may read what it syncs."), form);
+  sync();
 }

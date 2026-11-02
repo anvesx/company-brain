@@ -1,3 +1,4 @@
+import { hasLiveRecheck } from "@brain/connectors";
 import { generateCodeVerifier, generateState } from "arctic";
 import { Hono } from "hono";
 import { checkZones } from "../accounts/widen.js";
@@ -7,6 +8,7 @@ import { parseStart } from "../http/validate.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, credentialOf, exchange } from "./flow.js";
 import { createPending } from "./pending.js";
+import { appOf, manifestFor, providerFor } from "./providers.js";
 
 /** `/oauth/:provider/start` (bearer) and `/oauth/:provider/callback` (the browser redirect; the caller is the one who started). */
 export function oauthRoutes(d: Deps): Hono<Env> {
@@ -14,12 +16,13 @@ export function oauthRoutes(d: Deps): Hono<Env> {
   const pending = createPending(d.now);
   r.get("/:provider/start", requireCaller(d.secret, d.now), (c) => {
     const name = c.req.param("provider");
-    const p = d.oauth?.[name];
-    if (!p) return c.json({ error: "unknown provider" }, 404);
+    const caller = c.get("caller");
+    const m = manifestFor(d.catalog, name, caller.tenant);
+    const p = m && providerFor(d.oauth, m);
+    if (!m || !p) return c.json({ error: "unknown provider" }, 404);
     const q = parseStart(c.req.query(), name);
     if ("error" in q) return c.json({ error: q.error }, 400);
-    const caller = c.get("caller");
-    const zones = checkZones({ credential: "oauth", ...q.value, ownerIsAdmin: d.isAdmin(caller) });
+    const zones = checkZones({ credential: "oauth", ...q.value, ownerIsAdmin: d.isAdmin(caller), liveRecheck: hasLiveRecheck(m) });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     const state = generateState();
     const verifier = generateCodeVerifier();
@@ -28,12 +31,19 @@ export function oauthRoutes(d: Deps): Hono<Env> {
   });
   r.get("/:provider/callback", async (c) => {
     const name = c.req.param("provider");
-    const p = d.oauth?.[name];
     const pend = pending.take(c.req.query("state") ?? "");
-    if (!p || !pend || pend.provider !== name) return c.json({ error: "unknown or expired state" }, 400);
+    const m = pend && manifestFor(d.catalog, pend.provider, pend.caller.tenant);
+    const p = m && providerFor(d.oauth, m);
+    if (!m || !p || !pend || (pend.provider !== name && appOf(m) !== name)) return c.json({ error: "unknown or expired state" }, 400);
     const code = c.req.query("code");
     if (c.req.query("error") || !code) return c.json({ error: `provider refused: ${c.req.query("error") ?? "no code"}` }, 400);
-    const zones = checkZones({ credential: "oauth", access: pend.access, dataZone: pend.dataZone, ownerIsAdmin: d.isAdmin(pend.caller) });
+    const zones = checkZones({
+      credential: "oauth",
+      access: pend.access,
+      dataZone: pend.dataZone,
+      ownerIsAdmin: d.isAdmin(pend.caller),
+      liveRecheck: hasLiveRecheck(m),
+    });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     try {
       const secret = credentialOf(await exchange(p, code, pend.verifier));
