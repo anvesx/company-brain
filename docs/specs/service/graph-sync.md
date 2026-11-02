@@ -31,7 +31,8 @@ class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT"|"
 9. Two connectors in one tenant listing the same address get two nodes with their own ACLs (review H1). A document id owned by another source is skipped, never overwritten. A connector id containing `/` is `BAD_INPUT`.
 10. Runs of one (tenant, connector) are ordered: a run that is no longer the newest throws `SyncError("SUPERSEDED")` before its next write or tombstone (H2). In-memory, one process; not a cross-process lock.
 11. A bad entry (invalid address, title, version or principal, or a bad membership pair) is skipped and listed in `report.skipped`; the run completes and tombstones deleted documents (H3). A skipped document fails closed: its `can-read` edges from this connector are closed and it is not tombstoned.
-12. A principal node is written once, by the first source that lists it (M8). A group whose id is already a user, or the reverse, is skipped and reported (M3, partial: no default namespacing).
+12. A principal node is written once, by the first source that lists it (M8). A principal id already held with another kind (user vs group, or a document node), by an earlier run, an earlier document of the run or the same document, is refused: the listing document is skipped and reported, fail closed (M3, partial: no default namespacing). A document id held by a person or team is refused the same way.
+13. Two different addresses mapping to one node id: the first wins, the later is skipped and reported; the first is untouched.
 
 ## Acceptance tests (written first)
 - unit: two connectors same address, overlapping and stale runs, poison address and CJK principal, membership poison, shared principal, user/group clash; ACL to edges, group nodes, resolve hook, no text props, idempotent re-sync (spy on store counts via real store), ACL narrowing closes edges, deletion tombstones, abort, connector failure, page size bounds, unicode addresses.

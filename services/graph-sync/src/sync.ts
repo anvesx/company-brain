@@ -11,7 +11,7 @@ type Opts = { pageSize?: number; signal?: AbortSignal };
 async function run(c: Ctx, size: number, signal?: AbortSignal): Promise<void> {
   const { store, connector, tenant, now } = c.deps;
   writeNode(c, rootNode(c));
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   let cursor: string | undefined;
   for (;;) {
     if (signal?.aborted) throw new SyncError("ABORTED", "sync aborted");
@@ -23,12 +23,20 @@ async function run(c: Ctx, size: number, signal?: AbortSignal): Promise<void> {
     for (const d of page.items) {
       const id = nodeId(c, d.address);
       // A skipped entry stays "seen" (never tombstoned for being bad) but loses its readers: fail closed.
+      const first = seen.get(id);
+      if (first !== undefined && first !== d.address) {
+        // Two addresses on one node: the later is left out and the earlier one is untouched.
+        guarded(c, d.address, () => {
+          throw new SyncError("BAD_INPUT", `${id} is already the node of address ${first}`);
+        });
+        continue;
+      }
       const write = (): void => {
         syncDocument(c, d);
         syncAccess(c, id, d.acl);
       };
       guarded(c, d.address, write, () => revoke(c, id));
-      seen.add(id);
+      seen.set(id, d.address);
     }
     if (page.nextCursor === undefined) break;
     if (page.nextCursor === cursor) throw new SyncError("CONNECTOR_FAILED", "connector cursor did not advance");
@@ -51,7 +59,7 @@ export async function syncConnector(deps: SyncDeps, opts: Opts = {}): Promise<Sy
   if (deps.connector.id.includes("/")) throw new SyncError("BAD_INPUT", "connector id must not contain a slash");
   const report: SyncReport = { nodes: 0, edges: 0, removed: 0, pages: 0, skipped: [] };
   const alive = claim(deps.tenant, deps.connector.id);
-  const c: Ctx = { deps, report, alive, principals: new Set(), root: `connector:${deps.connector.id}` };
+  const c: Ctx = { deps, report, alive, principals: new Map(), root: `connector:${deps.connector.id}` };
   try {
     await run(c, size, opts.signal);
   } catch (e) {

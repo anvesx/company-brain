@@ -7,8 +7,8 @@ export interface Ctx {
   report: SyncReport;
   /** Throws SUPERSEDED when a newer run of this connector has started. Called after every await, before writing. */
   alive: () => void;
-  /** Principal ids already written in this run. */
-  principals: Set<string>;
+  /** Principal ids written or found in this run, with their kind. */
+  principals: Map<string, string>;
   /** Id of the node every document of this connector belongs to. */
   root: string;
 }
@@ -55,8 +55,9 @@ export const nodeId = (c: Ctx, address: string): string => {
 export const syncDocument = (c: Ctx, d: ListedDoc): void => {
   const { store, connector, tenant, now } = c.deps;
   const id = nodeId(c, d.address);
-  const owner = store.node(tenant, id)?.source;
-  if (owner !== undefined && owner !== connector.id) throw new SyncError("BAD_INPUT", `${id} belongs to source ${owner}`);
+  const old = store.node(tenant, id);
+  if (old !== undefined && old.source !== connector.id) throw new SyncError("BAD_INPUT", `${id} belongs to source ${old.source}`);
+  if (old !== undefined && old.kind !== "document") throw new SyncError("BAD_INPUT", `${id} is already a ${old.kind}, not a document`);
   writeNode(c, {
     tenant,
     id,
