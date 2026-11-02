@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { code } from "../../support/helpers.js";
-import { opts, star } from "./reads.js";
+import { opts, star } from "../../support/reads.js";
 
 describe("reach limit", () => {
   it("returns exactly limit nodes, in order", () => {

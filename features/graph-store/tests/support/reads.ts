@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { edge, node, openStore } from "../../support/helpers.js";
+import { edge, node, openStore } from "./helpers.js";
 
 type Proto = Record<"all" | "get", (...a: unknown[]) => unknown>;
 const proto = Object.getPrototypeOf(new DatabaseSync(":memory:").prepare("SELECT 1")) as Proto;

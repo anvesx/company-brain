@@ -1,5 +1,5 @@
 # reach
 
-- `cost.test.ts`: read-count assertions (one batched query per level, not one per node).
+- `cost.test.ts`: read-count assertions (batched reads per level, not one per node).
 - `limit.test.ts`: limit enforcement, including 0, negative, non-integer and huge values.
-- `reads.ts`: statement-read counter and star-graph builder shared by both.
+- `ghosts.test.ts`: edges to never-created nodes must not shorten results; differential test against the one-lookup-per-node semantics.

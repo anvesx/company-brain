@@ -8,15 +8,12 @@ export interface ReachOpts {
   asOf?: number;
 }
 
-/** Edges read per requested result, and an absolute ceiling, so edges to missing nodes cannot run away. */
-const EDGES_PER_RESULT = 10;
-const MAX_EDGES = 100_000;
-
 /**
  * Breadth-first walk over outgoing edges of the given kinds. Returns reached nodes (never the start
  * node) level by level, then in edge insertion order. A node that does not exist at `asOf` is skipped
- * and not expanded. Cost is one edge read and one node read per level (batched), and at most
- * min(limit * 10, 100000) edges are read in total, whether or not their targets exist.
+ * and not expanded. Returns exactly min(limit, reachable) nodes. Edges are read in growing pages, one
+ * edge query and one node query per page, and reading stops as soon as `limit` nodes are found, so
+ * cost follows the edges scanned (ghost edges included) until then, not a fixed cap.
  */
 export function reach(tenant: string, from: string, o: ReachOpts, q: Batch): GraphNode[] {
   const t = text("tenant", tenant),
@@ -31,21 +28,21 @@ export function reach(tenant: string, from: string, o: ReachOpts, q: Batch): Gra
   if (o.limit === 0 || o.depth === 0 || o.kinds.length === 0) return out;
   const kinds = [...new Set(o.kinds)];
   const seen = new Set([start]);
-  let budget = Math.min(o.limit * EDGES_PER_RESULT, MAX_EDGES);
   let frontier = [start];
-  for (let level = 0; level < o.depth && frontier.length > 0 && budget > 0; level++) {
-    const targets = q.outTargets(t, frontier, kinds, when, budget);
-    budget -= targets.length;
-    const fresh = targets.filter((to) => !seen.has(to) && seen.add(to));
-    const found = q.nodes(t, fresh, when);
-    frontier = [];
-    for (const to of fresh) {
-      const n = found.get(to);
-      if (n === undefined) continue;
-      out.push(n);
-      if (out.length >= o.limit) return out;
-      frontier.push(to);
+  for (let level = 0; level < o.depth && frontier.length > 0; level++) {
+    const upcoming: string[] = [];
+    for (const page of q.pages(t, frontier, kinds, when)) {
+      const fresh = page.filter((to) => !seen.has(to) && seen.add(to));
+      const found = q.nodes(t, fresh, when);
+      for (const to of fresh) {
+        const n = found.get(to);
+        if (n === undefined) continue;
+        out.push(n);
+        if (out.length >= o.limit) return out;
+        upcoming.push(to);
+      }
     }
+    frontier = upcoming;
   }
   return out;
 }

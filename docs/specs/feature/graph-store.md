@@ -36,7 +36,7 @@ class GraphError extends Error { code: "BAD_INPUT"|"DEPTH_LIMIT"|"CLOSED" }
 2. Valid-time columns validFrom, validTo (null = current). `asOf` reads the row valid at that time.
 3. upsertNode with identical content is a no-op; changed content closes the old row and inserts a new one.
 4. Edges to unknown nodes are allowed (the other side may sync later); reach skips missing nodes.
-5. reach is breadth-first, cycle-safe, capped by depth (max 6, else DEPTH_LIMIT) and limit.
+5. reach is breadth-first, cycle-safe, capped by depth (max 6, else DEPTH_LIMIT) and limit. It returns exactly min(limit, reachable existing nodes); ghost edges (invariant 4) never count toward the limit and never shorten the result. Reads are batched (one edge and one node query per page of a growing page size) and stop once limit nodes are found; there is no edge cap.
 6. props hold metadata only; values over 1 KiB or body-like key (`text`, `body`, `content`, `summary`, `excerpt`, `transcript` and similar, compared without case or punctuation) throw BAD_INPUT.
 7. tombstone closes the node and all its edges.
 8. After close() every call throws CLOSED. WAL and shm files are removed.

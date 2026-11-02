@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { edge } from "../../support/helpers.js";
-import { countReads, opts, star } from "./reads.js";
+import { countReads, opts, star } from "../../support/reads.js";
 
 describe("reach cost", () => {
   it("looks up many targets with one edge read and one node read", () => {
@@ -27,7 +27,7 @@ describe("reach cost", () => {
     const n = countReads(() => {
       expect(s.reach("t1", "r", opts(10))).toEqual([]);
     });
-    expect(n).toBeLessThanOrEqual(4);
+    expect(n).toBeLessThanOrEqual(6);
   });
 
   it("is not defeated by more targets than one SQL batch holds", () => {
