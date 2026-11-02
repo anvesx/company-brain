@@ -4,7 +4,7 @@ import { migrate, type Row, SCHEMA, view } from "./rows.js";
 import { open, seal } from "./rules/crypto.js";
 import type { Account, Caller, Kind, NewAccount, Patch, Status } from "./types.js";
 
-export type Secret = { id: string; owner: string; provider: string; kind: Kind; secret: string };
+export type Secret = { id: string; tenant: string; owner: string; provider: string; kind: Kind; secret: string };
 export function openStore(path: string, key: Buffer) {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
@@ -60,6 +60,7 @@ export function openStore(path: string, key: Buffer) {
         .all()
         .map((r) => ({
           id: r.id as string,
+          tenant: r.tenant as string,
           owner: r.owner as string,
           provider: r.provider as string,
           kind: r.kind as Kind,

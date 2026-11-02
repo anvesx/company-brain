@@ -46,7 +46,7 @@ The user wants nearly every app available, and companies must be able to add the
 ## Behaviour
 1. A caller sees only accounts they own, plus `company` accounts in their tenant (without credentials).
 2. Every change checks the widening rule above and answers 403 with the reason.
-3. The token file is `{user: {source: token}}` with one key per account, `<provider>:<account id>` (the graph source of its documents), plus the bare provider for the owner's oldest active account. `GET /v1/tokens` for the brain app is not exposed over HTTP; the app writes `BRAIN_USER_TOKENS_FILE` (chmod 600) instead.
+3. The token file is `{"<tenant>:<user>": {source: token}}` (each part percent-encoded, so two tenants may share a user name) with one key per account, `<provider>:<account id>` (the graph source of its documents), plus the bare provider for the owner's oldest active account. `GET /v1/tokens` for the brain app is not exposed over HTTP; the app writes `BRAIN_USER_TOKENS_FILE` (chmod 600) instead.
 4. A failed refresh marks the account `needs-auth`; it is never deleted silently.
 5. Disconnect removes the credential and the account's `can-read` and `member-of` edges for that source.
 6. Documents are stored in the graph as `<provider>:<account id>/<address>` and groups as `<source>/<raw>`, so two accounts never share a node or an edge; disconnecting one closes only its own edges.

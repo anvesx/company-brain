@@ -37,7 +37,7 @@ describe("github oauth against the replay provider", () => {
     await f.callback();
     const file = join(h.s.dir, "tokens.json");
     writeTokenFile(h.s.store, file);
-    const token = (JSON.parse(readFileSync(file, "utf8")) as { ann: { github: string } }).ann.github;
+    const token = (JSON.parse(readFileSync(file, "utf8")) as Record<string, { github: string }>)["t1:ann"]?.github;
     expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
   });
   it("writes the token file when the callback creates the account", async () => {
@@ -45,7 +45,7 @@ describe("github oauth against the replay provider", () => {
     const w = await harness({}, undefined, { tokensFile: file });
     const f = await w.signIn(ann, "github");
     await f.callback();
-    const token = (JSON.parse(readFileSync(file, "utf8")) as { ann: { github: string } }).ann.github;
+    const token = (JSON.parse(readFileSync(file, "utf8")) as Record<string, { github: string }>)["t1:ann"]?.github;
     expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
     await w.close();
   });

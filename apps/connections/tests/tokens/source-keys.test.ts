@@ -21,7 +21,7 @@ describe("token file keys", () => {
     const one = t.store.create({ ...base, owner: "ann", secret: "ghp_one" });
     const two = t.store.create({ ...base, owner: "ann", label: "b", secret: "ghp_two" });
     expect(writeTokenFile(t.store, file)).toEqual({ users: 1, tokens: 2 });
-    expect(read()).toEqual({ ann: { github: "ghp_one", [sourceOf(one)]: "ghp_one", [sourceOf(two)]: "ghp_two" } });
+    expect(read()).toEqual({ "t1:ann": { github: "ghp_one", [sourceOf(one)]: "ghp_one", [sourceOf(two)]: "ghp_two" } });
   });
   it("leaves a needs-auth account out of both keys", () => {
     const one = t.store.create({ ...base, owner: "ann", secret: "ghp_one" });

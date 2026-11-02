@@ -24,7 +24,7 @@ describe("writeTokenFile", () => {
     t.store.create({ ...base, owner: "ann", provider: "drive", kind: "pat", secret: "drv_ann" });
     t.store.create({ ...base, owner: "bob", kind: "pat", secret: "ghp_bob" });
     expect(writeTokenFile(t.store, file)).toEqual({ users: 2, tokens: 3 });
-    expect(read()).toEqual({ ann: { github: "ghp_ann", drive: "drv_ann" }, bob: { github: "ghp_bob" } });
+    expect(read()).toEqual({ "t1:ann": { github: "ghp_ann", drive: "drv_ann" }, "t1:bob": { github: "ghp_bob" } });
     expect(statSync(file).mode & 0o777).toBe(0o600);
   });
   it("tightens an existing world-readable file", () => {
@@ -36,27 +36,27 @@ describe("writeTokenFile", () => {
   it("uses the access token of an oauth account", () => {
     t.store.create({ ...base, owner: "ann", kind: "oauth", secret: JSON.stringify({ accessToken: "gho_abc", refreshToken: "r" }) });
     writeTokenFile(t.store, file);
-    expect(read()).toEqual({ ann: { github: "gho_abc" } });
+    expect(read()).toEqual({ "t1:ann": { github: "gho_abc" } });
   });
   it("keeps the oldest active account per provider and skips needs-auth ones", () => {
     const first = t.store.create({ ...base, owner: "ann", kind: "pat", secret: "old" });
     t.store.create({ ...base, owner: "ann", kind: "pat", secret: "newer" });
     t.store.setStatus(first.id, "needs-auth");
     writeTokenFile(t.store, file);
-    expect(read()).toEqual({ ann: { github: "newer" } });
+    expect(read()).toEqual({ "t1:ann": { github: "newer" } });
   });
   it("writes an empty map with no accounts and gives a company account token only to its owner", () => {
     expect(writeTokenFile(t.store, file)).toEqual({ users: 0, tokens: 0 });
     expect(read()).toEqual({});
     t.store.create({ ...base, owner: "root", access: "company", kind: "pat", secret: "ghp_root" });
     writeTokenFile(t.store, file);
-    expect(read()).toEqual({ root: { github: "ghp_root" } });
+    expect(read()).toEqual({ "t1:root": { github: "ghp_root" } });
   });
   it("skips an oauth account with no usable token and counts only what it wrote", () => {
     t.store.create({ ...base, owner: "ann", kind: "oauth", secret: "not json" });
     t.store.create({ ...base, owner: "ann", provider: "drive", kind: "pat", secret: "drv" });
     expect(writeTokenFile(t.store, file)).toEqual({ users: 1, tokens: 1 });
-    expect(read()).toEqual({ ann: { drive: "drv" } });
+    expect(read()).toEqual({ "t1:ann": { drive: "drv" } });
   });
   it("leaves mode 600 even when the temporary file already exists as 644", () => {
     writeFileSync(`${file}.${process.pid}.tmp`, "x", { mode: 0o644 });
