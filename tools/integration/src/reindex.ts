@@ -24,6 +24,10 @@ export function graphDocs(store: GraphStore, tenant: string, connectorId: string
   });
 }
 
+/** Rank refuses more than 10,000 documents per call, so a first reindex of a big corpus goes in slices. */
+const BATCH = 5000;
+const chunks = <T>(all: readonly T[]): T[][] => Array.from({ length: Math.ceil(all.length / BATCH) }, (_, i) => all.slice(i * BATCH, (i + 1) * BATCH));
+
 /** Brings the rank index in line with the graph: index created and updated documents, then drop deleted ones. */
 export async function reindex(d: ReindexDeps): Promise<ListingDiff> {
   const nodes = new Map(graphDocs(d.store, d.tenant, d.connector.id).map((n) => [n.id, n]));
@@ -49,8 +53,8 @@ export async function reindex(d: ReindexDeps): Promise<ListingDiff> {
     docs.push(d.gate ? d.gate(doc) : doc);
   }
   // `known` changes only after both index steps committed, so a throw leaves the whole pass to retry.
-  d.index.index(docs);
-  d.index.remove(diff.deleted);
+  for (const part of chunks(docs)) d.index.index(part);
+  for (const part of chunks(diff.deleted)) d.index.remove(part);
   for (const doc of docs) d.known.set(doc.id, versions.get(doc.id) as string);
   for (const id of diff.deleted) d.known.delete(id);
   return diff;
