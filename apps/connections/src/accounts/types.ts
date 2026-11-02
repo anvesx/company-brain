@@ -14,7 +14,9 @@ export type Account = {
   access: Zone;
   dataZone: Zone;
   status: Status;
+  /** `owner/name`, github only. Sync uses it when the request body has none. */
+  repo: string | null;
 };
 
-export type NewAccount = Omit<Account, "id" | "status"> & { secret: string };
-export type Patch = Partial<Pick<Account, "label" | "access" | "dataZone">>;
+export type NewAccount = Omit<Account, "id" | "status" | "repo"> & { secret: string; repo?: string | null };
+export type Patch = Partial<Pick<Account, "label" | "access" | "dataZone" | "repo">>;

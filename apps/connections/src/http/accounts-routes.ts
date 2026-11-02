@@ -32,6 +32,7 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can change this account" }, 403);
     const p = parsePatch(await json(c.req.raw));
     if ("error" in p) return c.json({ error: p.error }, 400);
+    if (p.value.repo && cur.provider !== "github") return c.json({ error: "only a github account has a repo" }, 400);
     const next = { access: p.value.access ?? cur.access, dataZone: p.value.dataZone ?? cur.dataZone };
     const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller) });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);

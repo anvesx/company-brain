@@ -1,31 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { open, seal } from "./crypto.js";
-import { type Row, SCHEMA, view } from "./rows.js";
+import { migrate, type Row, SCHEMA, view } from "./rows.js";
 import type { Account, Caller, Kind, NewAccount, Patch, Status } from "./types.js";
 
 export type Secret = { id: string; owner: string; provider: string; kind: Kind; secret: string };
 export function openStore(path: string, key: Buffer) {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
+  migrate(db);
   const get = (id: string) => db.prepare("SELECT * FROM accounts WHERE id = ?").get(id) as Row | undefined;
   return {
     create(a: NewAccount): Account {
       const id = randomUUID();
       const seq = (db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM accounts").get() as { n: number }).n;
-      db.prepare("INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
-        id,
-        a.tenant,
-        a.owner,
-        a.provider,
-        a.label,
-        a.kind,
-        a.access,
-        a.dataZone,
-        "active",
-        seal(key, id, a.secret),
-        seq,
-      );
+      const sql = "INSERT INTO accounts (id,tenant,owner,provider,label,kind,access,data_zone,status,secret,seq,repo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+      const cols = [id, a.tenant, a.owner, a.provider, a.label, a.kind, a.access, a.dataZone, "active", seal(key, id, a.secret), seq, a.repo ?? null];
+      db.prepare(sql).run(...cols);
       return view(get(id) as Row);
     },
     get: (id: string): Account | undefined => {
@@ -40,11 +31,17 @@ export function openStore(path: string, key: Buffer) {
     update(id: string, p: Patch): Account | undefined {
       const cur = get(id);
       if (!cur) return undefined;
-      const next = { label: p.label ?? cur.label, access: p.access ?? cur.access, data_zone: p.dataZone ?? cur.data_zone };
-      db.prepare("UPDATE accounts SET label = ?, access = ?, data_zone = ? WHERE id = ?").run(
+      const next = {
+        label: p.label ?? cur.label,
+        access: p.access ?? cur.access,
+        data_zone: p.dataZone ?? cur.data_zone,
+        repo: p.repo === undefined ? cur.repo : p.repo,
+      };
+      db.prepare("UPDATE accounts SET label = ?, access = ?, data_zone = ?, repo = ? WHERE id = ?").run(
         next.label as string,
         next.access as string,
         next.data_zone as string,
+        next.repo as string | null,
         id,
       );
       return view(get(id) as Row);

@@ -1,9 +1,10 @@
 import type { Kind, Patch, Zone } from "../accounts/types.js";
+import { validRepo } from "../sync/repo.js";
 
 export const PROVIDERS = ["github", "drive"] as const;
 const ZONES: readonly string[] = ["private", "personal", "company"];
 export type Parsed<T> = { value: T } | { error: string };
-export type NewBody = { provider: string; label: string; kind: Kind; token: string; access: Zone; dataZone: Zone };
+export type NewBody = { provider: string; label: string; kind: Kind; token: string; access: Zone; dataZone: Zone; repo?: string };
 
 const obj = (b: unknown): Record<string, unknown> | undefined =>
   typeof b === "object" && b !== null && !Array.isArray(b) ? (b as Record<string, unknown>) : undefined;
@@ -14,7 +15,7 @@ export function parseNew(body: unknown): Parsed<NewBody> {
   const b = obj(body);
   const bad = (m: string) => ({ error: m });
   if (!b) return bad("body must be a JSON object");
-  const unknown = Object.keys(b).filter((k) => !["provider", "label", "kind", "token", "access", "dataZone"].includes(k));
+  const unknown = Object.keys(b).filter((k) => !["provider", "label", "kind", "token", "access", "dataZone", "repo"].includes(k));
   if (unknown.length > 0) return bad(`unknown fields: ${unknown.join(", ")}`);
   if (!PROVIDERS.includes(b.provider as never)) return bad(`provider must be one of ${PROVIDERS.join(", ")}`);
   if (!text(b.label)) return bad("label must be a non-empty string");
@@ -24,15 +25,18 @@ export function parseNew(body: unknown): Parsed<NewBody> {
   const access = b.access ?? "private";
   const dataZone = b.dataZone ?? "private";
   if (!zone(access) || !zone(dataZone)) return bad("access and dataZone must be private, personal or company");
-  return { value: { provider: b.provider as string, label: b.label, kind: b.kind, token: b.token as string, access, dataZone } };
+  if (b.repo !== undefined && (b.provider !== "github" || !validRepo(b.repo))) return bad("repo must be owner/name, and only a github account has one");
+  const repo = b.repo === undefined ? {} : { repo: b.repo as string };
+  return { value: { provider: b.provider as string, label: b.label, kind: b.kind, token: b.token as string, access, dataZone, ...repo } };
 }
 
 export function parsePatch(body: unknown): Parsed<Patch> {
   const b = obj(body);
-  if (!b || Object.keys(b).length === 0) return { error: "body must set label, access or dataZone" };
-  const unknown = Object.keys(b).filter((k) => !["label", "access", "dataZone"].includes(k));
-  if (unknown.length > 0) return { error: `only label, access and dataZone can change, not ${unknown.join(", ")}` };
+  if (!b || Object.keys(b).length === 0) return { error: "body must set label, access, dataZone or repo" };
+  const unknown = Object.keys(b).filter((k) => !["label", "access", "dataZone", "repo"].includes(k));
+  if (unknown.length > 0) return { error: `only label, access, dataZone and repo can change, not ${unknown.join(", ")}` };
   if (b.label !== undefined && !text(b.label)) return { error: "label must be a non-empty string" };
+  if (b.repo !== undefined && b.repo !== null && !validRepo(b.repo)) return { error: "repo must be owner/name or null" };
   if ((b.access !== undefined && !zone(b.access)) || (b.dataZone !== undefined && !zone(b.dataZone)))
     return { error: "access and dataZone must be private, personal or company" };
   return { value: b as Patch };

@@ -2,8 +2,8 @@ import type { Connector } from "@brain/connector-kit";
 import { createDriveConnector, createGithubConnector } from "@brain/connectors";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
+import { REPO } from "./repo.js";
 
-const REPO = /^([^/\s]+)\/([^/\s]+)$/;
 /** The graph `source` of everything one account writes, so one disconnect closes only its edges. */
 export const sourceOf = (a: Pick<Account, "provider" | "id">): string => `${a.provider}:${a.id}`;
 

@@ -15,7 +15,7 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     if (!cur) return c.json({ error: "not found" }, 404);
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can sync this account" }, 403);
     const body = (await c.req.json().catch(() => undefined)) as { repo?: unknown } | undefined;
-    const repo = typeof body?.repo === "string" ? body.repo : undefined;
+    const repo = typeof body?.repo === "string" ? body.repo : (cur.repo ?? undefined);
     if (cur.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
     const idp = Object.values(d.oauth ?? {}).find((p) => p.source === cur.provider);
     if (cur.kind === "oauth" && idp && (await refreshAccount(d.store, idp, cur.id)) !== "unsupported") {
