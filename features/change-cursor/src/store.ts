@@ -11,8 +11,8 @@ export interface CursorStore {
   forget(tenantId: string, eventId: string): void;
 }
 
-/** Opens (or creates) the store. `clock` returns milliseconds. `ttlMs` defaults to 24 hours. */
-export function createCursorStore(dbPath: string, clock: () => number, ttlMs: number = DEFAULT_TTL_MS): CursorStore {
+/** Opens (or creates) the store; `close()` releases the SQLite handle. `clock` returns milliseconds. `ttlMs` defaults to 24 hours. */
+export function createCursorStore(dbPath: string, clock: () => number, ttlMs: number = DEFAULT_TTL_MS): CursorStore & { close(): void } {
   const path = requireText("dbPath", dbPath);
   const now = requireFunction("clock", clock);
   const ttl = requirePositiveInt("ttlMs", ttlMs);
@@ -41,6 +41,7 @@ export function createCursorStore(dbPath: string, clock: () => number, ttlMs: nu
     forget(tenantId, eventId) {
       stmts.forget.run(requireText("tenantId", tenantId), requireText("eventId", eventId));
     },
+    close: () => db.close(),
   };
 }
 

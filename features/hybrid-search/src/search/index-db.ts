@@ -21,7 +21,8 @@ function initialize(path: string, dim: number): DatabaseSync {
   return db;
 }
 
-export function createSearchIndex(path: string, dim: number): SearchIndex {
+/** `close()` releases the SQLite handle; later calls throw. */
+export function createSearchIndex(path: string, dim: number): SearchIndex & { close(): void } {
   const db = initialize(path, dim);
   const tx = <T>(fn: () => T): T => {
     db.exec("BEGIN IMMEDIATE");
@@ -71,5 +72,6 @@ export function createSearchIndex(path: string, dim: number): SearchIndex {
       if (!validText(docId) || !validText(tenantId)) throw new SearchError("INPUT");
       return tx(() => setAcl(db, docId, tenantId, acl));
     },
+    close: () => db.close(),
   };
 }

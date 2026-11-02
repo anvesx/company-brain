@@ -5,7 +5,6 @@ import { openStore, type Row } from "./store.js";
 export type { AuditEvent } from "./canonical.js";
 export { AuditError } from "./errors.js";
 export type Entry = AuditEvent & { seq: number; hash: string };
-
 export type Anchor = { seq: number; hash: string };
 /** `anchor` is set only when the chain is self-consistent but disagrees with the supplied anchor. */
 export type Verdict = { ok: true } | { ok: false; brokenAt: number; anchor?: "truncated" | "mismatch" };
@@ -33,11 +32,12 @@ const int = (v: number, name: string, min: number, max: number): number => {
 };
 
 const tenant = (t: unknown): string => {
-  if (typeof t !== "string" || t.length === 0) throw new AuditError("INVALID", "tenantId must be a non-empty string");
-  return t;
+  if (typeof t === "string" && t.length > 0) return t;
+  throw new AuditError("INVALID", "tenantId must be a non-empty string");
 };
 
-export function createAuditChain(dbPath: string): AuditChain {
+/** `close()` releases the SQLite handle; later calls throw. */
+export function createAuditChain(dbPath: string): AuditChain & { close(): void } {
   const store = openStore(dbPath);
   return {
     append(e) {
@@ -75,5 +75,6 @@ export function createAuditChain(dbPath: string): AuditChain {
       int(limit, "limit", 1, 1000);
       return store.rows(tenantId, afterSeq, limit).map((r) => ({ ...toEvent(tenantId, r), seq: r.seq, hash: r.hash }));
     },
+    close: () => store.close(),
   };
 }
