@@ -1,7 +1,7 @@
 import type { Acl } from "@brain/core-types";
 import { type Ctx, writeNode } from "./document.js";
 
-const principal = (c: Ctx, kind: "person" | "team", raw: string): string => {
+export const principal = (c: Ctx, kind: "person" | "team", raw: string): string => {
   const { tenant, connector, resolve } = c.deps;
   const id = resolve === undefined ? raw : resolve(kind, raw);
   if (c.principals.has(id)) return id;

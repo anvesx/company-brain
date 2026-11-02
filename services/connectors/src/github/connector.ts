@@ -4,6 +4,7 @@ import { badCursor, guarded, statusOf } from "../shared/errors.js";
 import type { CommonConfig, SourceConnector } from "../shared/types.js";
 import { changesSince } from "./changes.js";
 import { isListable, mapAcl, mapDoc } from "./map.js";
+import { listTeamMembers } from "./members.js";
 
 export type GithubConfig = CommonConfig & { owner: string; repo: string; baseUrl?: string };
 
@@ -38,6 +39,9 @@ export const createGithubConnector = (config: GithubConfig): SourceConnector => 
         const next = offset + items.length;
         return next < docs.length ? { items, nextCursor: `${tree.sha}:${next}` } : { items };
       });
+    },
+    async listMemberships() {
+      return guarded(`${owner}/${repo}`, () => listTeamMembers(client(config.listToken), target));
     },
     async fetch(address, { token, signal }) {
       const octokit = client(token);

@@ -1,6 +1,7 @@
 import { GraphError } from "@brain/graph-store";
 import { syncAccess } from "./access.js";
 import { type Ctx, rootNode, syncDocument, writeNode } from "./document.js";
+import { syncMemberships } from "./membership/sync.js";
 import { type SyncDeps, SyncError, type SyncReport } from "./types.js";
 
 type Opts = { pageSize?: number; signal?: AbortSignal };
@@ -25,6 +26,7 @@ async function run(c: Ctx, size: number, signal?: AbortSignal): Promise<void> {
     if (page.nextCursor === cursor) throw new SyncError("CONNECTOR_FAILED", "connector cursor did not advance");
     cursor = page.nextCursor;
   }
+  await syncMemberships(c);
   // Only a complete listing may delete: a failed or aborted run never reaches here.
   for (const e of store.neighbors(tenant, c.root, { kind: "belongs-to", dir: "in" })) {
     if (seen.has(e.from)) continue;

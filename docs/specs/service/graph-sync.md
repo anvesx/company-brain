@@ -20,6 +20,7 @@ class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT" }
 1. Pages through `connector.list` until no `nextCursor`; page size default 100, max 1000.
 2. Each ListedDoc becomes a `document` node: id = address, title, version, source = connector.id, props = `{zone, updatedAt}`. No text key is ever set.
 3. `acl.allowUsers` becomes a `person` node plus a `can-read` edge person to document. `allowGroups` becomes `team` nodes plus `can-read` edges. Ids pass through `resolve` when given.
+3a. When the connector implements `listMemberships()`, each `{ group, user }` pair becomes a `member-of` edge person to team, written by that connector. Edges the connector wrote and no longer reports are closed. A failing listing aborts the run before any edge is closed. Without the method nothing changes.
 4. Re-sync is idempotent: unchanged docs write nothing; a changed ACL removes the stale `can-read` edges (validTo set) and adds the new ones.
 5. A document present in the graph for this connector but missing from the full listing is tombstoned.
 6. A connector throw becomes `SyncError("CONNECTOR_FAILED")` with the cause; partial pages already written stay, and the next run converges.

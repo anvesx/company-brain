@@ -12,6 +12,8 @@ export type ListedDoc = {
 export type FakeDoc = ListedDoc & { text: string };
 export type ConnectorErrorCode = "NOT_FOUND" | "DUPLICATE" | "PATH_ESCAPE" | "BAD_CURSOR" | "FORBIDDEN";
 
+export type Membership = { group: string; user: string };
+
 export interface Connector {
   id: string;
   /** True only when `fetch` really checks `context.token` against the source. A live ACL is meaningless without it. */
@@ -20,6 +22,8 @@ export interface Connector {
     items: ListedDoc[];
     nextCursor?: string;
   }>;
+  /** Optional: every (group, user) pair behind the group ids that appear in ACLs. Must be the complete set. */
+  listMemberships?(): Promise<Membership[]>;
   fetch(address: string, context: { token: string; signal?: AbortSignal }): Promise<{ text: string; version: string }>;
 }
 
