@@ -2,6 +2,7 @@ import type { Registry } from "@anvesx/connectors";
 import type { GraphStore } from "@anvesx/graph-store";
 import type { Store } from "./accounts/store.js";
 import type { Caller } from "./accounts/types.js";
+import type { NetPolicy } from "./net/guard.js";
 import type { OAuthProvider } from "./oauth/providers.js";
 
 export type Deps = {
@@ -12,6 +13,8 @@ export type Deps = {
   now: () => number;
   /** Whether the caller is an admin of their tenant. */
   isAdmin: (c: Caller) => boolean;
+  /** Which urls a tenant's custom connector may name. Default: https to public addresses only; `allowLoopback` is development only. */
+  net?: NetPolicy;
   /** The connector catalog: built-in manifests plus each tenant's custom ones. Accounts, sign-in, sync and the page all read it. */
   catalog: Registry;
   /** Configured OAuth clients by app name (`github`, `google`; a manifest's `auth.app`). An app with no client answers 404. */

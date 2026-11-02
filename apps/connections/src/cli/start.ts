@@ -30,6 +30,7 @@ export async function start(env: Env, nowSeconds: () => number, opts: AppOptions
         now: nowSeconds,
         isAdmin: (c) => config.admins.has(`${c.tenant}:${c.user}`),
         oauth: config.oauth,
+        net: { allowLoopback: config.allowLoopback },
         sync: { graph, ...(config.githubApiUrl && { githubApiUrl: config.githubApiUrl }) },
         ...(config.tokensFile && { tokensFile: config.tokensFile }),
       },

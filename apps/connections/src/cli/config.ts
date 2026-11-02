@@ -13,6 +13,8 @@ export type Config = {
   port: number;
   oauth: Record<string, OAuthProvider>;
   tokensFile?: string;
+  /** Development only: lets a custom connector on this machine be registered over http. */
+  allowLoopback: boolean;
   /** GitHub REST base URL, for GitHub Enterprise or a test server. */
   githubApiUrl?: string;
 };
@@ -51,6 +53,7 @@ export function parseConfig(env: Env): Config {
     admins: new Set(list),
     port,
     oauth: oauth.providers,
+    allowLoopback: env.CONNECTIONS_ALLOW_LOOPBACK === "1",
     ...(env.CONNECTIONS_GITHUB_API_URL && { githubApiUrl: env.CONNECTIONS_GITHUB_API_URL }),
     ...(env.CONNECTIONS_TOKENS_FILE && { tokensFile: env.CONNECTIONS_TOKENS_FILE }),
   };

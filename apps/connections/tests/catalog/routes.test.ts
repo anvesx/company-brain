@@ -56,8 +56,8 @@ describe("GET and POST /v1/catalog", () => {
     ];
     for (const b of bad) expect((await s.call("POST", "/v1/catalog", root, b)).status, JSON.stringify(b)).toBe(400);
   });
-  it("accepts an oauth2 manifest and a loopback http endpoint", async () => {
-    s = await boot();
+  it("accepts an oauth2 manifest and, with allowLoopback on, a loopback http endpoint", async () => {
+    s = await boot({ net: { allowLoopback: true, resolve: async () => ["93.184.216.34"] } });
     const auth = { kind: "oauth2", authorizeURL: "https://w.example.com/a", tokenURL: "https://w.example.com/t", scopes: ["read"] };
     const r = await s.call("POST", "/v1/catalog", root, { ...wiki, id: "wiki2", auth, endpoint: "http://127.0.0.1:9/c", canRead: true, defaultZone: "team" });
     expect(r.status).toBe(201);

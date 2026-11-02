@@ -13,7 +13,14 @@ export const mint = (user: string, tenant: string, exp = NOW + 600): string =>
 /** The real app on a real port over a real SQLite file. `ann` and `root` are tenant admins only for `root`. */
 export async function boot(extra: Partial<Parameters<typeof createApp>[0]> = {}) {
   const t = tempStore();
-  const app = createApp({ store: t.store, secret: SECRET, now: () => NOW, isAdmin: (c) => c.user === "root", ...extra });
+  const app = createApp({
+    net: { resolve: async () => ["93.184.216.34"] },
+    store: t.store,
+    secret: SECRET,
+    now: () => NOW,
+    isAdmin: (c) => c.user === "root",
+    ...extra,
+  });
   const server = await startServer(app, 0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const call = (method: string, path: string, who?: string, body?: unknown, cookie?: string) =>
