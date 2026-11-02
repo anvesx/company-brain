@@ -1,12 +1,19 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { displayPath, type Violation } from "./fs/walk.ts";
+import { displayPath, filesIn, type Violation } from "./fs/walk.ts";
 
 const missing = (root: string, path: string, message: string): Violation => ({
   file: displayPath(root, path),
   rule: "layout",
   message,
 });
+
+/** The package root holds at most five files, the README and every config file included (ADR 0007). */
+export const checkRootFiles = (root: string, packages: readonly string[]): Violation[] =>
+  packages.flatMap((packageDir) => {
+    const count = filesIn(packageDir).length;
+    return count > 5 ? [{ file: displayPath(root, packageDir), rule: "root-files", message: `${count} root files exceeds 5` }] : [];
+  });
 
 /** Each package needs README.md, src/ and tests/ side by side. Folder READMEs are checked in checks/readme.ts. */
 export const checkLayout = (root: string, packages: readonly string[]): Violation[] =>

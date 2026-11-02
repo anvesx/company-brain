@@ -1,6 +1,6 @@
 # Source
 
-- `layout.ts`: each package has `README.md`, `src/` and `tests/`.
+- `layout.ts`: each package has `README.md`, `src/` and `tests/`, and at most five files in its root.
 - `tiers.ts`: workspace dependencies only point down the tier ladder.
 - `checks/`: the per-folder rules (lines, fanout, README, tests beside src).
 - `fs/`: package discovery and the code-folder walker.

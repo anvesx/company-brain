@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { SECRET } from "./creds.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const ports = { rank: 18790, connections: 18789 };
+export const ports = { connections: 18789 };
 
 /** Polls until `url` answers with any HTTP status, or throws after `ms`. */
 export const waitFor = async (url, ms = 120_000) => {
@@ -24,9 +24,6 @@ export const waitFor = async (url, ms = 120_000) => {
 };
 
 const child = (args, env = {}) => spawn(process.execPath, args, { stdio: "inherit", env: { ...process.env, ...env } });
-
-/** The rank HTTP wrapper over a freshly seeded corpus of `size` docs. */
-export const rankServer = (size) => child([join(here, "rank-server.mjs"), String(size), String(ports.rank)]);
 
 /** The real connections launcher over fresh SQLite files in `dir`; `root` in tenant `t1` is the only admin. */
 export const connectionsServer = (dir) =>

@@ -2,6 +2,8 @@
 
 Status: accepted, 2 Nov 2026. Decided by the user. Connectors moved 2 Nov 2026; RAG moved 2 Nov 2026.
 
+Amended by [0006](0006-rank-and-reindex-move-to-rag.md): `features/rank`, the reindex step and the rank scale test also moved to rag.
+
 ## Decision
 
 Connectors (the catalog, adapters and custom-connector support) and RAG each get a separate repository. This repo keeps the brain, the connections app and the shared contracts.

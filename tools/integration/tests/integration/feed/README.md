@@ -1,3 +1,3 @@
 # feed
 
-- `feed.test.ts` folder connector, graph-sync, graph-store, rank: search returns pointers for the visible documents; an edit is re-indexed
+- `feed.test.ts` folder connector, graph-sync, graph-store: the listing carries address, version and readers; an edit gives a new version

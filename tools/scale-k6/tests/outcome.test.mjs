@@ -24,7 +24,7 @@ test("a binary that cannot be started fails", () => {
 });
 
 test("the summary export is kept under reports/, not in the removed temp dir", () => {
-  const path = reportPath("rank");
-  assert.match(path, /scale-k6\/reports\/rank\.json$/);
+  const path = reportPath("catalog");
+  assert.match(path, /scale-k6\/reports\/catalog\.json$/);
   assert.equal(path.startsWith(tmpdir()), false);
 });

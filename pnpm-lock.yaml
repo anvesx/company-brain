@@ -128,15 +128,6 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
-  features/rank:
-    devDependencies:
-      fast-check:
-        specifier: 4.10.2
-        version: 4.10.2
-      hdr-histogram-js:
-        specifier: ^3.0.0
-        version: 3.0.1
-
   features/zone-policy:
     devDependencies:
       fast-check:
@@ -180,9 +171,6 @@ importers:
       '@anvesx/graph-sync':
         specifier: workspace:*
         version: link:../../services/graph-sync
-      '@anvesx/rank':
-        specifier: workspace:*
-        version: link:../../features/rank
       '@anvesx/zone-policy':
         specifier: workspace:*
         version: link:../../features/zone-policy
@@ -192,10 +180,6 @@ importers:
   tools/structure-lint: {}
 
 packages:
-
-  /@assemblyscript/loader@0.19.23:
-    resolution: {integrity: sha512-ulkCYfFbYj01ie1MDOyxv2F6SpRN1TOj7fQxbP07D6HmeR+gr2JLSmINKjga2emB+b1L2KGrFKBTc+e00p54nw==}
-    dev: true
 
   /@babel/code-frame@7.29.7:
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -1875,10 +1859,6 @@ packages:
     engines: {node: 18 || 20 || >=22}
     dev: true
 
-  /base64-js@1.5.1:
-    resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
-    dev: true
-
   /baseline-browser-mapping@2.11.34:
     resolution: {integrity: sha512-Aqr8mA1kIvyJ3UY5YAY7ib8LSo1DmDMbMnVqGPtsKW1LxaFQFwn9Eb3yvq2fUKJsRvaXjnAV7R5osqETapzNiA==}
     engines: {node: '>=6.0.0'}
@@ -2336,15 +2316,6 @@ packages:
     engines: {node: '>= 0.4'}
     dependencies:
       function-bind: 1.1.2
-    dev: true
-
-  /hdr-histogram-js@3.0.1:
-    resolution: {integrity: sha512-l3GSdZL1Jr1C0kyb461tUjEdrRPZr8Qry7jByltf5JGrA0xvqOSrxRBfcrJqqV/AMEtqqhHhC6w8HW0gn76tRQ==}
-    engines: {node: '>=14'}
-    dependencies:
-      '@assemblyscript/loader': 0.19.23
-      base64-js: 1.5.1
-      pako: 1.0.11
     dev: true
 
   /hono@4.13.16:
@@ -2845,10 +2816,6 @@ packages:
 
   /package-manager-detector@1.9.0:
     resolution: {integrity: sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA==}
-    dev: true
-
-  /pako@1.0.11:
-    resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
     dev: true
 
   /parent-module@1.0.1:

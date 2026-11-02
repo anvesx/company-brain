@@ -3,7 +3,7 @@ import { createCursorStore } from "@anvesx/change-cursor";
 import { createFolderConnector } from "@anvesx/connector-kit";
 import { SyncError, syncConnector } from "@anvesx/graph-sync";
 import { describe, expect, it } from "vitest";
-import { graphDocs } from "../../../src/reindex.js";
+import { graphDocs } from "../../../src/graph-docs.js";
 import { deps, openStore, put, TENANT, tmp } from "../../support/world.js";
 
 const names = ["a", "b", "c", "d"].map((n) => `${n}.md`);

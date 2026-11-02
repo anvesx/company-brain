@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "integration": "vitest run",
+    "integration": "vitest run --config ../../vitest.config.ts",
     "mutation": "stryker run"
   },
   "dependencies": {
@@ -14,7 +14,6 @@
     "@anvesx/core-types": "workspace:*",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*",
-    "@anvesx/rank": "workspace:*",
     "@anvesx/zone-policy": "workspace:*"
   },
   "license": "MIT"

@@ -5,7 +5,7 @@ import { checkFanout } from "../src/checks/fanout.ts";
 import { checkLines } from "../src/checks/lines.ts";
 import { checkReadmes } from "../src/checks/readme.ts";
 import { filesIn, findPackages, lintDirectories, StructureLintError } from "../src/fs/walk.ts";
-import { checkLayout } from "../src/layout.ts";
+import { checkLayout, checkRootFiles } from "../src/layout.ts";
 import { checkTiers } from "../src/tiers.ts";
 
 const rootIndex = process.argv.indexOf("--root");
@@ -20,7 +20,7 @@ try {
   const dirs = packages.map(({ dir }) => dir);
   const folders = dirs.flatMap(lintDirectories);
   const files = folders.reduce((count, dir) => count + filesIn(dir).length, 0);
-  const checks = [checkLines, checkFanout, checkReadmes, checkTestsBeside, checkLayout];
+  const checks = [checkLines, checkFanout, checkReadmes, checkTestsBeside, checkLayout, checkRootFiles];
   const violations = [...checks.flatMap((check) => check(root, dirs)), ...checkTiers(root, packages)].sort((left, right) =>
     `${left.file}:${left.rule}`.localeCompare(`${right.file}:${right.rule}`),
   );

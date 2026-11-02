@@ -11,6 +11,9 @@ under `features`, `services`, `modules`, `apps`, and `tools`, then prints determ
 - Each of those folders, nested ones included, holds at most five files, the README counted.
 - Each of those folders has its own `README.md`. The only exemption is a folder made purely of
   `.json` data files, which may omit it so a full fixture folder stays within five files.
+- The package root holds at most five files (`root-files`): `README.md`, `package.json` and every
+  config file count, dotfiles included. Folders in the root are not counted. Shared configs live in
+  the workspace root (ADR 0007).
 - Each package needs `README.md`, `src/` and `tests/`, side by side. `src` code needs a `.test`
   file in that `tests/` folder, and `.test`/`.spec` files outside `tests/` are violations.
 - Workspace dependencies must point down: feature to core-types, service to feature, module to

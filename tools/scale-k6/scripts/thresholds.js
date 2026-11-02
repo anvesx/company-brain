@@ -1,6 +1,6 @@
-// Pass/fail limits for both scripts. k6 exits 99 when any of these is crossed.
+// Pass/fail limits for the catalog script. k6 exits 99 when any of these is crossed.
 // Each p95 is the measured value on the reference run (see ../README.md) plus headroom for a busy laptop.
-export const P95_MS = { rank: 100, catalog: 10 };
+export const P95_MS = { catalog: 10 };
 
 export const thresholds = (name) => ({
   // Latency: 95 percent of requests finish under the limit. Open loop, so a backlog shows up here.

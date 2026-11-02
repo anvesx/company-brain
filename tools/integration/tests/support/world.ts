@@ -4,10 +4,8 @@ import { dirname, join } from "node:path";
 import { createFolderConnector } from "@anvesx/connector-kit";
 import { createGraphStore, type GraphStore } from "@anvesx/graph-store";
 import { syncConnector } from "@anvesx/graph-sync";
-import { RankIndex } from "@anvesx/rank";
 import { afterEach } from "vitest";
-import type { Gate } from "../../src/reindex.js";
-import { reindex } from "../../src/reindex.js";
+import { type SourceDoc, sourceDocs } from "../../src/graph-docs.js";
 
 export const TENANT = "t1";
 const dirs: string[] = [];
@@ -44,29 +42,19 @@ export const openStore = (path: string): GraphStore => {
   return s;
 };
 
-export const openRank = (path: string): RankIndex => {
-  const r = RankIndex.open(path, { key: "integration-test-key-0123456789" });
-  closers.push(() => r.close());
-  return r;
-};
-
 const resolve = (kind: "person" | "team", raw: string): string => `${kind === "person" ? "user" : "team"}:${raw}`;
 export const deps = (store: GraphStore, root: string, id = "docs") =>
   ({ store, connector: createFolderConnector(id, root), tenant: TENANT, now: () => Date.now(), resolve }) as const;
 
-/** One real stack in temp files: a folder of documents, a graph file and a rank file. */
+/** One real stack in temp files: a folder of documents and a graph file. */
 export function stack(): {
   root: string;
   store: GraphStore;
-  ix: RankIndex;
-  known: Map<string, string>;
   sync(): ReturnType<typeof syncConnector>;
-  index(gate?: Gate): ReturnType<typeof reindex>;
+  docs(): SourceDoc[];
 } {
   const [root, base] = [tmp(), tmp()];
   const store = openStore(join(base, "graph.db"));
-  const ix = openRank(join(base, "rank.db"));
-  const known = new Map<string, string>();
   const d = deps(store, root);
-  return { root, store, ix, known, sync: () => syncConnector(d), index: (gate) => reindex({ ...d, index: ix, known, ...(gate ? { gate } : {}) }) };
+  return { root, store, sync: () => syncConnector(d), docs: () => sourceDocs(store, TENANT, "docs") };
 }
