@@ -48,6 +48,11 @@ describe("parseConfig", () => {
       githubApiUrl: "http://gh.test",
     });
   });
+  it("keeps loopback connectors off unless CONNECTIONS_ALLOW_LOOPBACK is 1", () => {
+    expect(parseConfig(ok).allowLoopback).toBe(false);
+    expect(parseConfig({ ...ok, CONNECTIONS_ALLOW_LOOPBACK: "true" }).allowLoopback).toBe(false);
+    expect(parseConfig({ ...ok, CONNECTIONS_ALLOW_LOOPBACK: "1" }).allowLoopback).toBe(true);
+  });
   it("joins every problem with a semicolon, including the oauth ones", () => {
     expect(bad({ CONNECTIONS_PORT: "x", GITHUB_CLIENT_ID: "g" })).toThrow(/CONNECTIONS_PORT must be[^;]*; GITHUB_CLIENT_ID and/);
   });
