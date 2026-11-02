@@ -7,7 +7,12 @@ function parse(ip: string): ipaddr.IPv4 | ipaddr.IPv6 | undefined {
   return a.kind() === "ipv6" && (a as ipaddr.IPv6).isIPv4MappedAddress() ? (a as ipaddr.IPv6).toIPv4Address() : a;
 }
 
-/** Only global unicast passes: private, loopback, link-local (metadata), CGNAT, multicast, reserved and transition ranges do not. */
-export const isPublicIp = (ip: string): boolean => parse(ip)?.range() === "unicast";
+const COMPAT = ipaddr.IPv6.parseCIDR("::/96");
+
+/** Only global unicast passes (the whole ::/96 IPv4-compatible block is refused, ipaddr.js calls it unicast): private, loopback, link-local (metadata), CGNAT, multicast, reserved and transition ranges do not. */
+export const isPublicIp = (ip: string): boolean => {
+  const a = parse(ip);
+  return a?.range() === "unicast" && !(a.kind() === "ipv6" && a.match(COMPAT));
+};
 
 export const isLoopbackIp = (ip: string): boolean => parse(ip)?.range() === "loopback";

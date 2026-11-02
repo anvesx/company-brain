@@ -9,7 +9,7 @@ test("the add form offers the catalog's apps, and a new custom connector appears
   await expect(options.filter({ hasText: "GitHub" })).toHaveCount(1);
   await expect(options).not.toContainText(["Wiki ui-wiki"]);
 
-  const body = { id: "ui-wiki", name: "Wiki ui-wiki", auth: { kind: "pat" }, endpoint: "https://wiki.example.test" };
+  const body = { id: "ui-wiki", name: "Wiki ui-wiki", auth: { kind: "pat" }, endpoint: "https://93.184.216.34" };
   const authorization = `Bearer ${mint("root")}`;
   expect((await request.post("/v1/catalog", { headers: { authorization }, data: body })).status()).toBe(201);
 

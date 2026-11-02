@@ -12,7 +12,14 @@ describe("checkUrl", () => {
   });
   it("refuses private, loopback, link-local and metadata literals in every spelling", async () => {
     const urls = ["https://127.0.0.1", "https://10.0.0.5/x", "https://169.254.169.254/latest", "https://[::1]/", "https://[::ffff:127.0.0.1]/"];
-    urls.push("https://2130706433/", "https://0x7f.1/", "https://[fd00:ec2::254]/", "https://192.168.0.1:8443/");
+    urls.push(
+      "https://2130706433/",
+      "https://0x7f.1/",
+      "https://[fd00:ec2::254]/",
+      "https://[::127.0.0.1]/",
+      "https://[::10.0.0.1]/",
+      "https://192.168.0.1:8443/",
+    );
     for (const u of urls) expect(await refused(u), u).toBe("string");
   });
   it("judges a name by what it resolves to, and one bad address among good ones refuses it", async () => {
