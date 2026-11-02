@@ -22,6 +22,8 @@ export interface Connector {
     items: ListedDoc[];
     nextCursor?: string;
   }>;
+  /** Optional metadata-only check that the token's owner can still read `address` at the source. False when the source hides it; throws when it cannot tell. */
+  canRead?(address: string, context: { token: string }): Promise<boolean>;
   /** Optional: every (group, user) pair behind the group ids that appear in ACLs. Must be the complete set. */
   listMemberships?(): Promise<Membership[]>;
   fetch(address: string, context: { token: string; signal?: AbortSignal }): Promise<{ text: string; version: string }>;

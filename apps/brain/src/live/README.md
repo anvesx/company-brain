@@ -5,4 +5,5 @@
 - A document is returned only when the graph edge exists and the check passes.
 - A check that returns false or throws hides the document (fail closed). Never a 500.
 - No check configured: graph-only behaviour, unchanged.
-- Open: no source-backed `Recheck` ships yet. It needs a per-user source token that the bearer token does not carry.
+- `source-recheck.ts` `sourceRecheck`: a `Recheck` that calls the document connector's `canRead` with the asker's own token (`tokenFor`). Missing token, connector or `canRead` denies. GitHub implements `canRead` as a repo-level read with that token.
+- Open: `brain serve` does not yet pass a `recheck`, because it holds no per-user source tokens.

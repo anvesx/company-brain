@@ -6,3 +6,5 @@ The paging helper accepts only canonical cursor offsets and limits from 1 throug
 (oldest evicted) and drops a walk after its last page.
 
 `Connector.listMemberships?()` is optional and returns every `{ group, user }` pair behind the group ids in ACLs. It must be complete, because graph-sync closes edges it no longer sees.
+
+`Connector.canRead?()` is an optional, metadata-only live check: can this token's owner still read this address. False means the source hides it; a thrown error means unknown.

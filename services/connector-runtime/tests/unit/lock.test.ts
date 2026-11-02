@@ -55,8 +55,8 @@ describe("createKeyedLock", () => {
     const lock = createKeyedLock();
     await lock("k", async () => 1);
     await tick();
-    expect(del).toHaveBeenCalledTimes(1);
-    expect(del).toHaveBeenCalledWith("k");
+    // Map.prototype is global: unrelated Map deletes under load must not count.
+    expect(del.mock.calls.filter(([key]) => key === "k")).toHaveLength(1);
   });
 });
 

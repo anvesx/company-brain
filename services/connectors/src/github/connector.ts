@@ -43,6 +43,15 @@ export const createGithubConnector = (config: GithubConfig): SourceConnector => 
     async listMemberships() {
       return guarded(`${owner}/${repo}`, () => listTeamMembers(client(config.listToken), target));
     },
+    async canRead(_address, { token }) {
+      try {
+        await client(token).rest.repos.get(target);
+        return true;
+      } catch (e) {
+        if (statusOf(e) === 404 || statusOf(e) === 403) return false;
+        throw e;
+      }
+    },
     async fetch(address, { token, signal }) {
       const octokit = client(token);
       const request = signal ? { signal } : {};
