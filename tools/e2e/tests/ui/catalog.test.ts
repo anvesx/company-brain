@@ -30,8 +30,11 @@ test("the list filters by data zone", async ({ page }) => {
   await page.locator("#dataZone").selectOption("personal");
   await page.getByRole("button", { name: "Add connection" }).last().click();
   await page.getByRole("link", { name: "All connections" }).click();
+  const card = page.locator(".card", { hasText: "zone filter personal" });
+  // The list has rendered and the card is there; only then can "gone" after the filter mean it was filtered out.
+  await expect(card).toBeVisible();
   await page.locator("#f-zone").selectOption("private");
-  await expect(page.locator(".card", { hasText: "zone filter personal" })).toHaveCount(0);
+  await expect(card).toHaveCount(0);
   await page.locator("#f-zone").selectOption("personal");
-  await expect(page.locator(".card", { hasText: "zone filter personal" })).toHaveCount(1);
+  await expect(card).toBeVisible();
 });

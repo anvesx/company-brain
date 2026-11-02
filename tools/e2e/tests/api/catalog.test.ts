@@ -1,5 +1,6 @@
+import http from "node:http";
 import { expect, test } from "@playwright/test";
-import { mint } from "../../src/creds.ts";
+import { mint, PORT } from "../../src/creds.ts";
 
 const as = (user: string, tenant = "t1") => ({ headers: { authorization: `Bearer ${mint(user, tenant)}` } });
 
@@ -25,5 +26,26 @@ test("the page and its script are served with a strict content security policy",
   expect(page.status()).toBe(200);
   expect(page.headers()["content-security-policy"]).toContain("default-src 'self'");
   expect((await request.get("/ui/js/main.js")).status()).toBe(200);
-  expect((await request.get("/ui/../../package.json")).status()).toBe(404);
+});
+
+// Playwright normalises dot segments before sending, so these go out as written over a raw socket.
+const rawStatus = (path: string) =>
+  new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = http.get({ host: "127.0.0.1", port: PORT, path }, (res) => {
+      let body = "";
+      res.on("data", (c) => {
+        body += c;
+      });
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on("error", reject);
+  });
+
+test("a path that climbs out of /ui is refused, however the dots are written", async () => {
+  for (const path of ["/ui/../../package.json", "/ui/%2e%2e/%2e%2e/package.json", "/ui/%2e%2e%2f%2e%2e%2fpackage.json", "/ui/..%2f..%2fpackage.json"]) {
+    const { status, body } = await rawStatus(path);
+    expect(status, path).not.toBe(200);
+    expect(body, path).not.toContain("@anvesx");
+  }
+  expect((await rawStatus("/ui/js/main.js")).status).toBe(200);
 });
