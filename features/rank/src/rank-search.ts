@@ -3,12 +3,13 @@ import type { Cols, Hit, Probe } from "./model/types.js";
 import { readInbound, readMeta, readPostings, readStats } from "./store/read.js";
 import { readTx } from "./store/tx.js";
 import { combine, idf, linkSignal, recency, type TermStat, textScore } from "./text/formula.js";
+import type { Keyer } from "./text/keyed.js";
 import { queryTerms } from "./text/tokenize.js";
 
 const COL = { t: "title", p: "path", b: "body" } as const;
 const byScore = (a: Hit, b: Hit): number => b.score - a.score || (a.id < b.id ? -1 : 1);
 
-type Ctx = { principals: string[]; k: number; now: number; weights: Cols; probe?: Probe | undefined };
+type Ctx = { principals: string[]; k: number; now: number; weights: Cols; term: Keyer; probe?: Probe | undefined };
 
 /** Rank visible docs for one query. Every statement carries the ACL filter; nothing is dropped afterwards. */
 export const rankSearch = (db: DatabaseSync, query: string, c: Ctx): Hit[] => {
@@ -18,7 +19,7 @@ export const rankSearch = (db: DatabaseSync, query: string, c: Ctx): Hit[] => {
     c.probe?.(stage, t - last);
     last = t;
   };
-  const terms = queryTerms(query);
+  const terms = queryTerms(query).map(c.term);
   lap("terms");
   if (terms.length === 0) return [];
   const p = JSON.stringify(c.principals);

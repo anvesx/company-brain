@@ -1,4 +1,5 @@
 // A thin HTTP face on RankIndex so k6 can drive it. Dev tool only; the library has no server of its own.
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -27,11 +28,12 @@ export const handler = (ix) => (req, res) => {
 export const start = async (size, port) => {
   const dir = mkdtempSync(join(tmpdir(), "scale-rank-"));
   const file = join(dir, "rank.sqlite");
-  const seed = RankIndex.open(file, { now: () => NOW });
+  const key = randomBytes(32);
+  const seed = RankIndex.open(file, { key, now: () => NOW });
   const docs = makeDocs(size, NOW);
   for (let i = 0; i < docs.length; i += 500) seed.index(docs.slice(i, i + 500));
   seed.close();
-  const ix = RankIndex.open(file, { now: () => NOW });
+  const ix = RankIndex.open(file, { key, now: () => NOW });
   const srv = createServer(handler(ix));
   await new Promise((ok) => srv.listen(port, "127.0.0.1", ok));
   return () =>

@@ -35,8 +35,8 @@ describe("probe", () => {
 });
 
 describe("re-indexing the same docs", () => {
-  // On Linux SQLite with Node 26.13 an FTS5 delete leaves last_insert_rowid near 2^53 and the next run() threw
-  // "Value is too large to be represented as a JavaScript number". macOS does not show it, so CI is the real check.
+  // Earlier, on Linux with Node 26.13, a delete in the old FTS5 table left last_insert_rowid near 2^53 and the next
+  // run() threw. The FTS table is gone; this keeps the repeated write and delete path covered, and CI is the real check.
   it("keeps working across repeated batches and removals", () => {
     const ix = open();
     const batch = (g: number) => Array.from({ length: 10 }, (_, j) => doc(`d${j}`, { title: `gen${g} shared`, links: ["d0"] }));

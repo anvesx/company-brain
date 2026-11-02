@@ -14,9 +14,7 @@ export const readStats = (db: DatabaseSync, p: string): Stats =>
 /** Term frequency per (term, doc, column), restricted to visible docs inside the query. */
 export const readPostings = (db: DatabaseSync, p: string, terms: string): Posting[] =>
   db
-    .prepare(
-      `SELECT term, doc, col, count(*) AS tf FROM vocab WHERE term IN (SELECT value FROM json_each(:terms)) AND doc IN (${VISIBLE}) GROUP BY term, doc, col`,
-    )
+    .prepare(`SELECT term, doc, col, tf FROM postings WHERE term IN (SELECT value FROM json_each(:terms)) AND doc IN (${VISIBLE})`)
     .all({ p, terms }) as Posting[];
 
 export const readMeta = (db: DatabaseSync, p: string, docs: string): Meta[] =>

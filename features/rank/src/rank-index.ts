@@ -1,40 +1,46 @@
 import type { DatabaseSync } from "node:sqlite";
 import { RankError } from "./model/errors.js";
-import type { Doc, Hit, OpenOptions, Probe, SearchRequest } from "./model/types.js";
-import { validateDoc, validateRequest } from "./model/validate.js";
+import type { Cols, Doc, Hit, OpenOptions, Probe, SearchRequest } from "./model/types.js";
+import { validateDocs, validateIds, validateKey, validateRequest, validateWeights } from "./model/validate.js";
 import { rankSearch } from "./rank-search.js";
 import { openDb } from "./store/schema.js";
 import { removeDocs, upsertDocs } from "./store/write.js";
 import { WEIGHTS } from "./text/formula.js";
+import { type Keyer, termKeyer } from "./text/keyed.js";
+
+type Settings = { term: Keyer; now: () => number; weights: Cols };
 
 /** A pointer index over one SQLite file. Synchronous: each call is one transaction. */
 export class RankIndex {
   private db: DatabaseSync | null;
-  private readonly opts: Required<OpenOptions>;
+  private readonly cfg: Settings;
 
-  private constructor(db: DatabaseSync, opts: Required<OpenOptions>) {
+  private constructor(db: DatabaseSync, cfg: Settings) {
     this.db = db;
-    this.opts = opts;
+    this.cfg = cfg;
   }
 
-  static open(file: string, opts: OpenOptions = {}): RankIndex {
-    return new RankIndex(openDb(file), { now: opts.now ?? Date.now, weights: opts.weights ?? WEIGHTS });
+  /** `opts.key` is required and is never stored. Options are checked before the file is touched. */
+  static open(file: string, opts: OpenOptions): RankIndex {
+    const key = validateKey(opts?.key);
+    const weights = opts.weights === undefined ? WEIGHTS : validateWeights(opts.weights);
+    return new RankIndex(openDb(file), { term: termKeyer(key), now: opts.now ?? Date.now, weights });
   }
 
   index(docs: readonly Doc[]): { indexed: number } {
     const db = this.handle();
-    if (!Array.isArray(docs)) throw new RankError("BAD_DOC", "docs must be an array");
-    return { indexed: upsertDocs(db, docs.map(validateDoc)) };
+    return { indexed: upsertDocs(db, validateDocs(docs), this.cfg.term) };
   }
 
   remove(ids: readonly string[]): { removed: number } {
-    return { removed: removeDocs(this.handle(), ids) };
+    const db = this.handle();
+    return { removed: removeDocs(db, validateIds(ids)) };
   }
 
   search(req: SearchRequest, probe?: Probe): Hit[] {
     const db = this.handle();
     const { query, principals, k } = validateRequest(req);
-    return rankSearch(db, query, { principals, k, now: this.opts.now(), weights: this.opts.weights, probe });
+    return rankSearch(db, query, { principals, k, now: this.cfg.now(), weights: this.cfg.weights, term: this.cfg.term, probe });
   }
 
   close(): void {

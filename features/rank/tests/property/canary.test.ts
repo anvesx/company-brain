@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { askerArb, doc, docArb, open, PRINCIPALS, queryArb } from "../support/docs.js";
+import { askerArb, doc, docArb, indexed, open, PRINCIPALS, queryArb } from "../support/docs.js";
 
 const everything = "alpha beta gamma deploy payroll naïve 日本語 Привет x";
 const canary = doc("canary", {
@@ -16,12 +16,10 @@ describe("a hidden canary doc is invisible", () => {
   it("changes nothing the asker sees: ids, scores, signals, order, count", () => {
     fc.assert(
       fc.property(docs, askerArb, queryArb, (all, principals, query) => {
-        const without = open();
-        without.index(all);
-        const withCanary = open();
-        withCanary.index([canary, ...all]);
         const ask = { query, asker: { principals }, k: 100 };
-        expect(withCanary.search(ask)).toEqual(without.search(ask));
+        const base = indexed(all, ask);
+        const withCanary = indexed([canary, ...all], ask);
+        expect(withCanary).toEqual(base);
       }),
       { numRuns: 300 },
     );

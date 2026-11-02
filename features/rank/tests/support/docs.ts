@@ -1,5 +1,6 @@
 import fc from "fast-check";
-import { type Doc, RankIndex } from "../../src/index.js";
+import { afterAll } from "vitest";
+import { type Doc, type Hit, RankIndex, type SearchRequest } from "../../src/index.js";
 import { NOW } from "./oracle.js";
 
 export const doc = (id: string, over: Partial<Doc> = {}): Doc => ({
@@ -13,7 +14,37 @@ export const doc = (id: string, over: Partial<Doc> = {}): Doc => ({
   ...over,
 });
 
-export const open = (): RankIndex => RankIndex.open(":memory:", { now: () => NOW });
+/** A fixed test key. Production keys must be random and secret. */
+export const KEY = "rank-test-key-0123456789abcdef";
+
+const opened: RankIndex[] = [];
+afterAll(() => {
+  for (const ix of opened.splice(0)) ix.close();
+});
+
+/** An in-memory index with a fixed clock, closed when the test file ends. Use `use` inside property loops. */
+export const open = (key: string = KEY): RankIndex => {
+  const ix = RankIndex.open(":memory:", { key, now: () => NOW });
+  opened.push(ix);
+  return ix;
+};
+
+/** Open, run, close at once, so a property that runs hundreds of times holds one handle at a time. */
+export const use = <T>(fn: (ix: RankIndex) => T): T => {
+  const ix = RankIndex.open(":memory:", { key: KEY, now: () => NOW });
+  try {
+    return fn(ix);
+  } finally {
+    ix.close();
+  }
+};
+
+/** Index `all` in a throwaway index and answer one request. */
+export const indexed = (all: Doc[], req: SearchRequest): Hit[] =>
+  use((ix) => {
+    ix.index(all);
+    return ix.search(req);
+  });
 
 export const PRINCIPALS = ["u:ana", "u:bo", "t:eng", "t:ops", "company"];
 const WORDS = ["alpha", "beta", "gamma", "deploy", "payroll", "naïve", "日本語", "Привет", "x"];

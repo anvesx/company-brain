@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { doc } from "../support/docs.js";
+import { codeOf } from "../support/errors.js";
 import { oracle } from "../support/oracle.js";
 import { useTmpFile } from "../support/tmpfile.js";
 
@@ -24,6 +25,7 @@ describe("real sqlite file", () => {
     const raw = readFileSync(file()).toString("latin1");
     expect(raw).not.toContain("zebracornucopia");
     expect(raw).not.toContain("zebratitle");
+    for (const w of ["zebracornucopia", "zebratitle", "quokka"]) expect(raw).not.toContain(Buffer.from(w).toString("hex"));
     expect(raw).toContain("/p/a");
     const db = new DatabaseSync(file(), { readOnly: true });
     const cols = db
@@ -31,6 +33,11 @@ describe("real sqlite file", () => {
       .all()
       .map((r) => r.name);
     expect(cols).toEqual(["n", "id", "path", "mtime", "lt", "lp", "lb"]);
+    const names = db
+      .prepare("select name from sqlite_master")
+      .all()
+      .map((r) => String(r.name));
+    expect(names.filter((n) => /fts|vocab/.test(n))).toEqual([]);
     db.close();
   });
   it("matches the oracle on a few hundred docs, through the file", () => {
@@ -49,6 +56,12 @@ describe("real sqlite file", () => {
       expect(got.map((h) => h.id)).toEqual(oracle(all, principals, "topic3 body4", 50).map((h) => h.id));
     }
     ix.close();
+  });
+  it("refuses a file in the old FTS5 format instead of serving readable positions", () => {
+    const old = new DatabaseSync(file());
+    old.exec("CREATE VIRTUAL TABLE fts USING fts5(t, p, b, content='', detail=full)");
+    old.close();
+    expect(codeOf(() => open())).toBe("BAD_INDEX");
   });
   it("opening twice does not recreate or wipe the schema", () => {
     open().close();
