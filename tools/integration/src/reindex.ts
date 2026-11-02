@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { diffListing, type ListingDiff } from "@anvesx/change-cursor";
 import type { Connector } from "@anvesx/connector-kit";
 import type { GraphStore } from "@anvesx/graph-store";
@@ -31,7 +32,20 @@ const chunks = <T>(all: readonly T[]): T[][] => Array.from({ length: Math.ceil(a
 /** Brings the rank index in line with the graph: index created and updated documents, then drop deleted ones. */
 export async function reindex(d: ReindexDeps): Promise<ListingDiff> {
   const nodes = new Map(graphDocs(d.store, d.tenant, d.connector.id).map((n) => [n.id, n]));
-  const tag = (n: { address: string; version: string }) => (d.gate?.tag ? `${n.version}|${d.gate.tag(n.address)}` : n.version);
+  const readersOf = (id: string) =>
+    d.store
+      .neighbors(d.tenant, id, { kind: "can-read", dir: "in" })
+      .map((e) => e.from)
+      .sort();
+  // The reader set is part of the tag, so an ACL change that leaves the source version alone still reindexes.
+  const readers = new Map([...nodes.keys()].map((id) => [id, readersOf(id)]));
+  const tag = (n: { id: string; address: string; version: string }) => {
+    const acl = createHash("sha256")
+      .update(JSON.stringify(readers.get(n.id)))
+      .digest("hex")
+      .slice(0, 16);
+    return [n.version, d.gate?.tag?.(n.address), acl].filter((p) => p !== undefined).join("|");
+  };
   const versions = new Map([...nodes].map(([id, n]) => [id, tag(n)]));
   const diff = diffListing(d.known, versions);
   const docs: Doc[] = [];
@@ -39,14 +53,13 @@ export async function reindex(d: ReindexDeps): Promise<ListingDiff> {
     const n = nodes.get(id);
     if (n === undefined) continue;
     const { text } = await d.connector.fetch(n.address, { token: "integration" });
-    const readers = d.store.neighbors(d.tenant, id, { kind: "can-read", dir: "in" });
     const mtime = Date.parse(n.props["updatedAt"] ?? "");
     const doc = {
       id,
       title: n.title,
       path: n.address,
       body: text,
-      principals: readers.map((e) => e.from),
+      principals: readers.get(id) ?? [],
       mtimeMs: Number.isFinite(mtime) ? mtime : 0,
       links: [],
     };
