@@ -50,4 +50,30 @@ describe("id clashes inside one run", () => {
     expect(r.skipped).toEqual([]);
     expect(readers(store, "t1", "A/x")).toEqual(["b"]);
   });
+
+  describe("a connector's own root id", () => {
+    const sync = (store: ReturnType<typeof openStore>, id: string, now: () => number, groups: string[] = []) =>
+      syncConnector({ store, connector: listing(id, () => [doc("d", [], {}, groups)]), tenant: "t1", now });
+
+    it("is never flipped to a team, and the connector refuses to run over a team (F1)", async () => {
+      const store = openStore();
+      const now = ticker();
+      await sync(store, "S", now, ["connector:T"]);
+      for (let i = 0; i < 2; i++) {
+        await expect(sync(store, "T", now)).rejects.toMatchObject({ code: "BAD_INPUT", message: expect.stringContaining("not a project") });
+      }
+      expect(store.history("t1", "connector:T").map((n) => [n.kind, n.source])).toEqual([["team", "S"]]);
+      expect(store.node("t1", "T/d")).toBeUndefined();
+    });
+
+    it("keeps the project when the other connector lists it later, and a second run writes nothing", async () => {
+      const store = openStore();
+      const now = ticker();
+      await sync(store, "T", now);
+      const r = await sync(store, "S", now, ["connector:T"]);
+      expect(r.skipped.map((s) => s.address)).toEqual(["d"]);
+      expect(store.history("t1", "connector:T").map((n) => n.kind)).toEqual(["project"]);
+      expect(await sync(store, "T", now)).toMatchObject({ nodes: 0, edges: 0 });
+    });
+  });
 });

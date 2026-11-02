@@ -34,17 +34,6 @@ export const writeNode = (c: Ctx, n: GraphNode): void => {
   c.report.nodes++;
 };
 
-export const rootNode = (c: Ctx): GraphNode => ({
-  tenant: c.deps.tenant,
-  id: c.root,
-  kind: "project",
-  source: c.deps.connector.id,
-  address: c.root,
-  title: c.deps.connector.id,
-  version: "",
-  props: {},
-});
-
 /** Graph id of a document: the connector id in front of the address, unless the caller already did that. */
 export const nodeId = (c: Ctx, address: string): string => {
   const prefix = `${c.deps.connector.id}/`;
