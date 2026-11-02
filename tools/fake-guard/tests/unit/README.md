@@ -4,3 +4,5 @@
 databases and fake words in the real tiers, clean code). `baseline.test.ts` exercises the
 shrink-only ratchet: `snapshot` and `compare`. Fixture strings that would trip a rule are built by
 concatenation so the package does not flag itself.
+`rules-edges.test.ts` pins rule scoping, line numbers and regex edge cases. `scan.test.ts` walks
+temporary package trees to cover `packageDirs` and `scanRepo` (skipped folders and file types).
