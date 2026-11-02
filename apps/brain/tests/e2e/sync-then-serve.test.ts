@@ -39,9 +39,9 @@ describe("connect, sync, then ask", () => {
     const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
     const ask = async (u: string) => (await fetch(`${base}/v1/documents`, { headers: { authorization: tok(u) } })).text();
     const ana = await ask("ana");
-    expect(JSON.parse(ana).documents.map((d: { id: string }) => d.id)).toEqual(["plan.md"]);
+    expect(JSON.parse(ana).documents.map((d: { id: string }) => d.id)).toEqual(["folder/plan.md"]);
     expect(ana).not.toContain("SECRET BODY TEXT");
-    expect(JSON.parse(await ask("bo")).documents.map((d: { id: string }) => d.id)).toEqual(["eng/design.md"]);
+    expect(JSON.parse(await ask("bo")).documents.map((d: { id: string }) => d.id)).toEqual(["folder/eng/design.md"]);
     expect(JSON.parse(await ask("zed")).documents).toEqual([]);
   });
   it("fails clearly for a missing connector or tenant", async () => {

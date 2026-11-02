@@ -10,8 +10,8 @@ describe("tenants", () => {
     put(a.root, "same.txt", ["ana"]);
     put(b.root, "same.txt", ["bo"], ["eng"]);
     const [ra, rb] = await Promise.all([syncConnector(a.deps), syncConnector(b.deps)]);
-    expect(readers(store, "ta", "same.txt")).toEqual(["ana"]);
-    expect(readers(store, "tb", "same.txt")).toEqual(["bo", "eng"]);
+    expect(readers(store, "ta", "folder/same.txt")).toEqual(["ana"]);
+    expect(readers(store, "tb", "folder/same.txt")).toEqual(["bo", "eng"]);
     expect(store.node("ta", "bo")).toBeUndefined();
     expect(ra.removed + rb.removed).toBe(0);
   });
@@ -25,8 +25,8 @@ describe("tenants", () => {
     await Promise.all([syncConnector(a.deps), syncConnector(b.deps)]);
     drop(a.root, "same.txt");
     expect((await syncConnector(a.deps)).removed).toBe(1);
-    expect(store.node("ta", "same.txt")).toBeUndefined();
-    expect(store.node("tb", "same.txt")).toBeDefined();
-    expect(readers(store, "tb", "same.txt")).toEqual(["ana"]);
+    expect(store.node("ta", "folder/same.txt")).toBeUndefined();
+    expect(store.node("tb", "folder/same.txt")).toBeDefined();
+    expect(readers(store, "tb", "folder/same.txt")).toEqual(["ana"]);
   });
 });

@@ -12,7 +12,7 @@ describe("re-sync", () => {
     const c = counted(s.store);
     const r = await syncConnector({ ...s.deps, store: c.store });
     expect(c.calls).toEqual({ upsertNode: 0, addEdge: 0, removeEdge: 0, tombstone: 0 });
-    expect(r).toEqual({ nodes: 0, edges: 0, removed: 0, pages: 1 });
+    expect(r).toEqual({ nodes: 0, edges: 0, removed: 0, pages: 1, skipped: [] });
   });
 
   it("closes stale edges when the ACL narrows and keeps history", async () => {
@@ -22,8 +22,8 @@ describe("re-sync", () => {
     s.now.jump(5000);
     put(s.root, "a.txt", ["ana"], []);
     await syncConnector(s.deps);
-    expect(readers(s.store, "t1", "a.txt")).toEqual(["ana"]);
-    expect(readers(s.store, "t1", "a.txt", 2000)).toEqual(["ana", "bo", "eng"]);
+    expect(readers(s.store, "t1", "folder/a.txt")).toEqual(["ana"]);
+    expect(readers(s.store, "t1", "folder/a.txt", 2000)).toEqual(["ana", "bo", "eng"]);
   });
 
   it("adds only the new edge when the ACL widens", async () => {
@@ -33,7 +33,7 @@ describe("re-sync", () => {
     put(s.root, "a.txt", ["ana", "bo"]);
     const c = counted(s.store);
     const r = await syncConnector({ ...s.deps, store: c.store });
-    expect(readers(s.store, "t1", "a.txt")).toEqual(["ana", "bo"]);
+    expect(readers(s.store, "t1", "folder/a.txt")).toEqual(["ana", "bo"]);
     expect(c.calls.removeEdge).toBe(0);
     expect(r.edges).toBe(1);
   });

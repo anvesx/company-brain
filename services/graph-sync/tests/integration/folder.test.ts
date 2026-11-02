@@ -16,8 +16,8 @@ describe("folder connector into a graph file", () => {
         .reach("t1", from, { kinds: ["can-read"], depth: 1, limit: 50 })
         .map((n) => n.id)
         .sort();
-    expect(reach("ana")).toEqual(["docs/plan.md"]);
-    expect(reach("eng")).toEqual(["docs/plan.md", "top.md"]);
+    expect(reach("ana")).toEqual(["folder/docs/plan.md"]);
+    expect(reach("eng")).toEqual(["folder/docs/plan.md", "folder/top.md"]);
     expect(s.store.neighbors("t1", "bo", { kind: "can-read", dir: "out" })).toHaveLength(1);
 
     s.now.jump(50_000);
@@ -26,9 +26,9 @@ describe("folder connector into a graph file", () => {
     put(s.root, "new.md", ["bo"]);
     const r = await syncConnector(s.deps, { pageSize: 2 });
     expect(r.removed).toBe(1);
-    expect(reach("eng")).toEqual(["top.md"]);
-    expect(reach("bo")).toEqual(["new.md"]);
-    expect(readers(s.store, "t1", "docs/plan.md")).toEqual(["ana"]);
+    expect(reach("eng")).toEqual(["folder/top.md"]);
+    expect(reach("bo")).toEqual(["folder/new.md"]);
+    expect(readers(s.store, "t1", "folder/docs/plan.md")).toEqual(["ana"]);
     expect(s.store.reach("t1", "eng", { kinds: ["can-read"], depth: 1, limit: 50, asOf: 2000 })).toHaveLength(2);
   });
 
@@ -41,9 +41,9 @@ describe("folder connector into a graph file", () => {
     first.close();
     const again = createGraphStore({ path });
     try {
-      expect(readers(again, "t1", "a.txt")).toEqual(["ana"]);
+      expect(readers(again, "t1", "folder/a.txt")).toEqual(["ana"]);
       const r = await syncConnector({ ...s.deps, store: again });
-      expect(r).toEqual({ nodes: 0, edges: 0, removed: 0, pages: 1 });
+      expect(r).toEqual({ nodes: 0, edges: 0, removed: 0, pages: 1, skipped: [] });
     } finally {
       again.close();
     }
@@ -60,8 +60,8 @@ describe("folder connector into a graph file", () => {
       put(b.root, `d${i}.txt`, ["bo", `b${i}`]);
     }
     await Promise.all([syncConnector(a.deps, { pageSize: 5 }), syncConnector(b.deps, { pageSize: 5 })]);
-    expect(readers(h1, "ta", "d7.txt")).toEqual(["a7", "ana"]);
-    expect(readers(h2, "tb", "d7.txt")).toEqual(["b7", "bo"]);
-    expect(readers(h1, "tb", "d7.txt")).toEqual(["b7", "bo"]);
+    expect(readers(h1, "ta", "folder/d7.txt")).toEqual(["a7", "ana"]);
+    expect(readers(h2, "tb", "folder/d7.txt")).toEqual(["b7", "bo"]);
+    expect(readers(h1, "tb", "folder/d7.txt")).toEqual(["b7", "bo"]);
   });
 });

@@ -13,14 +13,14 @@ No library fits. Reuses `Connector.list` from connector-kit and `GraphStore` fro
 ## Public interface
 ```ts
 interface SyncDeps { store: GraphStore; connector: Connector; tenant: string; now: () => number; resolve?: (kind: "person"|"team", raw: string) => string }
-interface SyncReport { nodes: number; edges: number; removed: number; pages: number }
+interface SyncReport { nodes: number; edges: number; removed: number; pages: number; skipped: { address: string; message: string }[] }
 syncConnector(deps: SyncDeps, opts?: { pageSize?: number; signal?: AbortSignal }): Promise<SyncReport>
-class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT" }
+class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT"|"SUPERSEDED" }
 ```
 
 ## Behaviour
 1. Pages through `connector.list` until no `nextCursor`; page size default 100, max 1000.
-2. Each ListedDoc becomes a `document` node: id = address, title, version, source = connector.id, props = `{zone, updatedAt}`. No text key is ever set.
+2. Each ListedDoc becomes a `document` node: id = `<connector.id>/<address>` (not prefixed twice when the address already starts so), address as listed, title, version, source = connector.id, props = `{zone, updatedAt}`. No text key is ever set.
 3. `acl.allowUsers` becomes a `person` node plus a `can-read` edge person to document. `allowGroups` becomes `team` nodes plus `can-read` edges. Ids pass through `resolve` when given.
 3a. When the connector implements `listMemberships()`, each `{ group, user }` pair becomes a `member-of` edge person to team, written by that connector. Edges the connector wrote and no longer reports are closed. A failing listing aborts the run before any edge is closed. Without the method nothing changes.
 4. Re-sync is idempotent: unchanged docs write nothing; a changed ACL removes the stale `can-read` edges (validTo set) and adds the new ones.
@@ -28,15 +28,19 @@ class SyncError extends Error { code: "ABORTED"|"CONNECTOR_FAILED"|"BAD_INPUT" }
 6. A connector throw becomes `SyncError("CONNECTOR_FAILED")` with the cause; partial pages already written stay, and the next run converges.
 7. `signal` aborted between pages throws `SyncError("ABORTED")`.
 8. Tenant is on every write. Two tenants syncing the same address do not collide.
+9. Two connectors in one tenant listing the same address get two nodes with their own ACLs (review H1). A document id owned by another source is skipped, never overwritten. A connector id containing `/` is `BAD_INPUT`.
+10. Runs of one (tenant, connector) are ordered: a run that is no longer the newest throws `SyncError("SUPERSEDED")` before its next write or tombstone (H2). In-memory, one process; not a cross-process lock.
+11. A bad entry (invalid address, title, version or principal, or a bad membership pair) is skipped and listed in `report.skipped`; the run completes and tombstones deleted documents (H3). A skipped document fails closed: its `can-read` edges from this connector are closed and it is not tombstoned.
+12. A principal node is written once, by the first source that lists it (M8). A group whose id is already a user, or the reverse, is skipped and reported (M3, partial: no default namespacing).
 
 ## Acceptance tests (written first)
-- unit: ACL to edges, group nodes, resolve hook, no text props, idempotent re-sync (spy on store counts via real store), ACL narrowing closes edges, deletion tombstones, abort, connector failure, page size bounds, unicode addresses.
+- unit: two connectors same address, overlapping and stale runs, poison address and CJK principal, membership poison, shared principal, user/group clash; ACL to edges, group nodes, resolve hook, no text props, idempotent re-sync (spy on store counts via real store), ACL narrowing closes edges, deletion tombstones, abort, connector failure, page size bounds, unicode addresses.
 - integration: real `createGraphStore` file, real folder connector from `@anvesx/connector-kit` over a temp directory; sync, mutate files and ACLs, re-sync, assert `reach` and `neighbors` results.
 - scale: 5k documents with 20 readers each syncs under 20 s.
 - mutation: Stryker score >= 80.
 
 ## Layout
-`services/graph-sync/{src,tests}`; src: sync.ts, document.ts, access.ts, index.ts. Each file <= 80 lines, at most 5 files per folder, README in every folder.
+`services/graph-sync/{src,tests}`; src: sync.ts, lease.ts, types.ts, index.ts; write/: document.ts, access.ts, skip.ts; membership/: sync.ts. Each file <= 80 lines, at most 5 files per folder, README in every folder.
 
 ## Out of scope
 Webhooks, change cursors (full listing only in v1), entity-resolver wiring, apps/brain wiring.

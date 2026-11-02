@@ -21,11 +21,11 @@ describe("failures", () => {
     expect(err).toBeInstanceOf(SyncError);
     expect((err as SyncError).code).toBe("CONNECTOR_FAILED");
     expect((err as SyncError).cause).toBe(cause);
-    expect(s.store.node("t1", "d0.txt")).toBeDefined();
-    expect(s.store.node("t1", "d4.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/d0.txt")).toBeDefined();
+    expect(s.store.node("t1", "folder/d4.txt")).toBeUndefined();
     fail = false;
     await syncConnector({ ...s.deps, connector: flaky }, { pageSize: 2 });
-    expect(s.store.node("t1", "d4.txt")).toBeDefined();
+    expect(s.store.node("t1", "folder/d4.txt")).toBeDefined();
   });
 
   it("does not tombstone after a failed run", async () => {
@@ -39,7 +39,7 @@ describe("failures", () => {
       },
     };
     expect(await code(syncConnector({ ...s.deps, connector: down }))).toBe("CONNECTOR_FAILED");
-    expect(s.store.node("t1", "d2.txt")).toBeDefined();
+    expect(s.store.node("t1", "folder/d2.txt")).toBeDefined();
   });
 
   it("throws ABORTED between pages and keeps what was written", async () => {
@@ -55,14 +55,14 @@ describe("failures", () => {
       },
     };
     expect(await code(syncConnector({ ...s.deps, connector: abortAfterFirst }, { pageSize: 2, signal: ctl.signal }))).toBe("ABORTED");
-    expect(s.store.node("t1", "d1.txt")).toBeDefined();
-    expect(s.store.node("t1", "d2.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/d1.txt")).toBeDefined();
+    expect(s.store.node("t1", "folder/d2.txt")).toBeUndefined();
   });
 
   it("throws ABORTED at once when already aborted", async () => {
     const s = setup();
     seed(s, 1);
     expect(await code(syncConnector(s.deps, { signal: AbortSignal.abort() }))).toBe("ABORTED");
-    expect(s.store.node("t1", "d0.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/d0.txt")).toBeUndefined();
   });
 });

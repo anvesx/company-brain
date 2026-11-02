@@ -12,10 +12,10 @@ describe("tombstones", () => {
     s.now.jump(9000);
     const r = await syncConnector(s.deps);
     expect(r.removed).toBe(1);
-    expect(s.store.node("t1", "b.txt")).toBeUndefined();
-    expect(s.store.node("t1", "b.txt", 2000)?.id).toBe("b.txt");
-    expect(readers(s.store, "t1", "b.txt")).toEqual([]);
-    expect(s.store.node("t1", "a.txt")).toBeDefined();
+    expect(s.store.node("t1", "folder/b.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/b.txt", 2000)?.id).toBe("folder/b.txt");
+    expect(readers(s.store, "t1", "folder/b.txt")).toEqual([]);
+    expect(s.store.node("t1", "folder/a.txt")).toBeDefined();
     expect((await syncConnector(s.deps)).removed).toBe(0);
   });
 
@@ -25,11 +25,11 @@ describe("tombstones", () => {
     await syncConnector(s.deps);
     drop(s.root, "a.txt");
     await syncConnector(s.deps);
-    expect(s.store.node("t1", "a.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/a.txt")).toBeUndefined();
     put(s.root, "a.txt", ["ana"]);
     await syncConnector(s.deps);
-    expect(s.store.node("t1", "a.txt")).toBeDefined();
-    expect(readers(s.store, "t1", "a.txt")).toEqual(["ana"]);
+    expect(s.store.node("t1", "folder/a.txt")).toBeDefined();
+    expect(readers(s.store, "t1", "folder/a.txt")).toEqual(["ana"]);
   });
 
   it("handles an empty listing", async () => {
@@ -45,7 +45,7 @@ describe("tombstones", () => {
     await syncConnector(s.deps);
     drop(s.root, "a.txt");
     expect((await syncConnector(s.deps)).removed).toBe(1);
-    expect(s.store.node("t1", "a.txt")).toBeUndefined();
+    expect(s.store.node("t1", "folder/a.txt")).toBeUndefined();
   });
 
   it("does not tombstone documents of another connector", async () => {
@@ -56,6 +56,6 @@ describe("tombstones", () => {
     put(other.root, "z.txt");
     await syncConnector({ ...other.deps, connector: { ...other.connector, id: "other" } });
     expect((await syncConnector(s.deps)).removed).toBe(0);
-    expect(s.store.node("t1", "z.txt")).toBeDefined();
+    expect(s.store.node("t1", "other/z.txt")).toBeDefined();
   });
 });

@@ -22,7 +22,7 @@ describe("runSync", () => {
     const { root, db } = folder();
     await runSync({ BRAIN_TENANT: "t", BRAIN_GRAPH_PATH: db, BRAIN_CONNECTOR: "folder", BRAIN_FOLDER_ROOT: root }, () => 1000);
     const store = createGraphStore({ path: db });
-    const at = (asOf: number) => store.neighbors("t", "a.md", { kind: "belongs-to", dir: "out", asOf }).length;
+    const at = (asOf: number) => store.neighbors("t", "folder/a.md", { kind: "belongs-to", dir: "out", asOf }).length;
     expect(at(999_999)).toBe(0);
     expect(at(1_000_000)).toBe(1);
     store.close();

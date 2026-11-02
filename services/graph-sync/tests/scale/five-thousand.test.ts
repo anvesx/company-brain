@@ -17,7 +17,7 @@ describe("scale", () => {
     const ms = Date.now() - t0;
     expect(ms).toBeLessThan(20_000);
     expect(r.pages).toBe(50);
-    expect(readers(s.store, "t1", "d3/f300.txt")).toHaveLength(20);
+    expect(readers(s.store, "t1", "folder/d3/f300.txt")).toHaveLength(20);
     const again = await syncConnector(s.deps);
     expect(again).toMatchObject({ nodes: 0, edges: 0, removed: 0 });
   }, 120_000);

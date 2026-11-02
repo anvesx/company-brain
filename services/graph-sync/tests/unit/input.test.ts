@@ -47,7 +47,7 @@ describe("input", () => {
       list: async () => ({ items: [doc, { ...doc, acl: { ...doc.acl, allowUsers: ["bo"] } }] }),
     };
     const r = await syncConnector({ ...s.deps, connector: twice });
-    expect(readers(s.store, "t1", "a.txt")).toEqual(["bo"]);
+    expect(readers(s.store, "t1", "folder/a.txt")).toEqual(["bo"]);
     expect(r.removed).toBe(0);
   });
 
