@@ -14,10 +14,9 @@ export async function syncMemberships(c: Ctx): Promise<void> {
     const edge = { from: principal(c, "person", user), to: principal(c, "team", group) };
     want.add(`${edge.from}\0${edge.to}`);
   }
-  // Every principal this run touched: a group emptied of members still appears through the ACLs that name it.
-  for (const id of [...c.principals]) {
-    const have = store.neighbors(tenant, id, { kind: "member-of", dir: "in" });
-    for (const e of have) if (e.source === connector.id && !want.has(`${e.from}\0${e.to}`)) store.removeEdge(e, now());
+  // Everything this connector wrote, so a team that left both the ACLs and the list is closed too.
+  for (const e of store.edgesBySource(tenant, connector.id, "member-of")) {
+    if (!want.has(`${e.from}\0${e.to}`)) store.removeEdge(e, now());
   }
   for (const key of want) {
     const [from, to] = key.split("\0") as [string, string];

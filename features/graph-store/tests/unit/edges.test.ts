@@ -58,4 +58,14 @@ describe("edges", () => {
     expect(s.neighbors("t1", "c").map((e) => e.to)).toEqual(["b"]);
     expect(s.neighbors("t1", "a", { asOf: 4 })).toHaveLength(2);
   });
+
+  it("edgesBySource lists only current edges of that source and kind", () => {
+    const s = openStore();
+    s.addEdge(edge("a", "b", { kind: "member-of", source: "gh" }), 1);
+    s.addEdge(edge("c", "d", { kind: "member-of", source: "gh" }), 1);
+    s.addEdge(edge("e", "f", { kind: "member-of", source: "drive" }), 1);
+    s.addEdge(edge("g", "h", { kind: "can-read", source: "gh" }), 1);
+    s.removeEdge(edge("c", "d", { kind: "member-of", source: "gh" }), 2);
+    expect(s.edgesBySource("t1", "gh", "member-of").map((e) => e.from)).toEqual(["a"]);
+  });
 });

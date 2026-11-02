@@ -22,6 +22,7 @@ export interface GraphStore {
   addEdge(e: Edge, at: number): void;
   removeEdge(e: Edge, at: number): void;
   tombstone(tenant: string, id: string, at: number): void;
+  edgesBySource(tenant: string, source: string, kind: EdgeKind): Edge[];
   node(tenant: string, id: string, asOf?: number): GraphNode | undefined;
   neighbors(tenant: string, id: string, opts?: { kind?: EdgeKind; dir?: "out" | "in"; asOf?: number }): Edge[];
   reach(tenant: string, from: string, opts: { kinds: EdgeKind[]; depth: number; limit: number; asOf?: number }): GraphNode[];

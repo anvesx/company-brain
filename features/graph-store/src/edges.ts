@@ -51,6 +51,14 @@ export function edgeOps(db: DatabaseSync) {
         .all(...args)
         .map(toEdge);
     },
+    /** Every current edge of one kind that one source wrote. */
+    bySource(tenant: string, source: string, kind: EdgeKind): Edge[] {
+      const q = `SELECT * FROM edges WHERE tenant = ? AND source = ? AND kind = ? AND ${VALID} ORDER BY rowid`;
+      return db
+        .prepare(q)
+        .all(text("tenant", tenant), text("source", source), oneOf("kind", kind, EDGE_KINDS), NOW, NOW)
+        .map(toEdge);
+    },
     /** Prepared out-edge lookup for traversal; ids come back in insertion order. */
     outTargets(kinds: readonly string[]): (tenant: string, id: string, when: number) => string[] {
       const marks = kinds.map(() => "?").join(", ");
