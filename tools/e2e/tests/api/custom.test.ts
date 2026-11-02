@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { mint } from "../../src/creds.ts";
 
 const as = (user: string, tenant = "t1") => ({ headers: { authorization: `Bearer ${mint(user, tenant)}` } });
-const wiki = (id: string) => ({ id, name: `Wiki ${id}`, auth: { kind: "pat" }, endpoint: "https://wiki.example.test/api", canRead: true });
+const wiki = (id: string) => ({ id, name: `Wiki ${id}`, auth: { kind: "pat" }, endpoint: "https://93.184.216.34/api", canRead: true });
 
 test("a tenant admin registers a custom connector; it shows in the catalog for that tenant only", async ({ request }) => {
   const made = await request.post("/v1/catalog", { ...as("root"), data: wiki("wiki-a") });

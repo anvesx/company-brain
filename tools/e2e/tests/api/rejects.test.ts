@@ -6,7 +6,7 @@ const pat = { provider: "github", label: "work", kind: "pat", token: "ghp_test_t
 const post = (body: unknown, user = "ann") => ({ ...as(user), data: body });
 
 test("catalog bodies that are wrong answer 400 with the reason", async ({ request }) => {
-  const ok = { id: "bad-x", name: "X", auth: { kind: "pat" }, endpoint: "https://x.example.test" };
+  const ok = { id: "bad-x", name: "X", auth: { kind: "pat" }, endpoint: "https://93.184.216.34" };
   const bad: [unknown, RegExp][] = [
     [{ ...ok, id: "Bad Id" }, /id must be/],
     [{ ...ok, endpoint: "http://x.example.test" }, /endpoint must be an https url/],
