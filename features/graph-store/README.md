@@ -1,6 +1,6 @@
 # @anvesx/graph-store
 
-Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`). Nodes and typed edges carry a tenant id on every row and bi-temporal validity: a changed fact closes the old row instead of overwriting it. No document text, no embeddings (ADR 0004).
+Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`). Nodes and typed edges carry a tenant id on every row and one caller-supplied validity axis (`validFrom`/`validTo`): a changed fact closes the old row instead of overwriting it. There is no recorded-at axis, so the store cannot answer what it believed at an earlier time; it is not bi-temporal. No document text, no embeddings (ADR 0004).
 
 Spec: `docs/specs/feature/graph-store.md`. Decision: `docs/adr/0004-rag-and-brain-are-separate.md`.
 
@@ -28,9 +28,27 @@ g.close();
 - `tombstone` closes the node and every current edge touching it, in one transaction. A removal dated before the add leaves an edge that was never visible.
 - `neighbors` returns both directions unless `dir` is given, in insertion order.
 - `reach` follows outgoing edges of the given kinds, breadth-first, cycle-safe, never returns the start node. Missing nodes are skipped and not expanded. `depth` is 0 to 6 (more throws `DEPTH_LIMIT`), `limit` caps the result size.
-- `props` are metadata only: string values of at most 1 KiB (UTF-8 bytes), and body-like keys throw `BAD_INPUT`: `text`, `body`, `content`, `summary`, `excerpt`, `transcript`, `snippet`, `markdown`, `payload`, `message`, `preview`, `abstract`, `rawtext`, `htmlbody`, compared without case or punctuation. This is a denylist; see `src/validation/README.md`.
+- `tombstone` dated before the current row's `validFrom` throws `BAD_INPUT`, like `upsertNode`; nothing changes.
+- `props` are metadata only (ADR 0004); see Limits. Body-like keys throw `BAD_INPUT`: `text`, `body`, `content`, `summary`, `excerpt`, `transcript`, `snippet`, `markdown`, `payload`, `message`, `preview`, `abstract`, `rawtext`, `htmlbody`, compared without case or punctuation. This is a denylist; the size limits are what bound smuggling under other keys. See `src/validation/README.md`.
 - After `close()` every call, including a second `close()`, throws `CLOSED`. SQLite removes the `-wal` and `-shm` files when the last handle closes.
 - `path: ":memory:"` is refused unless `NODE_ENV=test` or running under vitest.
+
+## Limits
+
+All sizes are UTF-8 bytes. Over a limit, `upsertNode` throws `BAD_INPUT` and stores nothing.
+
+| Field                          | Limit                                 |
+| ------------------------------ | ------------------------------------- |
+| `title`                        | 512                                   |
+| `address`                      | 2048                                  |
+| `version`                      | 256                                   |
+| `source`                       | 128                                   |
+| props entries                  | 32                                    |
+| props key                      | `[A-Za-z][A-Za-z0-9_.-]*`, at most 64 |
+| props value                    | 1024                                  |
+| props total (keys plus values) | 4096                                  |
+
+No field or prop value may contain control characters (newline, tab, NUL, DEL): a multi-line value is body text.
 
 ## Concurrency
 

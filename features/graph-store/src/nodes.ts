@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { bad, type GraphNode, NODE_KINDS, NOW, oneOf, text, time } from "./schema.js";
+import { checkField } from "./validation/fields.js";
 import { checkProps } from "./validation/props.js";
 
 /** Runs fn in one write transaction; BEGIN IMMEDIATE serialises writers across processes. */
@@ -45,7 +46,7 @@ export function nodeOps(db: DatabaseSync) {
         w = time("at", when);
       oneOf("kind", n.kind, NODE_KINDS);
       const props = canon(checkProps(n.props));
-      const f = [n.source, n.address, n.title, n.version].map((v) => (typeof v === "string" ? v : bad("source, address, title, version must be strings")));
+      const f = (["source", "address", "title", "version"] as const).map((k) => checkField(k, n[k]));
       tx(db, () => {
         const old = cur.get(t, id);
         if (old !== undefined) {
@@ -58,7 +59,12 @@ export function nodeOps(db: DatabaseSync) {
         ins.run(t, id, n.kind, f[0]!, f[1]!, f[2]!, f[3]!, props, w);
       });
     },
-    close: (tenant: string, id: string, when: number): void => void close.run(time("at", when), text("tenant", tenant), text("id", id)),
+    close(tenant: string, id: string, when: number): void {
+      const [t, i, w] = [text("tenant", tenant), text("id", id), time("at", when)];
+      const old = cur.get(t, i);
+      if (old !== undefined && w < (old["valid_from"] as number)) bad("at is before the current row's validFrom");
+      close.run(w, t, i);
+    },
     get(tenant: string, id: string, asOf?: number): GraphNode | undefined {
       const t = asOf === undefined ? NOW : time("asOf", asOf);
       const r = at.get(text("tenant", tenant), text("id", id), t, t);

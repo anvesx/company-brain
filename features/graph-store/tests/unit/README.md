@@ -5,3 +5,4 @@
 - `edges.test.ts`: idempotent add, kind and direction filters, remove, tombstone cascade.
 - `reach.test.ts`: breadth-first order, limit, kinds, cycles, missing nodes, depth cap.
 - `validation/`: props, input and lifecycle checks.
+- `limits/`: field and props size limits, tombstone ordering, the `withEnv` helper.

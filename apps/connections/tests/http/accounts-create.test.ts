@@ -26,7 +26,7 @@ describe("POST /v1/accounts", () => {
     expect(r.status).toBe(201);
   });
   it.each([
-    [{ ...pat, provider: "slack" }],
+    [{ ...pat, provider: "unknown-app" }],
     [{ ...pat, label: "" }],
     [{ ...pat, token: "" }],
     [{ ...pat, kind: "oauth" }],

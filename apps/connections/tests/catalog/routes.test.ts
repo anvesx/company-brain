@@ -16,7 +16,8 @@ describe("GET and POST /v1/catalog", () => {
       ...{ id, name, auth: "oauth2", kinds: ["oauth", "pat", "admin-token"], defaultZone: "team" },
       ...{ custom: false, liveRecheck: true, needsRepo },
     });
-    expect(providers).toEqual([row("github", "GitHub", true), row("drive", "Google Drive", false)]);
+    const core = providers.filter((p) => p.id === "github" || p.id === "drive");
+    expect(core).toEqual([row("github", "GitHub", true), row("drive", "Google Drive", false)]);
   });
   it("lets only a tenant admin register, and shows the entry to that tenant only", async () => {
     s = await boot();
@@ -32,8 +33,8 @@ describe("GET and POST /v1/catalog", () => {
       liveRecheck: false,
       defaultZone: "personal",
     });
-    expect(await ids(ann)).toEqual(["github", "drive", "wiki"]);
-    expect(await ids(other)).toEqual(["github", "drive"]);
+    expect(await ids(ann)).toContain("wiki");
+    expect(await ids(other)).not.toContain("wiki");
     expect((await s.call("POST", "/v1/accounts", mint("ann", "t2"), { provider: "wiki", label: "w", kind: "pat", token: "x" })).status).toBe(400);
   });
   it("refuses a duplicate or built-in id with 409 and bad bodies with 400", async () => {

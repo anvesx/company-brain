@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createGraphStore, GraphError } from "../../../src/index.js";
+import { withEnv } from "../../support/env.js";
 import { code, edge, node, openStore, tmpDir } from "../../support/helpers.js";
 
 describe("lifecycle", () => {
@@ -25,21 +26,10 @@ describe("lifecycle", () => {
     expect([e.code, e.name, e.message]).toEqual(["DEPTH_LIMIT", "GraphError", "m"]);
   });
   it("refuses :memory: outside tests but allows it in tests", () => {
-    const prior = process.env["NODE_ENV"];
-    const vitest = process.env["VITEST"];
-    try {
-      process.env["NODE_ENV"] = "production";
-      delete process.env["VITEST"];
-      expect(code(() => createGraphStore({ path: ":memory:" }))).toBe("BAD_INPUT");
-      process.env["NODE_ENV"] = "test";
-      createGraphStore({ path: ":memory:" }).close();
-      process.env["NODE_ENV"] = "production";
-      process.env["VITEST"] = "true";
-      createGraphStore({ path: ":memory:" }).close();
-    } finally {
-      process.env["NODE_ENV"] = prior;
-      process.env["VITEST"] = vitest;
-    }
+    const mem = () => createGraphStore({ path: ":memory:" });
+    withEnv({ NODE_ENV: "production", VITEST: undefined }, () => expect(code(mem)).toBe("BAD_INPUT"));
+    withEnv({ NODE_ENV: "test", VITEST: undefined }, () => mem().close());
+    withEnv({ NODE_ENV: "production", VITEST: "true" }, () => mem().close());
   });
   it("rejects a missing or empty path", () => {
     expect(code(() => createGraphStore({ path: "" }))).toBe("BAD_INPUT");
