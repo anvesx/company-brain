@@ -329,6 +329,18 @@ importers:
         specifier: ^4.3.2
         version: 4.3.2(@types/node@24.19.2)
 
+  services/graph-sync:
+    dependencies:
+      '@brain/connector-kit':
+        specifier: workspace:*
+        version: link:../../features/connector-kit
+      '@brain/core-types':
+        specifier: workspace:*
+        version: link:../../features/core-types
+      '@brain/graph-store':
+        specifier: workspace:*
+        version: link:../../features/graph-store
+
   services/index-service:
     dependencies:
       '@brain/chunker':
