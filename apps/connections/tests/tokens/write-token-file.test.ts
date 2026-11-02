@@ -1,0 +1,51 @@
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeTokenFile } from "../../src/tokens/write-token-file.js";
+import { tempStore } from "../accounts/fixture.js";
+
+const base = { tenant: "t1", provider: "github", label: "a", access: "private", dataZone: "private" } as const;
+let t: ReturnType<typeof tempStore>;
+let file: string;
+beforeEach(() => {
+  t = tempStore();
+  file = join(t.path, "..", "tokens.json");
+});
+afterEach(() => t.done());
+const read = () => JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+
+describe("writeTokenFile", () => {
+  it("writes {user: {source: token}} with mode 600", () => {
+    t.store.create({ ...base, owner: "ann", kind: "pat", secret: "ghp_ann" });
+    t.store.create({ ...base, owner: "ann", provider: "drive", kind: "pat", secret: "drv_ann" });
+    t.store.create({ ...base, owner: "bob", kind: "pat", secret: "ghp_bob" });
+    expect(writeTokenFile(t.store, file)).toEqual({ users: 2, tokens: 3 });
+    expect(read()).toEqual({ ann: { github: "ghp_ann", drive: "drv_ann" }, bob: { github: "ghp_bob" } });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+  it("tightens an existing world-readable file", () => {
+    writeFileSync(file, "{}", { mode: 0o644 });
+    t.store.create({ ...base, owner: "ann", kind: "pat", secret: "x" });
+    writeTokenFile(t.store, file);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+  it("uses the access token of an oauth account", () => {
+    t.store.create({ ...base, owner: "ann", kind: "oauth", secret: JSON.stringify({ accessToken: "gho_abc", refreshToken: "r" }) });
+    writeTokenFile(t.store, file);
+    expect(read()).toEqual({ ann: { github: "gho_abc" } });
+  });
+  it("keeps the oldest active account per provider and skips needs-auth ones", () => {
+    const first = t.store.create({ ...base, owner: "ann", kind: "pat", secret: "old" });
+    t.store.create({ ...base, owner: "ann", kind: "pat", secret: "newer" });
+    t.store.setStatus(first.id, "needs-auth");
+    writeTokenFile(t.store, file);
+    expect(read()).toEqual({ ann: { github: "newer" } });
+  });
+  it("writes an empty map with no accounts and gives a company account token only to its owner", () => {
+    expect(writeTokenFile(t.store, file)).toEqual({ users: 0, tokens: 0 });
+    expect(read()).toEqual({});
+    t.store.create({ ...base, owner: "root", access: "company", kind: "pat", secret: "ghp_root" });
+    writeTokenFile(t.store, file);
+    expect(read()).toEqual({ root: { github: "ghp_root" } });
+  });
+});
