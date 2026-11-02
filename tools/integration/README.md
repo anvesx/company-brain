@@ -7,8 +7,10 @@ Cross-package integration tests over the real packages: `connector-kit`, `graph-
 ```sh
 pnpm install
 pnpm turbo run build --filter=@anvesx/integration^...   # the packages resolve through dist
-pnpm --filter @anvesx/integration test
+pnpm --filter @anvesx/integration run integration
 ```
+
+The script is named `integration`, not `test`, so the CI `verify` job (`run test`) does not run these twice; the CI `integration` job runs them through `turbo run integration` and fails if no package defines that task.
 
 ## Scenarios
 
@@ -19,6 +21,9 @@ pnpm --filter @anvesx/integration test
 | `tests/integration/zone`   | `zone-policy` `canSee` gates what rank returns (personal, team, company); `promote` needs the owner's consent                                              | real, with gaps 1 and 2 |
 | `tests/integration/resume` | graph-sync aborted after two pages, process state reopened, run again: no duplicate or lost node; cursor and dedupe survive                                | real, with gap 3        |
 | `tests/integration/delete` | a deleted source file is tombstoned in the graph and leaves search                                                                                         | real, with gap 4        |
+| `tests/integration/reindex` | an index step that throws leaves the pass to retry (`known` changes only after index and remove commit); a node without `updatedAt` is still indexed        | real                    |
+
+A zone change without an edit (company to personal) reindexes the document, because `zoneGate` puts the zone into the version `reindex` diffs (`tests/integration/zone/demote.test.ts`, which also covers `team:` readers).
 
 `src/` holds the two glue steps no package offers yet (graph to rank, zone to readers). They are the code under test as much as the packages are.
 

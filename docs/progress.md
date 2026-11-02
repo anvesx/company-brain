@@ -43,6 +43,10 @@ is already inside the connectors package above, so it is not counted twice.
 
 - Every package still lacks Playwright e2e and k6 scale tests, which docs/architecture lists as
   gates. They are counted once as gate units, not per package.
+- The Playwright e2e suite (tools/e2e) is not in CI. It drives apps/connections, which links
+  `@anvesx/connectors` from a sibling checkout and cannot be built on a runner. Once that app uses
+  the registry, add a job: build the app, `playwright install --with-deps chromium`, `pnpm --filter
+  @anvesx/e2e e2e`. It passed locally (21 tests) against a built app.
 - The brain app in rag keeps its registry and index in memory (board issue 50).
 - Nothing was run against real GitHub or Drive accounts.
 
