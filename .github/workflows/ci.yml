@@ -13,18 +13,18 @@ jobs:
         with: { version: 8.15.0 }
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: pnpm }
-      # TEMPORARY: brain-app and connections-app consume @anvesx/connectors by a
-      # sibling link:. Drop the filters once it is published and they use a version.
       - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
       - run: pnpm structure
       - run: pnpm guard:fakes
       - run: pnpm exec biome check .
       - run: pnpm deps
-      - run: pnpm turbo run build --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app'
-      - run: pnpm turbo run typecheck --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app'
+      - run: pnpm turbo run build
+      - run: pnpm turbo run typecheck
       # Wall-clock scale tests need dedicated hardware; shared runners fail them on timing alone.
       # The --exclude is a vitest flag, so node --test in scale-k6 gets its own step (its tests are not wall-clock).
-      - run: pnpm -r --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --filter='!@anvesx/scale-k6' run test --exclude '**/tests/scale/**'
+      - run: pnpm -r --filter='!@anvesx/scale-k6' run test --exclude '**/tests/scale/**'
       - run: pnpm --filter @anvesx/scale-k6 run test
       # A push checks every commit since the previous tip; a pull request checks its own commits. A new branch
       # (all-zero before sha) or a force push (before sha no longer in the clone) falls back to the last commit.
@@ -46,8 +46,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app'
-      - run: pnpm -r --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' mutation
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+      - run: pnpm turbo run build
+      - run: pnpm -r mutation
   integration:
     runs-on: ubuntu-latest
     steps:
@@ -57,13 +59,38 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+      - run: pnpm turbo run build
       # turbo exits 0 when no package defines the task, so fail first if none does.
       - name: some package defines the integration task
         run: |
-          pnpm exec turbo run integration --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' --dry=json \
+          pnpm exec turbo run integration --dry=json \
             | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).tasks.filter((x) => x.task === "integration" && x.command !== "<NONEXISTENT>"); if (t.length === 0) { console.error("no package defines an integration script"); process.exit(1); } console.log(t.map((x) => x.taskId).join("\n"))'
-      - run: pnpm turbo run integration --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app'
+      - run: pnpm turbo run integration
+  e2e:
+    # Playwright against the real apps/connections launcher; @anvesx/connectors comes from the registry.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 8.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 26, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+      - run: pnpm turbo run build --filter=@anvesx/connections-app
+      - run: pnpm --filter @anvesx/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @anvesx/e2e e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            tools/e2e/playwright-report/
+            tools/e2e/test-results/
+          if-no-files-found: warn
   security:
     runs-on: ubuntu-latest
     steps:

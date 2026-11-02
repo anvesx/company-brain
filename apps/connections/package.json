@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@anvesx/connector-kit": "workspace:*",
-    "@anvesx/connectors": "link:../../../connectors/services/connectors",
+    "@anvesx/connectors": "0.1.0",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*",
     "@hono/node-server": "^2.1.5",

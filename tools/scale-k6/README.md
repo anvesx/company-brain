@@ -39,4 +39,4 @@ Eighteen runs on 2026-11-02, on a machine that was never quiet: catalog p95 abou
 - Writes: `POST /v1/accounts`, `POST /v1/catalog`, sync.
 - Any soak, spike or stress profile; rates above the one listed.
 - A real network, TLS, a remote or Linux host, concurrent users with different tokens and tenants, and a populated custom-connector catalog (the catalog holds only the built-in providers).
-- No CI job: the connections app is excluded from CI while it links `@anvesx/connectors` from a sibling checkout, and k6 is not installed there.
+- No CI job: k6 is not installed on CI runners.

@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: pnpm, registry-url: "https://npm.pkg.github.com", scope: "@anvesx" }
       - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
       # Only the shared contract packages are public; the rest are private.
       - run: pnpm turbo run build --filter=@anvesx/core-types --filter=@anvesx/connector-kit
       # Publishes every public package whose version is not on the registry yet.
