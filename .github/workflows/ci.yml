@@ -26,10 +26,8 @@ jobs:
       - run: pnpm -r --filter='!@anvesx/brain-app' --filter='!@anvesx/connections-app' run test --exclude '**/tests/scale/**'
       - run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha || 'HEAD~1' }} --to HEAD
   mutation:
-    # Slow (about 14 min) and graph-store scores 77.9 against its break
-    # threshold of 80, so it reports without blocking the other jobs.
+    # Slow (about 14 min); every package must meet its break threshold of 80.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
