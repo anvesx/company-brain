@@ -1,4 +1,4 @@
-89%
+95%
 
 # Company Brain
 
@@ -56,11 +56,12 @@ Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @brain/scale-test scale:n
 
 ## Progress
 
-The percentage on the first line is the share of the 19 goals set for this project that are met. It stands at 17 of 19.
+The percentage on the first line is the share of the 19 goals set for this project that are met. It stands at 18 of 19.
+
+Waived: Qwen Coder as a builder was skipped by the owner. Kiro, Codex and Claude build instead.
 
 Not yet met:
 
 - **Ticketing on a GitHub Project.** Issues exist under anvesx/company-brain. The Projects v2 board needs the `project` scope on the `rachit-srivastava-devx` login.
-- **Qwen Coder as a builder.** It needs a fresh login. Kiro and Codex now build headless, alongside Claude.
 
 Known gaps in the code are listed in [docs/reviews](docs/reviews). The main ones are paging that can skip hits when documents change mid-search, a per-instance index lock, and tokens that carry no groups or key id.
