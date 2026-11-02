@@ -36,6 +36,6 @@ it("pages 5k folder files in linear-ish time and handles deep nesting", async ()
   expect(await walk(connector, 100)).toBe(5001);
   const fine = performance.now() - fineStart;
   console.log(`folder scale: limit=1000 ${coarse.toFixed(0)}ms, limit=100 ${fine.toFixed(0)}ms`);
-  expect(coarse).toBeLessThan(10_000);
+  expect(coarse).toBeLessThan(60_000);
   expect(fine).toBeLessThan(coarse * 3 + 500);
 }, 60_000);

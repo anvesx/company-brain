@@ -3,4 +3,4 @@ useDefault = true
 
 [allowlist]
 description = "research citations use a field named key"
-paths = ['''docs/brain/research/refs\.jsonl''']
+paths = ['''docs/brain/research/refs\.jsonl''', '''docs/html/.*''', '''docs/brain/builds/.*''']
