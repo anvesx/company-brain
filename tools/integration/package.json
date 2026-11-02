@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "integration": "vitest run"
+    "integration": "vitest run",
+    "mutation": "stryker run"
   },
   "dependencies": {
     "@anvesx/change-cursor": "workspace:*",
