@@ -6,10 +6,10 @@ The monorepo has four tiers. A package may depend only on tiers below it.
 
 | Tier     | Packages                                    | Depends on                  |
 | -------- | ------------------------------------------- | --------------------------- |
-| features | acl-filter, audit-chain, chunker, etc.      | nothing                     |
-| services | audit-service, index-service, etc.          | features                    |
-| modules  | governance, ingestion, retrieval            | services, features          |
-| apps     | brain                                       | modules, services, features |
+| features | core-types, graph-store, etc.      | nothing                     |
+| services | graph-sync          | features                    |
+| modules  | (none now)            | services, features          |
+| apps     | brain, connections                                     | services, features |
 
 Tools are leaf packages under `tools/`; they may depend on any tier below them.
 

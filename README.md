@@ -12,17 +12,17 @@ Most company search tools copy everything into their own store. That creates thr
 - **Leaked access.** A copy has to re-implement every app's permission rules. When a document is unshared at the source, the copy often still returns it.
 - **Terms of service.** Some vendors, Slack among them, restrict persistent third-party copies of their data.
 
-Storing only pointers, embeddings and ACLs removes the copy. Freshness comes from webhooks, delta cursors, a polling backstop and a reconciliation sweep. Access comes from the user's own token, checked live on the top results.
+Storing only pointers and ACLs removes the copy. Freshness comes from webhooks, delta cursors, a polling backstop and a reconciliation sweep. Access comes from the user's own token, checked live on the top results.
 
 ## Architecture
 
 The repo is a pnpm and Turborepo monorepo. A package may depend only on tiers below it, and `tools/structure-lint` enforces that.
 
-| Tier     | Packages                                                          | Depends on         |
-| -------- | ----------------------------------------------------------------- | ------------------ |
-| features | change-cursor, connector-kit, core-types, graph-store, query-router, zone-policy | nothing |
-| services | graph-sync                                                        | features           |
-| apps     | brain, connections                                                | services, features |
+| Tier     | Packages                                                                         | Depends on         |
+| -------- | -------------------------------------------------------------------------------- | ------------------ |
+| features | change-cursor, connector-kit, core-types, graph-store, query-router, zone-policy | nothing            |
+| services | graph-sync                                                                       | features           |
+| apps     | brain, connections                                                               | services, features |
 
 **Brain.** `apps/brain` serves who can read what from a metadata graph in one SQLite file (`graph-store`), filled by `graph-sync` from connector metadata and ACLs. It never holds document text, chunks or embeddings (ADR 0004).
 
