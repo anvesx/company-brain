@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createGraphStore } from "@brain/graph-store";
 import { createBrainApp } from "./app.js";
+import { recheckFromEnv } from "./cli/recheck.js";
 import { runSync } from "./cli/sync.js";
 
 if (process.argv[2] === "sync") {
@@ -17,7 +18,15 @@ if (!path || !secret) {
   console.error("brain: BRAIN_GRAPH_PATH and BRAIN_AUTH_SECRET (32+ characters) are required");
   process.exit(1);
 }
-const app = createBrainApp({ store: createGraphStore({ path }), secret, now: () => Date.now() / 1000, port: Number(port ?? 8787), ...(host ? { host } : {}) });
+const recheck = recheckFromEnv(process.env);
+const app = createBrainApp({
+  ...(recheck && { recheck }),
+  store: createGraphStore({ path }),
+  secret,
+  now: () => Date.now() / 1000,
+  port: Number(port ?? 8787),
+  ...(host ? { host } : {}),
+});
 await app.listen();
 console.log(`brain graph api listening on ${host ?? "127.0.0.1"}:${port ?? 8787}`);
 process.once("SIGTERM", () => void app.close().then(() => process.exit(0)));
