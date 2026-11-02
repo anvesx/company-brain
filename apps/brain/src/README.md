@@ -5,3 +5,4 @@
 - `app.ts`: the HTTP server; routes return pointers only.
 - `bin.ts`: reads env and starts it.
 - `index.ts`: public exports.
+- `live/` optional per-query permission recheck against the source
