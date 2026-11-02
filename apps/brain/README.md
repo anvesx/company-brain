@@ -1,6 +1,6 @@
 # apps/brain
 
-The graph-only brain (ADR 0004). It serves who can read what, from a metadata graph in one SQLite file. It never holds document text, chunks or embeddings; that is `apps/rag`.
+The graph-only brain (ADR 0004). It serves who can read what, from a metadata graph in one SQLite file. It never holds document text, chunks or embeddings; that is the separate anvesx/rag repo.
 
 ## Why
 
@@ -8,7 +8,7 @@ Slite, Meta and Vectorize all put access control at the retrieval step and keep 
 
 ## API
 
-Read-only, bearer token `user:tenant:exp:hmac` (the same form `apps/rag mint-token` makes).
+Read-only, bearer token `user:tenant:exp:hmac` (the same form the rag repo's `mint-token` makes).
 
 | Route                   | Returns                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- |

@@ -32,12 +32,12 @@ Supermemory, Zep, mem0 and Letta are memory SDKs that Slite lists as a family. T
 
 | Requirement (source) | Package | Verdict |
 | --- | --- | --- |
-| Scheduled pull and webhook signals (Slite, Vectorize) | connectors, connector-runtime, change-cursor | built |
+| Scheduled pull and webhook signals (Slite, Vectorize) | connectors, change-cursor | built; connector-runtime moved to anvesx/rag |
 | Metadata graph with validity window (Slite, Meta) | graph-store | built, served by apps/brain |
 | Graph filled from connectors | graph-sync | built, run by `brain sync` |
-| Hybrid search (Slite, GBrain, Vectorize) | hybrid-search | built |
-| Per-user permission at retrieval (Vectorize, Slite) | acl-filter | built |
-| MCP interface (Slite, GBrain) | mcp-service | built |
+| Hybrid search (Slite, GBrain, Vectorize) | hybrid-search | built, now in anvesx/rag |
+| Per-user permission at retrieval (Vectorize, Slite) | acl-filter | built, now in anvesx/rag |
+| MCP interface (Slite, GBrain) | mcp-service | built, now in anvesx/rag |
 | Consolidation, contradiction policy (Vectorize) | none | not built |
 | Dream cycle, time decay, drift detection (Slite, GBrain) | none | not built |
 | Review queue for every change (Slite, Meta) | none | not built |
@@ -45,6 +45,8 @@ Supermemory, Zep, mem0 and Letta are memory SDKs that Slite lists as a family. T
 | Regression suite from corrections (Meta) | none | not built |
 | Write-back of outcomes (Vectorize) | none | not built |
 | Citations on every answer (Slite) | query-router | not built |
-| query-router, zone-policy, MiniLM embedder | n/a | no exact source backs them: our proposal |
+| query-router, zone-policy | n/a | no exact source backs them: our proposal (the MiniLM embedder was in this row; it moved to anvesx/rag) |
 
 Source for the last row: the independent verifier's report on commit 86af37e.
+
+Rag packages (acl-filter, hybrid-search, mcp-service, connector-runtime, embedder) were removed from this repo; their code lives in github.com/anvesx/rag (ADR 0005).

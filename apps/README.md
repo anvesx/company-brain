@@ -1,3 +1,3 @@
 # apps
 
-Deployable entry points. Empty for now; `pnpm deps` needs this folder to exist.
+Deployable entry points: `brain` (graph-only server) and `connections` (account and OAuth service). The RAG app lives in anvesx/rag.
