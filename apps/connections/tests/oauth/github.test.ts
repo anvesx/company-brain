@@ -40,6 +40,15 @@ describe("github oauth against the replay provider", () => {
     const token = (JSON.parse(readFileSync(file, "utf8")) as { ann: { github: string } }).ann.github;
     expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
   });
+  it("writes the token file when the callback creates the account", async () => {
+    const file = join(h.s.dir, "cb-tokens.json");
+    const w = await harness({}, undefined, { tokensFile: file });
+    const f = await w.signIn(ann, "github");
+    await f.callback();
+    const token = (JSON.parse(readFileSync(file, "utf8")) as { ann: { github: string } }).ann.github;
+    expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
+    await w.close();
+  });
   it("refuses a company zone for a non-admin at start, and allows it for an admin", async () => {
     expect((await h.s.call("GET", "/v1/oauth/github/start?dataZone=company", ann)).status).toBe(403);
     expect((await h.s.call("GET", "/v1/oauth/github/start?dataZone=company", root)).status).toBe(302);

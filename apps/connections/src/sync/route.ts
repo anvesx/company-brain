@@ -3,7 +3,7 @@ import type { Deps } from "../deps.js";
 import type { Env } from "../http/auth.js";
 import { refreshAccount } from "../oauth/refresh.js";
 import { accessTokenOf } from "../tokens/access-token.js";
-import { writeTokenFile } from "../tokens/write-token-file.js";
+import { rewriteTokens } from "../tokens/rewrite.js";
 import { runAccountSync } from "./run.js";
 
 /** Adds `POST /:id/sync` to the accounts router. Owner only; an oauth account is refreshed first. */
@@ -19,7 +19,7 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     if (cur.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
     const idp = Object.values(d.oauth ?? {}).find((p) => p.source === cur.provider);
     if (cur.kind === "oauth" && idp && (await refreshAccount(d.store, idp, cur.id)) !== "unsupported") {
-      if (d.tokensFile) writeTokenFile(d.store, d.tokensFile);
+      rewriteTokens(d);
       if (d.store.get(cur.id)?.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
     }
     const token = accessTokenOf(cur.kind, d.store.credential(cur.id) ?? "");

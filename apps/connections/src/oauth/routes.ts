@@ -4,6 +4,7 @@ import { checkZones } from "../accounts/widen.js";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/auth.js";
 import { parseStart } from "../http/validate.js";
+import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, credentialOf, exchange } from "./flow.js";
 import { createPending } from "./pending.js";
 
@@ -46,6 +47,7 @@ export function oauthRoutes(d: Deps): Hono<Env> {
         dataZone: pend.dataZone,
         secret,
       });
+      rewriteTokens(d);
       return c.json(a, 201);
     } catch {
       return c.json({ error: "token exchange failed" }, 502);

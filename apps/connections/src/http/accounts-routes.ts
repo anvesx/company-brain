@@ -3,6 +3,7 @@ import { checkZones } from "../accounts/widen.js";
 import type { Deps } from "../deps.js";
 import { disconnect } from "../sync/disconnect.js";
 import { syncRoute } from "../sync/route.js";
+import { rewriteTokens } from "../tokens/rewrite.js";
 import { type Env, requireCaller } from "./auth.js";
 import { parseNew, parsePatch } from "./validate.js";
 
@@ -20,7 +21,9 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const { token, ...a } = p.value;
     const zones = checkZones({ credential: a.kind, access: a.access, dataZone: a.dataZone, ownerIsAdmin: d.isAdmin(caller) });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
-    return c.json(d.store.create({ ...a, tenant: caller.tenant, owner: caller.user, secret: token }), 201);
+    const made = d.store.create({ ...a, tenant: caller.tenant, owner: caller.user, secret: token });
+    rewriteTokens(d);
+    return c.json(made, 201);
   });
   r.patch("/:id", async (c) => {
     const caller = c.get("caller");
@@ -32,7 +35,9 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const next = { access: p.value.access ?? cur.access, dataZone: p.value.dataZone ?? cur.dataZone };
     const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller) });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
-    return c.json(d.store.update(cur.id, p.value));
+    const changed = d.store.update(cur.id, p.value);
+    rewriteTokens(d);
+    return c.json(changed);
   });
   r.delete("/:id", (c) => {
     const caller = c.get("caller");
