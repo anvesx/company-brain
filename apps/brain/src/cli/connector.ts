@@ -1,5 +1,5 @@
+import { createDriveConnector, createGithubConnector } from "@anvesx/connectors";
 import { type Connector, createFolderConnector } from "@brain/connector-kit";
-import { createDriveConnector, createGithubConnector } from "@brain/connectors";
 
 type Env = Record<string, string | undefined>;
 const need = (kind: string, env: Env, names: string[]): string[] => {

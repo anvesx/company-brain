@@ -1,9 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fixture, startReplay } from "@anvesx/connectors/testing/replay";
 import { createGraphStore } from "@brain/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
-import { fixture, startReplay } from "../../../../services/connectors/tests/support/replay.js";
 import { start } from "../../src/cli/start.js";
 import { mint, NOW } from "../http/fixture.js";
 

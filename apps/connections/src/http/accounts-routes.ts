@@ -1,4 +1,4 @@
-import { hasLiveRecheck } from "@brain/connectors";
+import { hasLiveRecheck } from "@anvesx/connectors";
 import { Hono } from "hono";
 import { checkZones } from "../accounts/widen.js";
 import { kindsOf } from "../catalog/kinds.js";

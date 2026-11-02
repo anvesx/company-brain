@@ -1,4 +1,4 @@
-import { customManifest, hasLiveRecheck, type Listed } from "@brain/connectors";
+import { customManifest, hasLiveRecheck, type Listed } from "@anvesx/connectors";
 import { Hono } from "hono";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/auth.js";

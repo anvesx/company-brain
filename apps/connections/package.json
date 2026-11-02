@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@brain/connector-kit": "workspace:*",
-    "@brain/connectors": "workspace:*",
+    "@anvesx/connectors": "link:../../../connectors/packages/connectors",
     "@brain/graph-store": "workspace:*",
     "@brain/graph-sync": "workspace:*",
     "@hono/node-server": "^2.1.5",

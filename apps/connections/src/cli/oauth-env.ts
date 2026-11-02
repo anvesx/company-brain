@@ -1,4 +1,4 @@
-import { createBuiltinRegistry, type Registry } from "@brain/connectors";
+import { createBuiltinRegistry, type Registry } from "@anvesx/connectors";
 import { appOf, type OAuthProvider, oauthProvider } from "../oauth/providers.js";
 
 type Env = Record<string, string | undefined>;

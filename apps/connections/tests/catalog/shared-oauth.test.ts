@@ -1,4 +1,4 @@
-import { createBuiltinRegistry, driveManifest, type Manifest } from "@brain/connectors";
+import { createBuiltinRegistry, driveManifest, type Manifest } from "@anvesx/connectors";
 import { afterEach, describe, expect, it } from "vitest";
 import { oauthProvider } from "../../src/oauth/providers.js";
 import { ann, boot } from "../http/fixture.js";

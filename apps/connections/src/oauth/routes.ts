@@ -1,4 +1,4 @@
-import { hasLiveRecheck } from "@brain/connectors";
+import { hasLiveRecheck } from "@anvesx/connectors";
 import { generateCodeVerifier, generateState } from "arctic";
 import { Hono } from "hono";
 import { checkZones } from "../accounts/widen.js";

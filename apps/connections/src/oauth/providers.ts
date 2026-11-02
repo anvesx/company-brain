@@ -1,4 +1,4 @@
-import { createBuiltinRegistry, type Manifest, type Registry } from "@brain/connectors";
+import { createBuiltinRegistry, type Manifest, type Registry } from "@anvesx/connectors";
 
 export type OAuthProvider = {
   /** The account provider id this sign-in creates: the manifest id. */

@@ -1,4 +1,4 @@
-import { createBuiltinRegistry, type Registry } from "@brain/connectors";
+import { createBuiltinRegistry, type Registry } from "@anvesx/connectors";
 import { Hono } from "hono";
 import { catalogRoutes } from "../catalog/routes.js";
 import type { Deps } from "../deps.js";

@@ -1,4 +1,4 @@
-import type { Registry } from "@brain/connectors";
+import type { Registry } from "@anvesx/connectors";
 import { type SyncReport, syncConnector } from "@brain/graph-sync";
 import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";

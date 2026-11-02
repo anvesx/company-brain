@@ -18,12 +18,12 @@ Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Compos
 ## Connector catalog and custom connectors
 The user wants nearly every app available, and companies must be able to add their own. So the app has a registry of manifests, and the four built-in apps are just the first entries.
 - A manifest is data: `id`, `name`, `auth` (`oauth2` with authorize and token URLs and scopes, `token`, or `pat`), `defaultZone`, and a `load` that returns a `Connector` (the connector-kit contract: `list`, `fetch`, `changes`, `canRead`).
-- Built-in manifests ship in `services/connectors`. A new app is one folder with one manifest and one adapter, and no change to the accounts, OAuth, token-file or UI code, which read the registry.
+- Built-in manifests ship in [anvesx/connectors](https://github.com/anvesx/connectors) (`@anvesx/connectors`). A new app is one folder with one manifest and one adapter, and no change to the accounts, OAuth, token-file or UI code, which read the registry.
 - Custom connectors are per tenant. An admin registers a manifest through the API (`POST /v1/catalog`, tenant admin only). An `oauth2` or `token` manifest plus a module path or an HTTP endpoint that speaks the connector contract is enough. Custom entries show up only for that tenant.
 - A custom connector gets no extra trust. It runs through the same widening rule, the same zone to ACL mapping, and the same live `canRead` recheck. A connector with no `canRead` can only be `personal`.
 - The sign-in screen lists the catalog, so adding an entry adds a tile.
 - Tests: two manifests share one OAuth flow; a tenant entry is invisible to another tenant; a custom connector without `canRead` cannot be set to `company`.
-- Built: the manifest type and registry (`services/connectors/src/catalog`), Drive and GitHub on manifests, `GET/POST /v1/catalog`, HTTP custom connectors per tenant (in memory), and the no-`canRead` rule (never company). Not built yet: Slack, Gmail, persisted custom entries, module-path custom connectors.
+- Built: the manifest type and registry (`packages/connectors/src/catalog` in anvesx/connectors), Drive and GitHub on manifests, `GET/POST /v1/catalog`, HTTP custom connectors per tenant (in memory), and the no-`canRead` rule (never company). Not built yet: Slack, Gmail, persisted custom entries, module-path custom connectors.
 
 ## Model
 - `Account`: `{id, owner, provider, label, credential, access, dataZone, status}`.

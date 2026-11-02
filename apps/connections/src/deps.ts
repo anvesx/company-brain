@@ -1,4 +1,4 @@
-import type { Registry } from "@brain/connectors";
+import type { Registry } from "@anvesx/connectors";
 import type { GraphStore } from "@brain/graph-store";
 import type { Store } from "./accounts/store.js";
 import type { Caller } from "./accounts/types.js";

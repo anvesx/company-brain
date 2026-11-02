@@ -1,4 +1,4 @@
-import { type CustomSpec, MANIFEST_ID } from "@brain/connectors";
+import { type CustomSpec, MANIFEST_ID } from "@anvesx/connectors";
 
 type Parsed = { value: CustomSpec } | { error: string };
 const obj = (v: unknown): Record<string, unknown> | undefined =>
