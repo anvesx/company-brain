@@ -1,77 +1,66 @@
-import { startMcpServer } from "@brain/mcp-service";
-import { createGate } from "./ops/gate.js";
-import { startHealth } from "./ops/health.js";
-import { readiness } from "./ops/ready.js";
-import { defaultLogger } from "./runtime/logger.js";
-import { openStores } from "./runtime/stores.js";
-import { bounded } from "./runtime/timeouts.js";
-import type { BrainApp, BrainDeps } from "./types.js";
-import { resolveDimension } from "./wire/dimension.js";
-import { createPipeline } from "./wire/pipeline.js";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { GraphNode, GraphStore } from "@brain/graph-store";
+import { canRead, readableDocuments } from "./access.js";
+import { MIN_SECRET_CHARS, verify } from "./auth.js";
 
-const DEFAULT_DRAIN_MS = 10_000;
+export interface BrainDeps {
+  store: GraphStore;
+  secret: string;
+  now: () => number;
+  port?: number;
+  host?: string;
+}
+export interface BrainApp {
+  server: Server;
+  listen(): Promise<void>;
+  close(): Promise<void>;
+}
 
-/** Composes ingestion, governed search, the MCP server and health. Every external call has a timeout; close drains, then closes every database. */
-export async function createBrainApp(given: BrainDeps): Promise<BrainApp> {
-  const deps: BrainDeps = { ...given, ...bounded(given, given.timeouts) };
-  const dimension = await resolveDimension(deps);
-  const logger = deps.logger ?? defaultLogger;
-  const stores = openStores(deps, dimension);
-  const gate = createGate();
-  let server: Awaited<ReturnType<typeof startMcpServer>> | undefined;
-  let health: Awaited<ReturnType<typeof startHealth>> | undefined;
-  try {
-    const pipeline = createPipeline(deps, stores, logger);
-    const search: BrainApp["search"] = (input) => gate.run(() => pipeline.search(input));
-    server = await startMcpServer({
-      transport: deps.transport,
-      port: deps.port,
-      host: deps.host,
-      allowedHosts: deps.allowedHosts,
-      allowedOrigins: deps.allowedOrigins,
-      stdin: deps.stdin,
-      stdout: deps.stdout,
-      principalFor: deps.principalFor,
-      // Cause name and message only: never the query, the principal or the token.
-      logger: (cause) => logger.error("search failed", { cause: cause instanceof Error ? `${cause.name}: ${cause.message}` : "non-error thrown" }),
-      search: ({ query, limit, principal }) => search({ query, limit, principal }),
-    });
-    if (deps.healthPort !== undefined) {
-      health = await startHealth({
-        port: deps.healthPort,
-        host: deps.host ?? "127.0.0.1",
-        draining: gate.draining,
-        probe: readiness(stores.probe, deps.ready, deps.timeouts?.embedQueryMs ?? 5_000),
-      });
+/** A pointer: where the text lives, never the text. */
+const pointer = (n: GraphNode) => ({ id: n.id, source: n.source, address: n.address, title: n.title, version: n.version });
+const send = (res: ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+};
+
+export function createBrainApp(deps: BrainDeps): BrainApp {
+  if (typeof deps.secret !== "string" || deps.secret.length < MIN_SECRET_CHARS) throw new Error(`secret must be at least ${MIN_SECRET_CHARS} characters`);
+  const { store } = deps;
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
+    route(req, res);
+  };
+  const route = (req: IncomingMessage, res: ServerResponse): void => {
+    const caller = verify(req.headers.authorization, deps.secret, Math.floor(deps.now()));
+    if (!caller) {
+      send(res, 401, { error: "unauthorized" });
+      return;
     }
-    let closing: Promise<void> | undefined;
-    const running = server;
-    return {
-      ingest: (tenantId) => gate.run(() => pipeline.ingest(tenantId)),
-      search,
-      verify: pipeline.verify,
-      checkpoint: pipeline.checkpoint,
-      close: () =>
-        (closing ??= (async () => {
-          gate.begin();
-          await gate.idle(deps.drainMs ?? DEFAULT_DRAIN_MS);
-          try {
-            await running.close();
-          } finally {
-            try {
-              await health?.close();
-            } finally {
-              stores.close();
-            }
-          }
-        })()),
-      port: server.port,
-      healthPort: health?.port,
-    };
-  } catch (error) {
-    await health?.close();
-    await server?.close();
-    stores.close();
-    throw error;
-  }
+    if (req.method !== "GET") {
+      send(res, 405, { error: "read only" });
+      return;
+    }
+    const path = new URL(req.url ?? "/", "http://x").pathname;
+    if (path === "/v1/documents") {
+      send(res, 200, { documents: readableDocuments(store, caller.tenant, caller.user).map(pointer) });
+      return;
+    }
+    const id = /^\/v1\/documents\/([^/]+)$/.exec(path)?.[1];
+    const node = id ? store.node(caller.tenant, decodeURIComponent(id)) : undefined;
+    if (!id || !node || node.kind !== "document" || !canRead(store, caller.tenant, caller.user, node.id)) {
+      send(res, 404, { error: "not found" });
+      return;
+    }
+    send(res, 200, pointer(node));
+  };
+  const server = createServer((req, res) => {
+    try {
+      handle(req, res);
+    } catch {
+      send(res, 500, { error: "internal" });
+    }
+  });
+  return {
+    server,
+    listen: () => new Promise((ok) => server.listen(deps.port ?? 0, deps.host ?? "127.0.0.1", ok)),
+    close: () => new Promise((ok) => server.close(() => ok())),
+  };
 }

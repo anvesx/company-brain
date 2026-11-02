@@ -1,0 +1,40 @@
+{
+  "name": "@brain/rag-app",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "rag": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "@brain/audit-chain": "workspace:*",
+    "@brain/audit-service": "workspace:*",
+    "@brain/change-cursor": "workspace:*",
+    "@brain/chunker": "workspace:*",
+    "@brain/connector-kit": "workspace:*",
+    "@brain/connectors": "workspace:*",
+    "@brain/core-types": "workspace:*",
+    "@brain/embedder": "workspace:*",
+    "@brain/governance": "workspace:*",
+    "@brain/hybrid-search": "workspace:*",
+    "@brain/index-service": "workspace:*",
+    "@brain/ingestion": "workspace:*",
+    "@brain/mcp-service": "workspace:*",
+    "@brain/pointer-registry": "workspace:*",
+    "@brain/query-service": "workspace:*",
+    "@brain/retrieval": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}

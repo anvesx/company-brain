@@ -24,7 +24,7 @@ The brain returns pointers (source, address, ACL scope). An agent hands those to
 
 ## Consequences
 
-- Today's `apps/brain` (pointer index, hybrid search, embedder wiring) is the rag app. It is renamed `apps/rag` after the in-flight hardening branch lands.
+- Today's pointer index, hybrid search and embedder app is `apps/rag` (renamed 2026-11-02). `apps/brain` is the graph-only app.
 - A new `apps/brain` and a `features/graph-store` package hold the graph. Both apps reuse `services/connectors`.
 - The embedder belongs to rag only. The brain never imports it.
 - The ACL stays the user's token, checked live, in both apps.

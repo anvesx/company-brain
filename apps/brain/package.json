@@ -13,28 +13,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "mutation": "stryker run"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@brain/audit-chain": "workspace:*",
-    "@brain/audit-service": "workspace:*",
-    "@brain/change-cursor": "workspace:*",
-    "@brain/chunker": "workspace:*",
-    "@brain/connector-kit": "workspace:*",
-    "@brain/connectors": "workspace:*",
-    "@brain/core-types": "workspace:*",
-    "@brain/embedder": "workspace:*",
-    "@brain/governance": "workspace:*",
-    "@brain/hybrid-search": "workspace:*",
-    "@brain/index-service": "workspace:*",
-    "@brain/ingestion": "workspace:*",
-    "@brain/mcp-service": "workspace:*",
-    "@brain/pointer-registry": "workspace:*",
-    "@brain/query-service": "workspace:*",
-    "@brain/retrieval": "workspace:*"
-  },
-  "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.32.2"
+    "@brain/graph-store": "workspace:*"
   }
 }

@@ -50,6 +50,12 @@ importers:
 
   apps/brain:
     dependencies:
+      '@brain/graph-store':
+        specifier: workspace:*
+        version: link:../../features/graph-store
+
+  apps/rag:
+    dependencies:
       '@brain/audit-chain':
         specifier: workspace:*
         version: link:../../features/audit-chain
@@ -148,12 +154,6 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
-  features/query-router:
-    devDependencies:
-      fast-check:
-        specifier: 4.10.2
-        version: 4.10.2
-
   features/connector-kit:
     dependencies:
       '@brain/core-types':
@@ -198,6 +198,12 @@ importers:
       '@brain/core-types':
         specifier: workspace:*
         version: link:../core-types
+
+  features/query-router:
+    devDependencies:
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
 
   features/zone-policy:
     devDependencies:

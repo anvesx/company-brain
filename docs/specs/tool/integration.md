@@ -11,7 +11,7 @@ audit-service, plus retrieval over a real MCP client. It has no product logic an
 
 ## Reuse decision
 vitest 5 (already in the repo), `node:sqlite` files in an OS temp dir, `@modelcontextprotocol/sdk@1.32.2` (same pin as
-apps/brain) only for the retrieval test. No new third-party library.
+apps/rag) only for the retrieval test. No new third-party library.
 Tier rule change: structure-lint let a tool depend on no product tier, so a suite that imports them could not
 declare its dependencies. `tool` may now depend on feature, service and module; nothing may depend on a tool.
 

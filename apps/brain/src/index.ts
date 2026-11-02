@@ -1,4 +1,3 @@
-export { createBrainApp } from "./app.js";
-export { DEFAULT_TTL_SECONDS, type MintOptions, mintToken, signedPrincipalFor, TokenExpiredError } from "./auth/token.js";
-export type { BrainApp, BrainDeps, Logger, SearchInput } from "./types.js";
-export { IndexDimensionError } from "./wire/dimension.js";
+export { canRead, readableDocuments } from "./access.js";
+export { type BrainApp, type BrainDeps, createBrainApp } from "./app.js";
+export { type Caller, verify } from "./auth.js";

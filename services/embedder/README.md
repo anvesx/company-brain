@@ -2,7 +2,7 @@
 
 A real local embedding model for the brain: `Xenova/all-MiniLM-L6-v2` (384-D) run by
 `@huggingface/transformers` 4.x (ONNX, in-process, no API key). Replaces the toy `[text.length, 1]`
-embedder in `apps/brain/src/config.ts`. `apps/brain` uses it as the embedder in every non-demo mode.
+embedder in `apps/rag/src/config.ts`. `apps/rag` uses it as the embedder in every non-demo mode.
 
 ```ts
 import { createEmbedder } from "@brain/embedder";

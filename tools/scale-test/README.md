@@ -6,7 +6,7 @@ Load test for the Brain MCP search endpoint, in two forms with the same threshol
 
 `pnpm -r build` first, then `pnpm --filter @brain/scale-test scale:node`.
 
-It spawns the real `apps/brain/dist/bin.js` in demo mode (`BRAIN_DEMO=1`, `BRAIN_PORT=0`, temp-dir audit DB and anchor), runs the MCP initialize handshake as `alice:acme`, then ramps connections with [autocannon](https://github.com/mcollina/autocannon) (MIT, pinned) against `tools/call search`. Each stage is checked by `evaluate` in `src/thresholds.ts`; any violation exits 1.
+It spawns the real `apps/rag/dist/bin.js` in demo mode (`BRAIN_DEMO=1`, `BRAIN_PORT=0`, temp-dir audit DB and anchor), runs the MCP initialize handshake as `alice:acme`, then ramps connections with [autocannon](https://github.com/mcollina/autocannon) (MIT, pinned) against `tools/call search`. Each stage is checked by `evaluate` in `src/thresholds.ts`; any violation exits 1.
 
 - `SCALE_CONNECTIONS` (default `5,25,50`): connections per stage.
 - `SCALE_STAGE_SECONDS` (default `10`): seconds per stage.

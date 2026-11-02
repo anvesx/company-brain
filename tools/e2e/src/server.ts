@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 export type Server = { url: string; stop: () => Promise<number | null> };
 
-const bin = resolve(import.meta.dirname, "../../../apps/brain/dist/bin.js");
+const bin = resolve(import.meta.dirname, "../../../apps/rag/dist/bin.js");
 
 export const startServer = (): Promise<Server> =>
   new Promise((done, fail) => {

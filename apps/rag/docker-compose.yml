@@ -1,9 +1,9 @@
-# docker compose up --build   (from apps/brain; export BRAIN_AUTH_SECRET and BRAIN_AUDIT_KEY first, 32+ characters each)
+# docker compose up --build   (from apps/rag; export BRAIN_AUTH_SECRET and BRAIN_AUDIT_KEY first, 32+ characters each)
 services:
   brain:
     build:
       context: ../..
-      dockerfile: apps/brain/Dockerfile
+      dockerfile: apps/rag/Dockerfile
     environment:
       BRAIN_HOST: 0.0.0.0
       BRAIN_PORT: "3000"

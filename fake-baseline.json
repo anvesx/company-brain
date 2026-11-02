@@ -25,7 +25,7 @@
   "modules/ingestion/tests/integration/known-partial.test.ts:fake-in-real-tier": 1,
   "modules/ingestion/tests/integration/pipeline.test.ts:fake-in-real-tier": 2,
   "modules/ingestion/tests/integration/tenant-binding.test.ts:fake-in-real-tier": 1,
-  "apps/brain/tests/integration/logging.test.ts:fake-in-real-tier": 1,
-  "apps/brain/tests/integration/persist.test.ts:fake-in-real-tier": 4,
-  "apps/brain/tests/integration/serve.test.ts:fake-in-real-tier": 2
+  "apps/rag/tests/integration/logging.test.ts:fake-in-real-tier": 1,
+  "apps/rag/tests/integration/persist.test.ts:fake-in-real-tier": 4,
+  "apps/rag/tests/integration/serve.test.ts:fake-in-real-tier": 2
 }

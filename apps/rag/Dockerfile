@@ -1,11 +1,11 @@
-# Build context is the repository root: docker build -f apps/brain/Dockerfile .
+# Build context is the repository root: docker build -f apps/rag/Dockerfile .
 FROM node:22-slim AS build
 RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
 WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @brain/brain-app... build
-RUN pnpm --filter @brain/brain-app deploy --prod /out
+RUN pnpm --filter @brain/rag-app... build
+RUN pnpm --filter @brain/rag-app deploy --prod /out
 
 FROM node:22-slim
 ENV NODE_ENV=production BRAIN_HOST=0.0.0.0 BRAIN_PORT=3000 BRAIN_DATA_DIR=/data
