@@ -15,7 +15,8 @@ export type Started = { app: BrainApp; forceExitMs: number; host: string };
 export async function startFromEnv(env: Env, io: Io): Promise<Started> {
   const brain = readEnv(env);
   const ops = readOps(env, brain.port);
-  if (!brain.demo && !brain.folderRoot) throw new Error("no source configured. Set BRAIN_FOLDER_ROOT and BRAIN_TENANT, or BRAIN_DEMO=1 for the demo connector");
+  if (!brain.demo && !brain.folderRoot && !brain.connector)
+    throw new Error("no source configured. Set BRAIN_CONNECTOR=folder|github|drive and BRAIN_TENANT, or BRAIN_DEMO=1 for the demo connector");
   requireAuthMode(brain);
   const auditKey = resolveAuditKey(env, io.error);
   const source = sourceFor(brain, env);
@@ -37,6 +38,8 @@ export async function startFromEnv(env: Env, io: Io): Promise<Started> {
     healthPort: ops.healthPort,
   });
   try {
+    // Load the model before the one-shot ingest so the first documents do not race the download; ingest still runs if it cannot load.
+    await deps.ready?.().catch((error: unknown) => io.error(`brain: embedder not ready: ${error instanceof Error ? error.message : String(error)}`));
     for (const tenant of tenants) {
       const { indexed, failures, quarantined } = await app.ingest(tenant);
       io.log(`brain: ingested tenant ${tenant}: ${indexed} indexed, ${failures.length} failed, ${quarantined.length} quarantined`);

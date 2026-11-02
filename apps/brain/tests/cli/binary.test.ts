@@ -25,6 +25,15 @@ describe.skipIf(!existsSync(bin))("the built binary", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("BRAIN_AUTH_SECRET");
   });
+  it.each([
+    [{ BRAIN_CONNECTOR: "github" }, "BRAIN_CONNECTOR=github needs GITHUB_TOKEN, BRAIN_GITHUB_REPO (owner/repo)"],
+    [{ BRAIN_CONNECTOR: "drive" }, "BRAIN_CONNECTOR=drive needs DRIVE_ACCESS_TOKEN"],
+    [{ BRAIN_CONNECTOR: "folder" }, "BRAIN_CONNECTOR=folder needs BRAIN_FOLDER_ROOT"],
+  ])("exits 1 with a clear message, not a stack trace, for %j", (connector, message) => {
+    const r = run([], { ...connector, BRAIN_TENANT: "acme", BRAIN_AUTH_SECRET: secret, BRAIN_AUDIT_KEY: secret, BRAIN_PORT: "0" });
+    expect(r.status).toBe(1);
+    expect(r.stderr.trim()).toBe(`brain: ${message}`);
+  });
   it("mint-token prints a token the server's verifier accepts", () => {
     const r = run(["mint-token", "--user", "alice", "--tenant", "acme", "--groups", "eng"], { BRAIN_AUTH_SECRET: secret });
     expect(r.status).toBe(0);

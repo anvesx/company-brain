@@ -65,9 +65,15 @@ importers:
       '@brain/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
+      '@brain/connectors':
+        specifier: workspace:*
+        version: link:../../services/connectors
       '@brain/core-types':
         specifier: workspace:*
         version: link:../../features/core-types
+      '@brain/embedder':
+        specifier: workspace:*
+        version: link:../../services/embedder
       '@brain/governance':
         specifier: workspace:*
         version: link:../../modules/governance

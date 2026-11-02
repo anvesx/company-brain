@@ -46,22 +46,26 @@ Cost: the check fetches the full document for each hit. Fine for a handful of hi
 
 Local demo: `BRAIN_DEMO=1 BRAIN_PORT=3000 node dist/bin.js`. Prints `brain listening on http://HOST:PORT/mcp` and `brain health on http://HOST:HEALTHPORT`.
 
-Folder mode: `BRAIN_FOLDER_ROOT=/docs BRAIN_TENANT=acme BRAIN_AUTH_SECRET=... BRAIN_AUDIT_KEY=... node dist/bin.js` serves a directory as one tenant. Each document's ACL is in a `<doc>.acl.json` sidecar; a document without one is denied to everyone. Search embeds with the demo toy embedder, so every permitted match is found but ranking is meaningless. A connector that enforces per-user tokens needs `BRAIN_USER_TOKENS` (JSON file `{"tenant:user": "credential"}`); that wires `userTokenFor` and turns on the live ACL.
+Folder mode: `BRAIN_FOLDER_ROOT=/docs BRAIN_TENANT=acme BRAIN_AUTH_SECRET=... BRAIN_AUDIT_KEY=... node dist/bin.js` serves a directory as one tenant. Each document's ACL is in a `<doc>.acl.json` sidecar; a document without one is denied to everyone. Search embeds with the real 384-D model (`@brain/embedder`), downloaded on first use. Only `BRAIN_DEMO=1` uses the toy embedder. Real connectors: `BRAIN_CONNECTOR=github` (needs `GITHUB_TOKEN`, `BRAIN_GITHUB_REPO=owner/repo`) or `drive` (needs `DRIVE_ACCESS_TOKEN`); both need `BRAIN_TENANT`. A missing value exits 1 with one line. A connector that enforces per-user tokens needs `BRAIN_USER_TOKENS` (JSON file `{"tenant:user": "credential"}`); that wires `userTokenFor` and turns on the live ACL.
 
-| Variable                                                                                                    | Meaning                                                                                       |
-| ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `BRAIN_PORT`                                                                                                | MCP port, default 3000.                                                                       |
-| `BRAIN_HOST`                                                                                                | Bind address, default loopback. Use `0.0.0.0` in a container.                                 |
-| `BRAIN_ALLOWED_HOSTS`, `BRAIN_ALLOWED_ORIGINS`                                                              | Comma lists. Host values include the port. Default: loopback on the bound port.               |
-| `BRAIN_DATA_DIR`                                                                                            | Registry, index, cursors, `audit.db` and `anchors.log` on disk. Requires `BRAIN_AUTH_SECRET`. |
-| `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`                                                                            | Override the audit paths (default under the data dir).                                        |
-| `BRAIN_AUTH_SECRET`, `BRAIN_AUDIT_KEY`                                                                      | Token signing secret and audit key, each at least 32 characters.                              |
-| `BRAIN_AUTH_KEYS`                                                                                           | JSON `{"kid": "secret"}`: extra verification keys for rotation.                               |
-| `BRAIN_TOKEN_MAX_TTL_SECONDS`                                                                               | Longest lifetime a token may claim, default 86400.                                            |
-| `BRAIN_FOLDER_ROOT`, `BRAIN_TENANT`, `BRAIN_USER_TOKENS`                                                    | Folder mode (see above).                                                                      |
-| `BRAIN_EMBED_TIMEOUT_MS`, `BRAIN_EMBED_QUERY_TIMEOUT_MS`, `BRAIN_FETCH_TIMEOUT_MS`, `BRAIN_LIST_TIMEOUT_MS` | Time limits (defaults 30000, 5000, 30000, 30000).                                             |
-| `BRAIN_DRAIN_MS`, `BRAIN_FORCE_EXIT_MS`                                                                     | Shutdown: wait for in-flight work (10000), then exit 1 regardless (20000).                    |
-| `BRAIN_HEALTH_PORT`                                                                                         | Health port, default MCP port + 1 (0 = ephemeral).                                            |
+| Variable                                                                                                    | Meaning                                                                                          |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `BRAIN_PORT`                                                                                                | MCP port, default 3000.                                                                          |
+| `BRAIN_HOST`                                                                                                | Bind address, default loopback. Use `0.0.0.0` in a container.                                    |
+| `BRAIN_ALLOWED_HOSTS`, `BRAIN_ALLOWED_ORIGINS`                                                              | Comma lists. Host values include the port. Default: loopback on the bound port.                  |
+| `BRAIN_DATA_DIR`                                                                                            | Registry, index, cursors, `audit.db` and `anchors.log` on disk. Requires `BRAIN_AUTH_SECRET`.    |
+| `BRAIN_AUDIT_DB`, `BRAIN_ANCHOR`                                                                            | Override the audit paths (default under the data dir).                                           |
+| `BRAIN_AUTH_SECRET`, `BRAIN_AUDIT_KEY`                                                                      | Token signing secret and audit key, each at least 32 characters.                                 |
+| `BRAIN_AUTH_KEYS`                                                                                           | JSON `{"kid": "secret"}`: extra verification keys for rotation.                                  |
+| `BRAIN_TOKEN_MAX_TTL_SECONDS`                                                                               | Longest lifetime a token may claim, default 86400.                                               |
+| `BRAIN_FOLDER_ROOT`, `BRAIN_TENANT`, `BRAIN_USER_TOKENS`                                                    | Folder mode (see above).                                                                         |
+| `BRAIN_CONNECTOR`                                                                                           | `folder`, `github` or `drive`. Needs `BRAIN_TENANT`; github and drive apply `BRAIN_USER_TOKENS`. |
+| `GITHUB_TOKEN`, `BRAIN_GITHUB_REPO`, `BRAIN_GITHUB_API_URL`                                                 | github: index token, `owner/repo`, optional API base URL (tests, GitHub Enterprise).             |
+| `DRIVE_ACCESS_TOKEN`, `BRAIN_DRIVE_ROOT_URL`                                                                | drive: index token, optional API root URL.                                                       |
+| `BRAIN_EMBEDDER_CACHE_DIR`                                                                                  | Where the embedding model is cached (default: the embedder package's).                           |
+| `BRAIN_EMBED_TIMEOUT_MS`, `BRAIN_EMBED_QUERY_TIMEOUT_MS`, `BRAIN_FETCH_TIMEOUT_MS`, `BRAIN_LIST_TIMEOUT_MS` | Time limits (defaults 30000, 5000, 30000, 30000).                                                |
+| `BRAIN_DRAIN_MS`, `BRAIN_FORCE_EXIT_MS`                                                                     | Shutdown: wait for in-flight work (10000), then exit 1 regardless (20000).                       |
+| `BRAIN_HEALTH_PORT`                                                                                         | Health port, default MCP port + 1 (0 = ephemeral).                                               |
 
 Shutdown (SIGTERM/SIGINT): new ingest and search are refused, in-flight ones finish (up to `BRAIN_DRAIN_MS`), then the MCP server, health server and every SQLite handle close. `/readyz` turns 503 at once. `/healthz` and `/readyz` are on the health port because the MCP server answers only `/mcp`.
 
@@ -84,7 +88,8 @@ Audit key: `BRAIN_AUDIT_KEY` (at least 32 characters) is required whenever `BRAI
 - `bin.ts` wires `userTokenFor` only through `BRAIN_USER_TOKENS`, and only for connectors that enforce user tokens. The folder connector does not.
 - Ingestion runs once at start, not on a schedule.
 - After a restart with `dataDir`, the first full-listing run seeds ingestion's known set from the registry's live pointers written by the tenant's own connector (`pointer.source` equals the connector id; `runtime/known.ts`, paged with `afterId`), so documents deleted at source while the app was down are tombstoned. Without `dataDir` the registry starts empty, so there is nothing to seed. A run that does not list everything (connector error, resume from a saved cursor) tombstones nothing. A complete but empty listing, or one that would tombstone more than half of 10 or more known documents, is not reaped: the run returns `reapSkipped` and the app logs `reap skipped` at warn level (see `@brain/ingestion`).
-- `dataDir` must be reused with the same embedding dimension; changing it needs a fresh directory.
+- `dataDir` must be reused with the same embedding dimension (384 now). A different one makes startup throw `IndexDimensionError` and leaves the index untouched; use a fresh directory and re-ingest.
+- `/readyz` is 503 until the embedding model loads. `BRAIN_EMBEDDER_OFFLINE=1` only skips the model-dependent tests (as in `@brain/embedder`); the app has no offline switch.
 
 ## Test
 
