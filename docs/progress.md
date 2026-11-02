@@ -14,9 +14,8 @@ progress against the full vision. It measures how much of the committed backlog 
 - 6 capabilities the README lists as not built: validity and supersession of facts, memory
   distillation, governance (erasure and tenant keys), the evaluation harness, the capture daemon
   and the action agent.
-- 6 open gates: Playwright e2e, k6 scale, cross-package integration, the two apps consuming the
-  registry instead of `link:`, the Opus and Codex review of features after 2026-11-04, and live
-  checks against real GitHub and Drive accounts.
+- 5 open gates: Playwright e2e, k6 scale, cross-package integration, the Opus and Codex review of
+  features after 2026-11-04, and live checks against real GitHub and Drive accounts.
 
 ## Numerator
 
@@ -43,10 +42,8 @@ is already inside the connectors package above, so it is not counted twice.
 
 - Every package still lacks Playwright e2e and k6 scale tests, which docs/architecture lists as
   gates. They are counted once as gate units, not per package.
-- The Playwright e2e suite (tools/e2e) is not in CI. It drives apps/connections, which links
-  `@anvesx/connectors` from a sibling checkout and cannot be built on a runner. Once that app uses
-  the registry, add a job: build the app, `playwright install --with-deps chromium`, `pnpm --filter
-  @anvesx/e2e e2e`. It passed locally (21 tests) against a built app.
+- The Playwright e2e suite (tools/e2e) runs in CI as the `e2e` job, against the registry build of
+  `@anvesx/connectors`. It passed locally (21 tests) against a built app.
 - The brain app in rag keeps its registry and index in memory (board issue 50).
 - Nothing was run against real GitHub or Drive accounts.
 
