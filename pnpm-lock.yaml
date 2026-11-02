@@ -336,6 +336,8 @@ importers:
         specifier: 1.64.1
         version: 1.64.1
 
+  tools/fake-guard: {}
+
   tools/integration:
     dependencies:
       '@brain/audit-chain':

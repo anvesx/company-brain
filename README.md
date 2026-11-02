@@ -1,4 +1,4 @@
-100%
+35%
 
 # Company Brain
 
@@ -56,8 +56,10 @@ Run the scale test with `SCALE_ENGINE=k6 pnpm --filter @brain/scale-test scale:n
 
 ## Progress
 
-The percentage on the first line is the share of the 19 goals set for this project that are met. It stands at 19 of 19.
+The percentage on the first line is working software, not process goals. It was 100% when it only counted the 19 process goals (specs, tests, CI, reviews), and that overstated it. The 35% reflects what exists and is tested against real systems today.
 
-Ticketing runs on the [Company Brain board](https://github.com/orgs/anvesx/projects/7), which holds issues #1 to #51. Qwen Coder runs as a model inside Kiro (`qwen3-coder-next`); it wrote [docs/contributing.md](docs/contributing.md).
+**Real and tested:** the folder connector, SQLite pointer registry, FTS5 and sqlite-vec search, the ACL filter, the hash-chained audit log, and the MCP server.
 
-Known gaps in the code are listed in [docs/reviews](docs/reviews). The main ones are paging that can skip hits when documents change mid-search, a per-instance index lock, and tokens that carry no groups or key id.
+**Not real yet:** connectors for Slack, Google Drive, GitHub and Notion; a real embedding model; live permission checks against a source app; token issuing; any deployment. Most tests of the runtime and retrieval layers use fakes for these.
+
+Ticketing runs on the [Company Brain board](https://github.com/orgs/anvesx/projects/7). Known gaps are in [docs/reviews](docs/reviews).

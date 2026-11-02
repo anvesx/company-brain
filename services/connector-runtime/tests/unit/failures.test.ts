@@ -7,14 +7,16 @@ const memory = () => {
   const writes: string[] = [];
   const cursors: CursorStore = {
     getCursor: (t, k) => m.get(`${t}|${k}`),
-    setCursor: (t, k, v) => void (writes.push(k), m.set(`${t}|${k}`, v)),
+    setCursor: (t, k, v) => {
+      writes.push(k);
+      m.set(`${t}|${k}`, v);
+    },
     seen: () => false,
     forget() {},
   };
   return { m, writes, store: failureStore(cursors, "b") };
 };
 const fail = (address: string, error = "e") => ({ address, error });
-
 describe("failureStore attempts", () => {
   it("counts per event id, sharing a count between ids with the same 16-char prefix", () => {
     const { store } = memory();

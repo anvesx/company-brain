@@ -15,6 +15,7 @@ jobs:
         with: { node-version: 26, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm structure
+      - run: pnpm guard:fakes
       - run: pnpm exec biome check .
       - run: pnpm deps
       - run: pnpm -r build
@@ -41,6 +42,6 @@ jobs:
       - name: gitleaks
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz gitleaks
-          ./gitleaks detect --source . --redact --verbose
+          ./gitleaks detect --source . --config .gitleaks.toml --redact --verbose
       - uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
         with: { scan-args: "--lockfile=pnpm-lock.yaml" }

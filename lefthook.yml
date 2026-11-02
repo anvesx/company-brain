@@ -10,6 +10,11 @@ pre-commit:
       run: pnpm exec biome check --no-errors-on-unmatched {staged_files}
     structure:
       run: pnpm structure
+    fakes:
+      run: pnpm guard:fakes
+    tests:
+      glob: "*.{ts,mjs}"
+      run: pnpm exec turbo run test --filter="...[HEAD]" --concurrency=2
 pre-push:
   commands:
     typecheck:

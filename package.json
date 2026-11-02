@@ -8,6 +8,7 @@
   },
   "scripts": {
     "structure": "node tools/structure-lint/bin/cli.mjs",
+    "guard:fakes": "node tools/fake-guard/bin/cli.mjs",
     "test": "turbo run test",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",

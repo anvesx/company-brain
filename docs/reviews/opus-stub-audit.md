@@ -1,0 +1,60 @@
+# Stub audit: what is not real
+
+Reviewer: Opus (lead tier). Date: 2026-11-02. Read-only review of source and tests; nothing was run.
+
+**Verdict.** The storage layer is real: SQLite files, WAL, FTS5, sqlite-vec, and three packages tested under multi-process or multi-thread contention on a real file. Everything that would make the product useful is fake. The shipped binary runs only an in-memory fake connector, a two-number "embedding" derived from text length, unsigned or self-minted tokens with no groups, and no live ACL. No code in the repo calls an external API. The README "Not real yet" list (line 63) is accurate but incomplete, and two README claims (lines 55 and 61) overstate what they measure.
+
+## 1. Per-package reality
+
+"Real" means the code path touches a real SQLite file, the filesystem, or a socket. "Fake" means in-memory stores, `:memory:` databases, hand-written vectors or stub connectors.
+
+| Package | README claim | Reality | Evidence |
+| --- | --- | --- | --- |
+| features/connector-kit (fake) | not claimed | `createFakeConnector` is a `Map` over hard-coded docs. `fetch` ignores the token. `enforcesUserToken: false`. | `features/connector-kit/src/connectors/fake.ts:4-25` |
+| features/connector-kit (folder) | "Real and tested: the folder connector" (README:61) | Real filesystem reads, path-escape guards, `.acl.json` sidecars, tested on `mkdtemp` dirs. **Not wired into any runtime**: no file in services, modules or apps imports `createFolderConnector`. It also ignores the user token (`enforcesUserToken: false`). | `features/connector-kit/src/connectors/folder.ts:15,19`; `grep createFolderConnector` in services/modules/apps returns nothing |
+| Who uses the fake connector | n/a | The shipped app (`demoDeps`), the brain app test harness and persistence tests, the live-ACL test stub, ingestion tests, connector-runtime tests. | `apps/brain/src/config.ts:2,45`; `apps/brain/tests/live/support.ts:12`; `apps/brain/tests/integration/persist.test.ts:4`; `modules/ingestion/tests/support/harness.ts`; `services/connector-runtime/tests/helpers.ts` |
+| features/pointer-registry | "SQLite pointer registry" real | Real. WAL plus `busy_timeout=10000`. 6 OS processes x 150 rounds upserting one key on one file. | `features/pointer-registry/src/registry.ts:24`; `features/pointer-registry/tests/integration/contention.test.ts:25-44` |
+| features/audit-chain | "hash-chained audit log" real | Real. 2 worker threads x 150 appends on one file, gapless seq, `verify` ok. | `features/audit-chain/src/store.ts:34`; `features/audit-chain/tests/integration/concurrency.test.ts:36-45` |
+| features/change-cursor | not claimed | Real file race test with workers. Most unit tests use `:memory:`. | `features/change-cursor/tests/integration/race.test.ts:6,31` |
+| features/hybrid-search | "FTS5 and sqlite-vec search" real | FTS5 and sqlite-vec are real. 10 of 16 test files use `:memory:`; 2 use a file; **none under concurrency**. Every test vector is 2-D and hand-written (`[1, 0]`, `[1, i/400]`). Real model dimensions (384 to 3072) are only checked as a constructor bound (`4096`), never searched. | `features/hybrid-search/tests/integration/edges.test.ts:22-24`; `features/hybrid-search/tests/integration/search.test.ts:12-60` |
+| features/acl-filter | "ACL filter" real | Real SQL fragment, exercised in-process. Group branch is dead in production: every principal the app builds has `groups: []`. | `apps/brain/src/auth/token.ts:57`; `apps/brain/src/config.ts:58` |
+| services/index-service | "embeds it and swaps the chunks ... in one transaction" (README:30) | Swap logic real against SQLite, but every test runs on `:memory:` with a 3-D fake embedder `[len%7, 1, charCode%5]`. The keyed lock is an in-process `Map`; two processes on one `dataDir` are not serialized and this is untested. | `services/index-service/tests/support/harness.ts:30,33-34`; `services/index-service/src/pipeline/lock.ts:9` |
+| Embedder in apps/brain | "a real embedding model" listed as not real (README:63) | Not a model and not even a hash: `[text.length, 1]`. Every vector points the same way, so cosine ranking is random noise and vector search adds nothing over BM25. Test harness uses a constant `[1, 0]`. | `apps/brain/src/config.ts:27,51-52`; `apps/brain/tests/harness.ts:41-42` |
+| services/query-service + modules/retrieval (live ACL) | "A live check with the user's token can only narrow the result" (README:32) | Logic is real and fail-closed (allow-only, timeout aborts, bounded pool). **No connector in the repo sets `enforcesUserToken: true`**, so the check can only run against test stubs: `guarded()` grants by token prefix `user-<id>` from a hard-coded `Map`. With either real connector it throws CONFIG. | `modules/retrieval/src/live/connector-acl.ts:30,47-53`; `apps/brain/tests/live/support.ts:11-27`; `tools/integration/tests/live/support.ts:16` |
+| apps/brain live ACL wiring | same | `liveSearch` is used only when `deps.userTokenFor` is set. `bin.ts` never sets it, so the shipped binary never runs a live check. | `apps/brain/src/app.ts:52`; `apps/brain/src/bin.ts:20-31` |
+| Token issuing | "Bearer tokens are `user:tenant:exp:hmac`" (README:34) | Verification is real (HMAC-SHA256, `timingSafeEqual`, expiry). Issuing is a library function `mintToken` the operator must call by hand. No issuer, no identity provider, no revocation, no rotation, no groups claim. Without `BRAIN_AUTH_SECRET` the binary accepts **any unsigned** `Bearer alice:acme`. | `apps/brain/src/auth/token.ts:35-58`; `apps/brain/src/config.ts:41,54-59`; `apps/brain/src/bin.ts:23` |
+| apps/brain/src/bin.ts | "The `brain` app serves the search tool over MCP" | Refuses to start unless `BRAIN_DEMO=1`. Always uses `demoDeps()`: 2 hard-coded docs (`welcome`, `faq`), tenant `acme`, ingestion token literal `"demo"`, toy embedder. Registry, index and cursors are `:memory:` unless `BRAIN_DATA_DIR` is set. Audit DB and anchor log are real files (default relative to cwd). | `apps/brain/src/bin.ts:8-11,19,32`; `apps/brain/src/config.ts:44-53`; `apps/brain/src/runtime/stores.ts:12` |
+| services/audit-service | anchors "outside the audit database" | Real JSON-lines file, but by default in the same cwd and disk as the audit DB, so it does not protect against host compromise. | `services/audit-service/src/types.ts:8`; `apps/brain/src/config.ts:20-21` |
+| services/mcp-service | "MCP server" real | Real HTTP and stdio, real sockets on 127.0.0.1, spawned stdio child. Loopback-only host and origin allowlist by default. | `services/mcp-service/tests/integration/stdio.test.ts`; `services/mcp-service/src/http/guard.ts:12` |
+| tools/scale-test | "p95 of 18 ms at 50 VUs" (README:55) | Spawns the real built binary, but in demo mode: 2 docs, no `BRAIN_DATA_DIR` so the index is `:memory:`, toy embedder, no live ACL. The 18 ms measures MCP plus audit-row write over 2 documents. It says nothing about search at corpus scale. | `tools/scale-test/src/server.ts:14` |
+| apps/brain end to end | n/a | Only `persist.test.ts` uses a real `dataDir`, single process, sequential. No test runs concurrent ingest and search against a file-backed index. | `apps/brain/tests/integration/persist.test.ts:8-22` |
+| External APIs | Slack, Drive, GitHub, Notion "not real yet" | Confirmed: no package.json declares an HTTP client or vendor SDK, and no `src` file calls `fetch(` to a remote host. The only outbound sockets are tests calling the local MCP server. | `grep` of package.json for axios/undici/openai/@slack/googleapis/@octokit/@notionhq: zero hits |
+
+## 2. Concurrency on a real DB file
+
+| Store | Real-file concurrency test | Gap |
+| --- | --- | --- |
+| pointer-registry | Yes, 6 processes | none |
+| audit-chain | Yes, 2 worker threads | threads, not processes |
+| change-cursor | Yes, workers | threads, not processes |
+| hybrid-search | No | `replace` swap under two writers never tested on a file |
+| index-service | In-process only (`Promise.all` on `:memory:`) | lock is per process; two processes on one `dataDir` unprotected |
+| apps/brain | No | ingest racing search on a file-backed index never tested |
+
+## 3. Ranked fix list
+
+| Rank | Item | Concrete fix |
+| --- | --- | --- |
+| HIGH | Toy embedder is the only embedder (`apps/brain/src/config.ts:27`) | Add `features/embedder` with a local ONNX model (for example `@huggingface/transformers` running `all-MiniLM-L6-v2`, 384-D) behind the existing `embed`/`embedQuery` signature. Add a test that ranks a paraphrase above an unrelated doc, which `[len, 1]` must fail. Gate `bin.ts` so the toy embedder is unreachable outside `BRAIN_DEMO=1`. |
+| HIGH | Live ACL cannot run against any real connector (`connector-acl.ts:30`; both connectors `enforcesUserToken: false`) | Ship one connector that enforces the user token (GitHub is the cheapest: a PAT per user, 404 on no access, maps to NOT_FOUND). Add an integration test, skipped without `GITHUB_TEST_TOKEN`, that revokes access and asserts the hit disappears. Until then, change README:32 to say the live check is implemented but has no real source. |
+| HIGH | `bin.ts` never sets `userTokenFor` (`bin.ts:20-31`) | Read a per-user credential source (`BRAIN_USER_TOKENS` file or a vault lookup) and pass `userTokenFor`. Fail startup when a connector with `enforcesUserToken: true` is configured and no `userTokenFor` exists, so a production run cannot silently fall back to cached ACLs. |
+| HIGH | Unsigned tokens accepted when no secret (`config.ts:41,54-59`; `bin.ts:23`) | Bind the unsigned path to loopback plus demo, and refuse to start with `BRAIN_PORT` bound beyond 127.0.0.1 without `BRAIN_AUTH_SECRET`. Add a test that the binary exits non-zero in that case. |
+| HIGH | README:61 claims the folder connector is real, but nothing runs it | Add `BRAIN_FOLDER_ROOT` to `readEnv` and use `createFolderConnector` in `bin.ts` when set, with the tenant from `BRAIN_TENANT`. Extend `tools/e2e` to start the binary on a temp folder with `.acl.json` sidecars and assert a denied user gets nothing. |
+| MED | Principal `groups` always `[]` (`token.ts:57`, `config.ts:58`) | Add a `groups` segment to the signed token (signed together with user, tenant, exp) or a group lookup hook in `BrainDeps`. Add an app-level test where a doc shared only to a group is visible to a member and hidden from a non-member. |
+| MED | No token issuer (`token.ts:35`) | Add a `brain mint-token` CLI subcommand reading `BRAIN_AUTH_SECRET`, plus a revocation list (deny set of `user:exp` checked in `signedPrincipalFor`). Update README:34 to say tokens are minted offline. |
+| MED | Scale number measures 2 docs in memory (README:55; `scale-test/src/server.ts:14`) | Run the scale test with `BRAIN_DATA_DIR` set and a seeded corpus of at least 100k chunks at the real embedding dimension. Report p95 for that run, and state corpus size and dimension next to the number. |
+| MED | hybrid-search and index-service have no real-file concurrency test | Add a `hybrid-search/tests/integration/contention.test.ts` modeled on the pointer-registry one: N processes calling `replace` on one doc plus readers calling `search`, asserting readers never see zero or mixed chunk sets. |
+| MED | index-service lock is per process (`lock.ts:9`) | Either document "one writer process per dataDir" and enforce it with a lock file in `openStores`, or rely on SQLite `BEGIN IMMEDIATE` inside `replace` and prove it with the test above. |
+| LOW | Test vectors are 2-D everywhere | Add one hybrid-search test at 384-D and one at 1536-D with random unit vectors, checking nearest-neighbour order against a brute-force L2 in JS. |
+| LOW | Audit anchor shares disk and cwd with the audit DB (`config.ts:20-21`) | Require `BRAIN_ANCHOR` to be set explicitly outside demo mode and warn when it shares a directory with `BRAIN_AUDIT_DB`. |
+| LOW | Fake connector exported from the public package entry (`connector-kit/src/index.ts:1`) | Move it to a `@brain/connector-kit/testing` subpath export so production code cannot import it by accident; `apps/brain/src/config.ts` is the one production import today. |

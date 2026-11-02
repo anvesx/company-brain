@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "research citations use a field named key"
+paths = ['''docs/brain/research/refs\.jsonl''']

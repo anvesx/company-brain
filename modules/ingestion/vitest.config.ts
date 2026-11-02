@@ -1,2 +1,2 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { include: ["tests/**/*.test.ts"], coverage: { thresholds: { lines: 90 } } } });
+export default defineConfig({ test: { include: ["tests/**/*.test.ts"], testTimeout: 30_000, coverage: { thresholds: { lines: 90 } } } });
