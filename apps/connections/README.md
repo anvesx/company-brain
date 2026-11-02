@@ -6,6 +6,15 @@ Spec: [docs/specs/app/connections.md](../../docs/specs/app/connections.md). Slac
 
 `checkZones` (`src/accounts/rules/widen.ts`) requires an explicit `liveRecheck` boolean. Omitting it, or passing null, undefined or a non-boolean, returns `{ ok: false }` (fail closed).
 
+## Install
+
+`@anvesx/connectors` 0.1.0 comes from GitHub Packages, not a sibling checkout. The root `.npmrc` maps the `@anvesx` scope to `https://npm.pkg.github.com` and reads the token from `NODE_AUTH_TOKEN`. Set it to a token with `read:packages` before `pnpm install`:
+
+```sh
+export NODE_AUTH_TOKEN=<token with read:packages>
+pnpm install
+```
+
 ## Run the tests
 
 ```sh
