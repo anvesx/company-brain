@@ -11,9 +11,19 @@ Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Compos
 - Keep the Drive and GitHub adapters: thin wrappers over the vendors' own SDKs (`googleapis`, `octokit`), already tested.
 - Rejected: Pipedream (source-available, bars platform use), Onyx permission sync (Enterprise-only `ee/` code), Airbyte (ELv2 core, connector licenses conflict), Steampipe core (AGPL), LlamaIndex and Unstructured (Python, pull only, no Gmail found).
 - Open, needs a decision: Nango (ELv2, TypeScript, ships a Connect UI) is the closest match to the Claude connectors screen. Internal self-hosting looks allowed; legal review is pending. Composio (MIT, TS) covers Slack and Gmail but its runtime is vendor-hosted, so company data would leave our network.
-- Slack and Gmail: wrap Nango or Composio behind the `Connector` contract once that decision is made. Not built until then.
+- Breadth: the catalog below, not one adapter per app. Slack and Gmail are the first two entries after Drive and GitHub. Where an OSI-licensed library already covers an app (Activepieces pieces are under test), the entry wraps it. Nango and Composio stay out (user chose open source, 2 Nov 2026).
 - Storage: `node:crypto` AES-256-GCM, key from `CONNECTIONS_KEY`; SQLite via `node:sqlite`.
 - Ours alone: account model, the widening rule, access and data zones, mapping to `can-read` and `member-of` edges.
+
+## Connector catalog and custom connectors
+The user wants nearly every app available, and companies must be able to add their own. So the app has a registry of manifests, and the four built-in apps are just the first entries.
+- A manifest is data: `id`, `name`, `auth` (`oauth2` with authorize and token URLs and scopes, `token`, or `pat`), `defaultZone`, and a `load` that returns a `Connector` (the connector-kit contract: `list`, `fetch`, `changes`, `canRead`).
+- Built-in manifests ship in `services/connectors`. A new app is one folder with one manifest and one adapter, and no change to the accounts, OAuth, token-file or UI code, which read the registry.
+- Custom connectors are per tenant. An admin registers a manifest through the API (`POST /v1/catalog`, tenant admin only). An `oauth2` or `token` manifest plus a module path or an HTTP endpoint that speaks the connector contract is enough. Custom entries show up only for that tenant.
+- A custom connector gets no extra trust. It runs through the same widening rule, the same zone to ACL mapping, and the same live `canRead` recheck. A connector with no `canRead` can only be `personal`.
+- The sign-in screen lists the catalog, so adding an entry adds a tile.
+- Tests: two manifests share one OAuth flow; a tenant entry is invisible to another tenant; a custom connector without `canRead` cannot be set to `company`.
+- Not built yet. Build order: registry and manifest type, move Drive and GitHub onto it, then Slack, Gmail, and the first custom-connector test.
 
 ## Model
 - `Account`: `{id, owner, provider, label, credential, access, dataZone, status}`.
