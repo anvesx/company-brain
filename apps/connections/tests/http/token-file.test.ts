@@ -18,10 +18,10 @@ describe("the token file follows the account routes", () => {
     const file = join(dir, "tokens.json");
     s = await boot({ tokensFile: file });
     const made = (await (await s.call("POST", "/v1/accounts", ann, pat)).json()) as { id: string };
-    expect(read(file)).toEqual({ ann: { github: "ghp_secret" } });
+    expect(read(file)).toEqual({ "t1:ann": { github: "ghp_secret" } });
     writeFileSync(file, "{}");
     expect((await s.call("PATCH", `/v1/accounts/${made.id}`, ann, { label: "renamed" })).status).toBe(200);
-    expect(read(file)).toEqual({ ann: { github: "ghp_secret" } });
+    expect(read(file)).toEqual({ "t1:ann": { github: "ghp_secret" } });
     expect((await s.call("DELETE", `/v1/accounts/${made.id}`, ann)).status).toBe(204);
     expect(read(file)).toEqual({});
   });

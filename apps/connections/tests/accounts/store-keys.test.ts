@@ -28,6 +28,6 @@ describe("store secrets and keys", () => {
     const a = t.store.create(input);
     const b = t.store.create({ ...input, owner: "bob", secret: "ghp_two" });
     t.store.setStatus(b.id, "needs-auth");
-    expect(t.store.secrets()).toEqual([{ owner: "ann", provider: "github", kind: "pat", secret: "ghp_one", id: a.id }]);
+    expect(t.store.secrets()).toEqual([{ tenant: input.tenant, owner: "ann", provider: "github", kind: "pat", secret: "ghp_one", id: a.id }]);
   });
 });
