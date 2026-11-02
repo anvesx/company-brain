@@ -1,10 +1,13 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import type { Connector } from "@brain/connector-kit";
 import type { Principal } from "@brain/core-types";
 
 function load(path: string): Map<string, string> {
   let parsed: unknown;
   try {
+    if (process.platform !== "win32" && (statSync(path).mode & 0o077) !== 0) {
+      throw new Error("file is readable by group or others; run chmod 600");
+    }
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (cause) {
     throw new Error(`BRAIN_USER_TOKENS ${path} is unreadable or not JSON: ${cause instanceof Error ? cause.message : String(cause)}`);

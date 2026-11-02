@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFolderConnector } from "@brain/connector-kit";
@@ -9,7 +9,7 @@ import { defaultGrants, guarded } from "../live/support.js";
 const dir = mkdtempSync(join(tmpdir(), "brain-utok-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const file = join(dir, "tokens.json");
-writeFileSync(file, JSON.stringify({ "acme:alice": "alice-pat" }));
+writeFileSync(file, JSON.stringify({ "acme:alice": "alice-pat" }), { mode: 0o600 });
 const principal = (id: string, tenantId = "acme") => ({ id, tenantId, groups: [] });
 
 describe("userTokensFor", () => {
@@ -21,6 +21,12 @@ describe("userTokensFor", () => {
     expect(lookup(principal("alice"))).toBe("alice-pat");
     expect(lookup(principal("bob"))).toBeUndefined();
     expect(lookup(principal("alice", "globex"))).toBeUndefined();
+  });
+  it("refuses a tokens file that group or others can read", () => {
+    const open = join(dir, "open.json");
+    writeFileSync(open, JSON.stringify({ "acme:alice": "alice-pat" }));
+    chmodSync(open, 0o644);
+    expect(() => userTokensFor(guarded(defaultGrants()), open)).toThrow("chmod 600");
   });
   it("refuses to start when the connector enforces user tokens and none are configured", () => {
     expect(() => userTokensFor(guarded(defaultGrants()), undefined)).toThrow("BRAIN_USER_TOKENS");

@@ -14,7 +14,7 @@ const secret = "c".repeat(32);
 
 async function boot(name: string, extra: Record<string, string>, users: Record<string, string>) {
   const tokens = join(root, `${name}-tokens.json`);
-  writeFileSync(tokens, JSON.stringify(users));
+  writeFileSync(tokens, JSON.stringify(users), { mode: 0o600 });
   return startFromEnv(
     {
       BRAIN_TENANT: "acme",
