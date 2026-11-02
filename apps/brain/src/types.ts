@@ -48,6 +48,8 @@ export type BrainDeps = {
   port?: number | undefined;
   /** Vector size. Omitted: measured by embedding one probe text at startup. */
   dimension?: number | undefined;
+  /** Resolves once the embedding model can load, rejects while it cannot; `/readyz` is 503 until it resolves. Omitted: nothing to wait for. */
+  ready?: (() => Promise<void>) | undefined;
   /** Bind address; default loopback. Host (with port) and Origin allow-lists default to loopback on the bound port. */
   host?: string | undefined;
   allowedHosts?: string[] | undefined;

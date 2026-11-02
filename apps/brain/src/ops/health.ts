@@ -7,8 +7,8 @@ export type Health = { port: number; close(): Promise<void> };
  * `/healthz` (the process is up) and `/readyz` (stores answer and shutdown has not begun), JSON bodies, no auth, no other paths.
  * Separate from the MCP port on purpose: that server answers only `/mcp` and checks Host before anything else.
  */
-export async function startHealth(opts: { port: number; host: string; draining: () => boolean; probe: () => void }): Promise<Health> {
-  const server = createServer((req, res) => {
+export async function startHealth(opts: { port: number; host: string; draining: () => boolean; probe: () => void | Promise<void> }): Promise<Health> {
+  const server = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0];
     let status = 200;
     let body: Record<string, string> = { status: "ok" };
@@ -17,7 +17,7 @@ export async function startHealth(opts: { port: number; host: string; draining: 
       body = { status: "not found" };
     } else if (path === "/readyz") {
       try {
-        opts.probe();
+        await opts.probe();
         if (opts.draining()) [status, body] = [503, { status: "draining" }];
         else body = { status: "ready" };
       } catch {

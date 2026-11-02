@@ -1,24 +1,20 @@
 import { startMcpServer } from "@brain/mcp-service";
 import { createGate } from "./ops/gate.js";
 import { startHealth } from "./ops/health.js";
+import { readiness } from "./ops/ready.js";
 import { defaultLogger } from "./runtime/logger.js";
 import { openStores } from "./runtime/stores.js";
 import { bounded } from "./runtime/timeouts.js";
 import type { BrainApp, BrainDeps } from "./types.js";
+import { resolveDimension } from "./wire/dimension.js";
 import { createPipeline } from "./wire/pipeline.js";
 
 const DEFAULT_DRAIN_MS = 10_000;
 
-async function probeDimension(embed: BrainDeps["embed"]): Promise<number> {
-  const [vector] = await embed(["dimension probe"]);
-  if (!vector) throw new Error("embed returned no vector for the dimension probe");
-  return vector.length;
-}
-
 /** Composes ingestion, governed search, the MCP server and health. Every external call has a timeout; close drains, then closes every database. */
 export async function createBrainApp(given: BrainDeps): Promise<BrainApp> {
   const deps: BrainDeps = { ...given, ...bounded(given, given.timeouts) };
-  const dimension = deps.dimension ?? (await probeDimension(deps.embed));
+  const dimension = await resolveDimension(deps);
   const logger = deps.logger ?? defaultLogger;
   const stores = openStores(deps, dimension);
   const gate = createGate();
@@ -41,7 +37,12 @@ export async function createBrainApp(given: BrainDeps): Promise<BrainApp> {
       search: ({ query, limit, principal }) => search({ query, limit, principal }),
     });
     if (deps.healthPort !== undefined) {
-      health = await startHealth({ port: deps.healthPort, host: deps.host ?? "127.0.0.1", draining: gate.draining, probe: stores.probe });
+      health = await startHealth({
+        port: deps.healthPort,
+        host: deps.host ?? "127.0.0.1",
+        draining: gate.draining,
+        probe: readiness(stores.probe, deps.ready, deps.timeouts?.embedQueryMs ?? 5_000),
+      });
     }
     let closing: Promise<void> | undefined;
     const running = server;

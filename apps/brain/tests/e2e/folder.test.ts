@@ -43,7 +43,8 @@ const ask = async (port: number | undefined, token: string) => {
   return found;
 };
 
-describe("BRAIN_FOLDER_ROOT end to end over real HTTP and real SQLite files", () => {
+// Folder mode embeds with the real model like every non-demo mode; BRAIN_EMBEDDER_OFFLINE=1 skips it (see @brain/embedder).
+describe.skipIf(process.env.BRAIN_EMBEDDER_OFFLINE === "1")("BRAIN_FOLDER_ROOT end to end over real HTTP and real SQLite files", () => {
   it("serves only what the sidecar ACLs allow; a denied user gets nothing", async () => {
     const { app } = await boot("serve");
     const tok = (user: string, groups: string[] = []) => mintToken(secret, user, "acme", { groups });
