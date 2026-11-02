@@ -15,7 +15,10 @@ const form = (req: IncomingMessage): Promise<URLSearchParams> =>
   });
 
 /** A local OAuth2 provider that speaks the real protocol: authorize redirect, single-use codes, basic-auth client, PKCE S256, JSON tokens. */
-export async function startReplay(client: { id: string; secret: string }, opts: { refresh?: boolean; deny?: boolean } = {}): Promise<Replay> {
+export async function startReplay(
+  client: { id: string; secret: string },
+  opts: { refresh?: boolean; deny?: boolean; revoke?: boolean; rotate?: boolean } = {},
+): Promise<Replay> {
   const grants = new Map<string, Grant>();
   const out = { url: "", tokenCalls: 0, close: () => {} };
   const send = (res: import("node:http").ServerResponse, status: number, body: object) => {
@@ -40,6 +43,12 @@ export async function startReplay(client: { id: string; secret: string }, opts: 
       out.tokenCalls++;
       const f = await form(req);
       const basic = Buffer.from(`${client.id}:${client.secret}`).toString("base64");
+      if (f.get("grant_type") === "refresh_token") {
+        const ok = !opts.revoke && req.headers.authorization === `Basic ${basic}` && (f.get("refresh_token") ?? "").startsWith("rt_");
+        if (!ok) return send(res, 400, { error: "invalid_grant" });
+        const body = { access_token: `at_refreshed_${out.tokenCalls}`, token_type: "bearer", expires_in: 3600 };
+        return send(res, 200, opts.rotate ? { ...body, refresh_token: `rt_rotated_${out.tokenCalls}` } : body);
+      }
       const grant = grants.get(f.get("code") ?? "");
       grants.delete(f.get("code") ?? "");
       const pkceOk =

@@ -50,6 +50,7 @@ export function openStore(path: string, key: Buffer) {
       return view(get(id) as Row);
     },
     setStatus: (id: string, s: Status): void => void db.prepare("UPDATE accounts SET status = ? WHERE id = ?").run(s, id),
+    setCredential: (id: string, secret: string): void => void db.prepare("UPDATE accounts SET secret = ? WHERE id = ?").run(seal(key, id, secret), id),
     remove: (id: string): boolean => Number(db.prepare("DELETE FROM accounts WHERE id = ?").run(id).changes) > 0,
     credential(id: string): string | undefined {
       const r = get(id);
