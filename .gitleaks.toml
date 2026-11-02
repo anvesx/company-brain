@@ -2,5 +2,5 @@
 useDefault = true
 
 [allowlist]
-description = "research citations use a field named key"
-paths = ['''docs/brain/research/refs\.jsonl''', '''docs/html/.*''', '''docs/brain/builds/.*''']
+description = "research citations use a field named key; generated model JSON"
+paths = ['''docs/brain/model\.json''', '''docs/brain/research/refs\.jsonl''', '''docs/html/.*''', '''docs/brain/builds/.*''']
