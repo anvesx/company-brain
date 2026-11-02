@@ -43,4 +43,4 @@ No product runs every option. Each picks one per component.
 | Review queue before any write | none | not built |
 | Speaking: hybrid search | hybrid-search | built |
 | Speaking: MCP with per-agent access level | mcp-service, acl-filter | built, access levels per agent not built |
-| Citations on every answer | query-router | partial |
+| Citations on every answer | query-router | not built |

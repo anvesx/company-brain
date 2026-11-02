@@ -33,8 +33,8 @@ Supermemory, Zep, mem0 and Letta are memory SDKs that Slite lists as a family. T
 | Requirement (source) | Package | Verdict |
 | --- | --- | --- |
 | Scheduled pull and webhook signals (Slite, Vectorize) | connectors, connector-runtime, change-cursor | built |
-| Metadata graph with validity window (Slite, Meta) | graph-store | built, not wired into any app |
-| Graph filled from connectors | graph-sync | spec only |
+| Metadata graph with validity window (Slite, Meta) | graph-store | built, served by apps/brain |
+| Graph filled from connectors | graph-sync | built, run by `brain sync` |
 | Hybrid search (Slite, GBrain, Vectorize) | hybrid-search | built |
 | Per-user permission at retrieval (Vectorize, Slite) | acl-filter | built |
 | MCP interface (Slite, GBrain) | mcp-service | built |
