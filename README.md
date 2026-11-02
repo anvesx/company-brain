@@ -51,7 +51,7 @@ pnpm structure
 pnpm guard:fakes
 ```
 
-The two apps link sibling checkouts of the connectors repo (`link:../../../connectors`) until a registry is chosen.
+The two apps install `@anvesx/connectors` 0.1.0 from GitHub Packages. Set `NODE_AUTH_TOKEN` to a token with `read:packages` before running `pnpm install`.
 
 ## Progress
 
