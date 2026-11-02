@@ -7,11 +7,9 @@ const memory = () => {
   const writes: string[] = [];
   const cursors: CursorStore = {
     getCursor: (t, k) => m.get(`${t}|${k}`),
-    setCursor: (t, k, v) => {
-      writes.push(k);
-      m.set(`${t}|${k}`, v);
-    },
+    setCursor: (t, k, v) => void (writes.push(k), m.set(`${t}|${k}`, v)),
     seen: () => false,
+    forget() {},
   };
   return { m, writes, store: failureStore(cursors, "b") };
 };

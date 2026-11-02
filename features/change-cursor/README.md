@@ -44,6 +44,7 @@ export class CursorError extends Error {
 ### Seen ids
 
 - `seen(tenantId, id)` is `false` on first sight and `true` after that. Ids are scoped by tenant: tenant A's
+- `forget(tenantId, id)` deletes the dedupe record, so call it when the handler for a seen event throws. Without it the retry would be dropped for the ttl.
   id never suppresses tenant B's. It stays `true` until `ttlMs` has passed,
   measured with the injected `clock`. After that, the next call returns `false` again and starts a new window.
 - The check and the insert are one SQLite statement (`INSERT ... ON CONFLICT DO UPDATE ... WHERE expired`).
@@ -71,8 +72,13 @@ const from = store.getCursor("tenant-1", "drive") ?? "";
 store.setCursor("tenant-1", "drive", nextCursor);
 
 for (const event of incoming) {
-  if (store.seen(event.id)) continue; // duplicate inside 24 h
-  handle(event);
+  if (store.seen("tenant-1", event.id)) continue; // duplicate inside 24 h
+  try {
+    handle(event);
+  } catch (error) {
+    store.forget("tenant-1", event.id); // release the id so the retry is not suppressed
+    throw error;
+  }
 }
 
 const { created, updated, deleted } = diffListing(knownVersions, listedVersions);

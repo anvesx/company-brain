@@ -1,4 +1,4 @@
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import type { ListedDoc } from "../core/contract.js";
 import { aclVersion, readAcl } from "./folder-acl.js";
@@ -22,7 +22,7 @@ export const scan = async (root: string): Promise<ListedDoc[]> => {
         docs.push({
           address,
           title: basename(shown),
-          version: aclVersion(info, acl),
+          version: aclVersion(info, acl, await readFile(resolved, "utf8")),
           acl,
           zone: "personal",
           updatedAt: info.mtime.toISOString(),

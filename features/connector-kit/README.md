@@ -38,8 +38,8 @@ A document at `policies/leave.md` may have `policies/leave.md.acl.json` containi
 ```
 
 Missing sidecars become `{ allowUsers: [], allowGroups: [], version: 0 }` (deny by default).
-Folder documents use the `personal` zone. Versions are `<mtimeMs>:<size>:<acl fingerprint>`; the fingerprint is the first 16 hex characters of
-the SHA-256 of the ACL (users, groups, version), so editing only the sidecar changes the version. Traversal and any file
+Folder documents use the `personal` zone. Versions are `<mtimeMs>:<size>:<content digest>:<acl fingerprint>`; each digest is the first 16 hex characters of a
+SHA-256, over the document text and over the ACL (users, groups, version), so a same-size edit or a sidecar-only edit changes the version. Traversal and any file
 or ACL symlink resolving outside the configured root throw `PATH_ESCAPE`.
 
 ## Limits and operation

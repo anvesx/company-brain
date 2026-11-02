@@ -23,7 +23,8 @@ export const createFolderConnector = (id: string, rootDir: string): Connector =>
       const resolved = await safeRealpath(root, candidate);
       const info = await stat(resolved);
       if (!info.isFile()) throw new ConnectorError("NOT_FOUND", `Document not found: ${address}`);
-      return { text: await readFile(resolved, "utf8"), version: aclVersion(info, await readAcl(root, candidate)) };
+      const text = await readFile(resolved, "utf8");
+      return { text, version: aclVersion(info, await readAcl(root, candidate), text) };
     },
   };
 };

@@ -1,5 +1,5 @@
 ---
-
-## "@brain/audit-service": minor
+"@brain/audit-service": minor
+---
 
 Initial release of @brain/audit-service.

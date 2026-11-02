@@ -29,7 +29,7 @@ describe("folder connector paging", () => {
     const [item, ...rest] = (await createFolderConnector("f", root).list({ limit: 10 })).items;
     expect(rest).toEqual([]);
     expect(item).toMatchObject({ address: "a.md", title: "a.md", zone: "personal" });
-    expect(item?.version).toMatch(/^\d+(\.\d+)?:3:[0-9a-f]{16}$/);
+    expect(item?.version).toMatch(/^\d+(\.\d+)?:3:[0-9a-f]{16}:[0-9a-f]{16}$/);
     expect(new Date(item?.updatedAt ?? "").toISOString()).toBe(item?.updatedAt);
   });
 

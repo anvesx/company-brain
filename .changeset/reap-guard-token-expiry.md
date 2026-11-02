@@ -1,5 +1,4 @@
 ---
-
 "@brain/ingestion": minor
 "@brain/brain-app": minor
 ---

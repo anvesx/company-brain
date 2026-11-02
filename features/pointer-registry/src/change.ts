@@ -1,6 +1,11 @@
 import type { Pointer } from "@brain/core-types";
 
-const same = (a: string[], b: string[]): boolean => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
+const same = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) return false;
+  const x = [...a].sort();
+  const y = [...b].sort();
+  return x.every((v, i) => v === y[i]);
+};
 
 /** Nothing to write only when every stored field is equal (ACL lists as sets); updatedAt alone is not a change. */
 export const isUnchanged = (o: Pointer, n: Pointer): boolean =>

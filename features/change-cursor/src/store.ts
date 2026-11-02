@@ -7,6 +7,8 @@ export interface CursorStore {
   setCursor(tenantId: string, source: string, cursor: string): void;
   /** Atomically records the id for this tenant. Returns true if the tenant already saw it inside the ttl. */
   seen(tenantId: string, eventId: string): boolean;
+  /** Releases the id so a retry is not suppressed. Call it when the handler for a seen event failed. */
+  forget(tenantId: string, eventId: string): void;
 }
 
 /** Opens (or creates) the store. `clock` returns milliseconds. `ttlMs` defaults to 24 hours. */
@@ -36,10 +38,13 @@ export function createCursorStore(dbPath: string, clock: () => number, ttlMs: nu
       stmts.prune.run(at - ttl);
       return stmts.seen.run(tenant, id, at, at - ttl).changes === 0;
     },
+    forget(tenantId, eventId) {
+      stmts.forget.run(requireText("tenantId", tenantId), requireText("eventId", eventId));
+    },
   };
 }
 
-function prepare(db: DatabaseSync): Record<"get" | "set" | "seen" | "prune", StatementSync> {
+function prepare(db: DatabaseSync): Record<"get" | "set" | "seen" | "prune" | "forget", StatementSync> {
   return {
     get: db.prepare("SELECT cursor FROM cursors WHERE tenant_id = ? AND source = ?"),
     set: db.prepare(
@@ -50,5 +55,6 @@ function prepare(db: DatabaseSync): Record<"get" | "set" | "seen" | "prune", Sta
         "ON CONFLICT(tenant_id, event_id) DO UPDATE SET seen_at = excluded.seen_at WHERE seen_events.seen_at <= ?",
     ),
     prune: db.prepare("DELETE FROM seen_events WHERE seen_at <= ?"),
+    forget: db.prepare("DELETE FROM seen_events WHERE tenant_id = ? AND event_id = ?"),
   };
 }
