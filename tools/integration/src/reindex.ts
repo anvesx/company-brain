@@ -3,7 +3,8 @@ import type { Connector } from "@anvesx/connector-kit";
 import type { GraphStore } from "@anvesx/graph-store";
 import type { Doc, RankIndex } from "@anvesx/rank";
 
-export type Gate = (doc: Doc) => Doc;
+/** Narrows a document's readers. `tag` names what the gate decides on (such as the zone), so a change in it reindexes. */
+export type Gate = ((doc: Doc) => Doc) & { tag?: (path: string) => string };
 export type ReindexDeps = {
   store: GraphStore;
   connector: Connector;
@@ -23,30 +24,34 @@ export function graphDocs(store: GraphStore, tenant: string, connectorId: string
   });
 }
 
-/** Brings the rank index in line with the graph: index created and updated documents, drop deleted ones. */
+/** Brings the rank index in line with the graph: index created and updated documents, then drop deleted ones. */
 export async function reindex(d: ReindexDeps): Promise<ListingDiff> {
   const nodes = new Map(graphDocs(d.store, d.tenant, d.connector.id).map((n) => [n.id, n]));
-  const diff = diffListing(d.known, new Map([...nodes].map(([id, n]) => [id, n.version])));
+  const tag = (n: { address: string; version: string }) => (d.gate?.tag ? `${n.version}|${d.gate.tag(n.address)}` : n.version);
+  const versions = new Map([...nodes].map(([id, n]) => [id, tag(n)]));
+  const diff = diffListing(d.known, versions);
   const docs: Doc[] = [];
   for (const id of [...diff.created, ...diff.updated]) {
     const n = nodes.get(id);
     if (n === undefined) continue;
     const { text } = await d.connector.fetch(n.address, { token: "integration" });
     const readers = d.store.neighbors(d.tenant, id, { kind: "can-read", dir: "in" });
+    const mtime = Date.parse(n.props["updatedAt"] ?? "");
     const doc = {
       id,
       title: n.title,
       path: n.address,
       body: text,
       principals: readers.map((e) => e.from),
-      mtimeMs: Date.parse(n.props["updatedAt"] ?? ""),
+      mtimeMs: Number.isFinite(mtime) ? mtime : 0,
       links: [],
     };
     docs.push(d.gate ? d.gate(doc) : doc);
-    d.known.set(id, n.version);
   }
+  // `known` changes only after both index steps committed, so a throw leaves the whole pass to retry.
   d.index.index(docs);
   d.index.remove(diff.deleted);
+  for (const doc of docs) d.known.set(doc.id, versions.get(doc.id) as string);
   for (const id of diff.deleted) d.known.delete(id);
   return diff;
 }

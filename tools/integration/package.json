@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "integration": "vitest run"
   },
   "dependencies": {
     "@anvesx/change-cursor": "workspace:*",
