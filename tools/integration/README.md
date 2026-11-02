@@ -14,14 +14,14 @@ The script is named `integration`, not `test`, so the CI `verify` job (`run test
 
 ## Scenarios
 
-| Folder                      | Scenario                                                                                                                                                   | Status                  |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `tests/integration/feed`    | folder connector, then graph-sync into graph-store, then rank indexes the graph's documents and a search returns their pointers                            | real                    |
-| `tests/integration/acl`     | an asker without the principal gets zero hits for a document another asker sees; `graph-store.reach` agrees; group grant through `member-of`; narrowed ACL | real                    |
-| `tests/integration/zone`    | `zone-policy` `canSee` gates what rank returns (personal, team, company); `promote` needs the owner's consent                                              | real, with gaps 1 and 2 |
-| `tests/integration/resume`  | graph-sync aborted after two pages, process state reopened, run again: no duplicate or lost node; cursor and dedupe survive                                | real, with gap 3        |
-| `tests/integration/delete`  | a deleted source file is tombstoned in the graph and leaves search                                                                                         | real, with gap 4        |
-| `tests/integration/reindex` | an index step that throws leaves the pass to retry (`known` changes only after index and remove commit); a node without `updatedAt` is still indexed       | real                    |
+| Folder                      | Scenario                                                                                                                                                                                                                         | Status                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `tests/integration/feed`    | folder connector, then graph-sync into graph-store, then rank indexes the graph's documents and a search returns their pointers                                                                                                  | real                    |
+| `tests/integration/acl`     | an asker without the principal gets zero hits for a document another asker sees; `graph-store.reach` agrees; group grant through `member-of`; narrowed ACL                                                                       | real                    |
+| `tests/integration/zone`    | `zone-policy` `canSee` gates what rank returns (personal, team, company); `promote` needs the owner's consent                                                                                                                    | real, with gaps 1 and 2 |
+| `tests/integration/resume`  | graph-sync aborted after two pages, process state reopened, run again: no duplicate or lost node; cursor and dedupe survive                                                                                                      | real, with gap 3        |
+| `tests/integration/delete`  | a deleted source file is tombstoned in the graph and leaves search                                                                                                                                                               | real, with gap 4        |
+| `tests/integration/reindex` | an index step that throws leaves the pass to retry (`known` changes only after index and remove commit); a node without `updatedAt` is still indexed; a revoked reader is dropped although the connector version ignores the ACL | real                    |
 
 A zone change without an edit (company to personal) reindexes the document, because `zoneGate` puts the zone into the version `reindex` diffs (`tests/integration/zone/demote.test.ts`, which also covers `team:` readers).
 
