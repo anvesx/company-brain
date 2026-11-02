@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { ConnectorError, createFakeConnector, type FakeDoc } from "../../src/index.js";
+import { ConnectorError, type FakeDoc } from "../../src/index.js";
+import { createFakeConnector } from "../support/fake.js";
 
 const doc = (address: string): FakeDoc => ({
   address,

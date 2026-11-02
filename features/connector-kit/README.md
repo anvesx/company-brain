@@ -2,7 +2,7 @@
 
 The connector contract for Company Brain sources. It exposes metadata for indexing while fetching
 document text live, so callers do not need to persist source content. The package also provides a
-registry, SHA-256 hashing, an in-memory fake, and a local-folder adapter.
+registry, SHA-256 hashing, a local-folder adapter, and an in-memory fake under the `@brain/connector-kit/testing` subpath.
 
 ## Interface
 
@@ -10,7 +10,7 @@ registry, SHA-256 hashing, an in-memory fake, and a local-folder adapter.
 - `Connector.enforcesUserToken` is true only when `fetch` really checks the token against the source. The fake and folder connectors declare `false`; a live ACL refuses connectors without `true`.
 - `Connector.fetch(address, { token, signal? })` returns current UTF-8 text and its source version.
 - `createConnectorRegistry()` rejects duplicate ids and unknown lookups with typed errors.
-- `createFakeConnector(id, docs)` snapshots fixtures for deterministic tests and demos.
+- `createFakeConnector(id, docs)` (import from `@brain/connector-kit/testing`) snapshots fixtures for deterministic tests and demos.
 - `createFolderConnector(id, rootDir)` recursively reads a local folder without storing content.
 - `contentHash(text)` returns a lowercase SHA-256 hex digest.
 

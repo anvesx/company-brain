@@ -2,8 +2,18 @@
   "name": "@brain/connector-kit",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./testing": {
+      "types": "./dist/tests/support/fake.d.ts",
+      "default": "./dist/tests/support/fake.js"
+    }
+  },
   "files": [
     "dist"
   ],

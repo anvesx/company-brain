@@ -3,7 +3,6 @@
   "features/change-cursor/tests/integration/seen-tenant.test.ts:memory-db-in-real-tier": 3,
   "features/change-cursor/tests/scale/scale.test.ts:memory-db-in-real-tier": 1,
   "features/chunker/tests/scale/limits.test.ts:fake-in-real-tier": 3,
-  "features/connector-kit/src/connectors/fake.ts:src-ships-fake": 2,
   "features/connector-kit/tests/scale/fake-scale.test.ts:fake-in-real-tier": 4,
   "features/hybrid-search/tests/integration/acl-wiring.test.ts:memory-db-in-real-tier": 2,
   "features/hybrid-search/tests/integration/edges.test.ts:memory-db-in-real-tier": 8,

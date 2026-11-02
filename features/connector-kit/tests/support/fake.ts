@@ -1,5 +1,7 @@
-import { type Connector, ConnectorError, type FakeDoc, type ListedDoc } from "../core/contract.js";
-import { pageItems } from "../core/paging.js";
+import { type Connector, ConnectorError, type FakeDoc, type ListedDoc } from "../../src/core/contract.js";
+import { pageItems } from "../../src/core/paging.js";
+
+export type { FakeDoc };
 
 export const createFakeConnector = (id: string, docs: FakeDoc[]): Connector => {
   const stored = docs.map((doc) => ({ ...doc, acl: { ...doc.acl } }));

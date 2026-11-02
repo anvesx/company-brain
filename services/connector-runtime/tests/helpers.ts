@@ -2,7 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCursorStore } from "@brain/change-cursor";
-import { type Connector, createFakeConnector, type FakeDoc } from "@brain/connector-kit";
+import type { Connector, FakeDoc } from "@brain/connector-kit";
+import { createFakeConnector } from "@brain/connector-kit/testing";
 import { type ChangeEvent, createConnectorRuntime, type Sink } from "../src/index.js";
 
 export const doc = (address: string, version = "v1"): FakeDoc => ({

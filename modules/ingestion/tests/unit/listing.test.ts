@@ -1,4 +1,4 @@
-import { createFakeConnector } from "@brain/connector-kit";
+import { createFakeConnector } from "@brain/connector-kit/testing";
 import { describe, expect, it } from "vitest";
 import { watchListing } from "../../src/pipeline/listing.js";
 import { doc } from "../support/harness.js";
