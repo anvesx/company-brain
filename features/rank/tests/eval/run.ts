@@ -4,6 +4,8 @@ import { NOW } from "../support/oracle.js";
 import { corpus } from "./data/corpus.js";
 import { mean, mrr, ndcgAt, recallAt } from "./metrics.js";
 
+const KEY = "rank-eval-key-0123456789abcdef";
+
 export type Golden = { query: string; principals: string[]; relevant: string[] };
 export type Scores = { ndcg10: number; recall20: number; mrr: number };
 
@@ -11,7 +13,7 @@ export const golden = (): Golden[] => JSON.parse(readFileSync(new URL("./data/go
 
 /** Index the generated corpus, run every golden query, and average the three metrics. */
 export const evaluate = (weights?: Cols): Scores => {
-  const ix = RankIndex.open(":memory:", weights ? { now: () => NOW, weights } : { now: () => NOW });
+  const ix = RankIndex.open(":memory:", { key: KEY, now: () => NOW, ...(weights ? { weights } : {}) });
   ix.index(corpus());
   const rows = golden().map((g) => {
     const ranked = ix.search({ query: g.query, asker: { principals: g.principals }, k: 100 }).map((h) => h.id);

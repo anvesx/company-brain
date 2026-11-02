@@ -4,7 +4,7 @@ Scale test for the read path (board ticket #45, second slice), driven by Grafana
 
 Two scripts, each an open-loop `constant-arrival-rate` scenario (requests arrive on schedule even if earlier ones are slow, so a backlog shows up as latency or as `dropped_iterations`, not as a quietly lower rate):
 
-- `scripts/rank.js`: `GET /search` against `features/rank` holding 10,000 docs. `@anvesx/rank` is a library, so `src/rank-server.mjs` puts a thin HTTP handler on `RankIndex.search`. The corpus and the query stream are the ones from `features/rank/scripts/bench` (seeded, Zipf words, 20 groups plus `company`), not a second generator. The index is a real SQLite file.
+- `scripts/rank.js`: `GET /search` against `features/rank` holding 10,000 docs. `@anvesx/rank` is a library, so `src/rank-server.mjs` puts a thin HTTP handler on `RankIndex.search`. The corpus and the query stream are the ones from `features/rank/scripts/bench` (seeded, Zipf words, 20 groups plus `company`), not a second generator. The index is a real SQLite file, opened with a random per-process key (`randomBytes(32)`) that is never written to disk.
 - `scripts/catalog.js`: `GET /v1/catalog` on the real launcher `apps/connections/dist/bin.js`, over fresh SQLite files, with a signed bearer for `root` in tenant `t1`. Nothing in the app is replaced.
 
 ## Run

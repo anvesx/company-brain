@@ -15,6 +15,7 @@ const sizes = String(arg("sizes", "1000,10000")).split(",").map(Number);
 const rate = Number(arg("rate", 20));
 const samples = Number(arg("samples", 1500));
 const NOW = Date.UTC(2026, 10, 2);
+const KEY = "rank-bench-key-0123456789abcdef";
 const mkHist = () => hdr.build({ lowestDiscernibleValue: 1, highestTrackableValue: 3_600_000_000, numberOfSignificantValueDigits: 3 });
 const us = (ms) => Math.max(1, Math.round(ms * 1000));
 const fmt = (h) => [50, 95, 99].map((p) => `p${p} ${(h.getValueAtPercentile(p) / 1000).toFixed(2)}ms`).join("  ");
@@ -22,14 +23,14 @@ const fmt = (h) => [50, 95, 99].map((p) => `p${p} ${(h.getValueAtPercentile(p) /
 const run = async (size) => {
   const dir = mkdtempSync(join(tmpdir(), "rank-bench-"));
   const file = join(dir, "rank.sqlite");
-  const ix = RankIndex.open(file, { now: () => NOW });
+  const ix = RankIndex.open(file, { key: KEY, now: () => NOW });
   const docs = makeDocs(size, NOW);
   const t0 = performance.now();
   for (let i = 0; i < docs.length; i += 500) ix.index(docs.slice(i, i + 500));
   const indexMs = performance.now() - t0;
   ix.close();
   const bytes = statSync(file).size;
-  const db = RankIndex.open(file, { now: () => NOW });
+  const db = RankIndex.open(file, { key: KEY, now: () => NOW });
   const queries = makeQueries(samples + 200);
   for (const q of queries.slice(0, 200)) db.search({ query: q.query, asker: { principals: q.principals }, k: 10 });
   const total = mkHist();

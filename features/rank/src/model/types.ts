@@ -22,4 +22,8 @@ export type Signals = { text: number; recency: number; links: number };
 export type Hit = { id: string; path: string; score: number; signals: Signals };
 
 export type Probe = (stage: string, ms: number) => void;
-export type OpenOptions = { now?: () => number; weights?: Cols };
+/**
+ * `key` is required: a secret of at least 16 bytes that keys the term hash. It is never written to the file.
+ * Without the same key a reader of the file cannot map terms back to words, and a search finds nothing.
+ */
+export type OpenOptions = { key: string | Uint8Array; now?: () => number; weights?: Cols };

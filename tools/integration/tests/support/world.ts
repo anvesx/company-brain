@@ -45,7 +45,7 @@ export const openStore = (path: string): GraphStore => {
 };
 
 export const openRank = (path: string): RankIndex => {
-  const r = RankIndex.open(path);
+  const r = RankIndex.open(path, { key: "integration-test-key-0123456789" });
   closers.push(() => r.close());
   return r;
 };

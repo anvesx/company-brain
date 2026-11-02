@@ -1,21 +1,20 @@
 # store
 
-Everything that touches SQLite (`node:sqlite`, FTS5).
+Everything that touches SQLite (`node:sqlite`).
 
 - `schema.ts`: DDL, `openDb`, and `VISIBLE`, the ACL sub-select.
-- `tx.ts`: `readTx` (deferred transaction, so a WAL snapshot) and `writeTx` (`BEGIN IMMEDIATE`, `ROLLBACK` on any error).
+- `tx.ts`: `readTx` (deferred transaction, so a WAL snapshot) and `writeTx` (`BEGIN IMMEDIATE`, `ROLLBACK` on any error). A failing `ROLLBACK` is swallowed so the original error is the one thrown.
 - `write.ts`: `upsertDocs` and `removeDocs`.
 - `read.ts`: the four read statements: visible statistics, postings, metadata, inbound links.
 
 ## Tables
 
-| Table                                  | Holds                                                                                                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `docs(n, id, path, mtime, lt, lp, lb)` | The pointer (id, path), the mtime, and three token counts. No text.                                                                                                |
-| `acl(principal, doc)`                  | One row per principal allowed to read a doc.                                                                                                                       |
-| `links(dst, src)`                      | Outgoing links, stored by source doc.                                                                                                                              |
-| `fts`                                  | Contentless FTS5 table (`content=''`, `contentless_delete=1`, `detail=full`) with columns `t`, `p`, `b`. It stores postings of hex-encoded tokens, never the text. |
-| `vocab`                                | `fts5vocab(fts, 'instance')`, which exposes (term, doc, column, offset) rows for term-frequency counting.                                                          |
+| Table                                  | Holds                                                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs(n, id, path, mtime, lt, lp, lb)` | The pointer (id, path), the mtime, and three token counts. No text.                                                                                                             |
+| `acl(principal, doc)`                  | One row per principal allowed to read a doc.                                                                                                                                    |
+| `links(dst, src)`                      | Outgoing links, stored by source doc.                                                                                                                                           |
+| `postings(term, doc, col, tf)`         | One row per keyed term, doc and column (`t`, `p`, `b`) with its term frequency. No positions and no text. Opening a file that still has the old `fts` table throws `BAD_INDEX`. |
 
 ## ACL as a pre-filter
 

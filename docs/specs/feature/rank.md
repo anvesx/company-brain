@@ -8,9 +8,9 @@ Exact source: our proposal, no exact source backs it. Audit table: [exact resear
 Rank documents for a query and return pointers only: id, path, score and the per-signal breakdown. Text relevance is BM25F over title, path and body. Recency and inbound links are small priors. The asker's access is applied inside every query, so a document the asker cannot read has no effect on any result, count, score or order.
 
 ## Reuse decision
-Engine: `node:sqlite` with FTS5 (public domain), as the build plan says. FTS5 is the persisted inverted index: a contentless table (`content=''`), so no text is stored, only postings. `fts5vocab` (type `instance`) reads those postings per term.
+Engine: `node:sqlite` (public domain). The inverted index is a plain `postings(term, doc, col, tf)` table: no text, no word positions. `term` is an HMAC-SHA256 of the token under a key the caller supplies at `open()`. An earlier version used a contentless FTS5 table with `detail=full`, which `fts5vocab` exposed with hex-encoded words and their positions; that was readable and was replaced.
 
-Why not FTS5's `bm25(t, w...)` function: it computes IDF and average column length over the whole table, hidden rows included. A hidden document that contains a query term changes `df`, `N` and `avgdl`, so it changes the score and can reorder the visible hits. That is an existence leak through score. So the postings come from FTS5 and BM25F is computed over the visible set only (ACL-filtered `N`, `df`, `avgdl`). Column weights, `k1` and `b` are the same parameters `bm25()` takes. This deviates from the brief's "bm25(t, w...)" for that reason.
+Why not FTS5's `bm25(t, w...)` function: it computes IDF and average column length over the whole table, hidden rows included. A hidden document that contains a query term changes `df`, `N` and `avgdl`, so it changes the score and can reorder the visible hits. That is an existence leak through score. So BM25F is computed over the visible set only (ACL-filtered `N`, `df`, `avgdl`). Column weights, `k1` and `b` are the same parameters `bm25()` takes. This deviates from the brief's "bm25(t, w...)" for that reason.
 
 Libraries: `fast-check` 4.10.2 (MIT, tests, already in the workspace), `hdr-histogram-js` (BSD-2-Clause, bench script only). No dependency on other feature packages (`tools/structure-lint`).
 
@@ -34,8 +34,8 @@ class RankError extends Error { code: "BAD_DOC" | "BAD_ASKER" | "BAD_QUERY" | "C
 `principals` is how a zone is expressed. The caller maps a zone to strings (for example `user:ana`, `team:eng`, `company`); a doc is visible when its principals share one string with the asker's.
 
 ## Behaviour
-1. Pointers only. A `Hit` holds no title and no body. The index stores `id`, `path`, `mtimeMs`, per-column token counts, ACL rows, link edges and postings. Postings are hex-encoded tokens, not text.
-2. Tokens: NFC, lower case, runs of letters, digits and combining marks. Each token is hex-encoded (UTF-8) before it reaches FTS5, which uses the `ascii` tokenizer. This avoids FTS5's own folding differing from ours, and means no user text ever reaches an FTS5 `MATCH` string, so query syntax (`"`, `*`, `NEAR(`, `AND`, `-`) is plain punctuation and cannot inject.
+1. Pointers only. A `Hit` holds no title and no body. The index stores `id`, `path`, `mtimeMs`, per-column token counts, ACL rows, link edges and postings. Postings are keyed hashes of tokens with term frequencies, not text and not positions.
+2. Tokens: NFC, lower case, runs of letters, digits and combining marks. Each token is keyed-hashed before it is stored or looked up. No user text reaches an SQL or FTS5 query string, so query syntax (`"`, `*`, `NEAR(`, `AND`, `-`) is plain punctuation and cannot inject.
 3. Query: only the first 10,000 characters are read; distinct tokens, first 32 kept, OR semantics. No tokens (empty, punctuation only) returns `[]`. A non-string query is `BAD_QUERY`. `k` outside 1..100 or not an integer is `BAD_QUERY`.
 4. Visible set `V(asker)` = documents with at least one ACL principal in `asker.principals`. A document with no principals is visible to nobody. Every statement that reads documents, postings, lengths or links is restricted to `V` inside the SQL (`doc IN (SELECT doc FROM acl WHERE principal IN (SELECT value FROM json_each(?)))`). There is no post-filter.
 5. Fail closed: `principals` missing, not an array, empty, over 256 entries, or holding an empty, non-string or over-256-character entry is `BAD_ASKER`. Nothing is returned.

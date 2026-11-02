@@ -6,12 +6,12 @@ Spec: `docs/specs/feature/rank.md`.
 
 ## The brain stays metadata and pointers
 
-`search` returns `{ id, path, score, signals }` per hit. It never returns a title or a body. The index stores no body text and no title text. The SQLite file holds, per doc, the id, the path, the mtime, three token counts, ACL rows, link rows, and an FTS5 postings table that is contentless (`content=''`): it keeps token positions of hex-encoded tokens and cannot reproduce the text. The integration test `tests/integration/file.test.ts` reads the raw file bytes and asserts that body and title words are absent. The path is stored because it is the pointer. A caller that wants the content follows the pointer to the source system, which checks access again.
+`search` returns `{ id, path, score, signals }` per hit. It never returns a title or a body. The index stores no body text and no title text. The SQLite file holds, per doc, the id, the path, the mtime, three token counts, ACL rows, link rows, and and a `postings` table of (keyed term, doc, column, term frequency). A term is an HMAC-SHA256 of the token under your key, cut to 128 bits. There are no word positions, so word order is not stored. `tests/integration/file.test.ts` and `privacy.test.ts` read the raw file and the tables and assert that no word, no hex of a word and no plain hash of a word is present, that the same words in another order give identical rows, and that a different key gives different terms. The path is stored because it is the pointer. A caller that wants the content follows the pointer to the source system, which checks access again.
 
 ## API
 
 ```ts
-const ix = RankIndex.open(file, { now?, weights? });          // ":memory:" or a path
+const ix = RankIndex.open(file, { key, now?, weights? });     // ":memory:" or a path; key is required
 ix.index(docs: Doc[]): { indexed: number };                   // upsert by id, one transaction
 ix.remove(ids: string[]): { removed: number };
 ix.search({ query, asker: { principals }, k? }, probe?): Hit[];
@@ -24,7 +24,17 @@ rrf(lists: string[][], k = 60): { id; score }[];              // exported utilit
 
 `k` defaults to 10, maximum 100. `probe(stage, ms)` is optional and receives per-stage timings. `weights` and `now` exist for tests and the eval.
 
-Errors are `RankError` with a `code`: `BAD_DOC`, `BAD_ASKER`, `BAD_QUERY`, `CLOSED`.
+`key` is required, a string or bytes of at least 16 bytes. Generate it randomly (for example 32 bytes from a CSPRNG), keep it in your secret store, and pass the same key every time you open the same file. It is never written to the file. A different key opens the file but finds nothing, and the postings written under the old key stay in the file as unreadable rows until those docs are re-indexed. A file from the old FTS5 format is refused with `BAD_INDEX`: build a new file.
+
+Errors are `RankError` with a `code`: `BAD_DOC`, `BAD_ASKER`, `BAD_QUERY`, `BAD_OPTIONS`, `BAD_INDEX`, `CLOSED`.
+
+## Limits
+
+Checked before anything is written, so one bad value writes nothing: id, path and link target up to 1,024 characters, principal up to 256; title and body up to 2,000,000 characters each; up to 1,000 principals and 1,000 links per doc; up to 10,000 docs per `index` call and 10,000 ids per `remove` call (ids follow the doc id rules; a bare string is refused). `weights` must be `{ title, path, body }`, each finite and at least 0, otherwise `BAD_OPTIONS`. A bad key is `BAD_OPTIONS` too.
+
+## What the file reveals
+
+With the file and without the key, a reader sees the path of every doc, the ACL principals, the link targets and ids, per-column token counts, and for each doc the set of keyed terms with their frequencies. They cannot read words, and cannot test a guess of a word against the file. They can still see which docs share a term, how common each term is and how often it occurs, so a determined reader with a large reference corpus could try frequency analysis on rare and common terms. The keyed hash raises the cost; it is not encryption. Use disk encryption and file permissions for the file as well. Anyone holding the key can test guesses.
 
 ## Ranking formula
 
@@ -52,15 +62,15 @@ Weights `w` are title 3, path 2, body 1. `k1` is 1.2 and `b` is 0.75. Hits sort 
 
 ## Why FTS5 `bm25()` is not used
 
-The brief suggested `bm25(t, w...)`. FTS5's function computes IDF and average length over the whole table. A hidden doc then moves a visible doc's score, and the score, rank and count of a probe query reveal that a hidden doc exists. So the index uses FTS5 only for what it is good at, the inverted index, and computes BM25F itself over the readable set. Term frequencies come from `fts5vocab` in `instance` mode.
+The brief suggested `bm25(t, w...)`. FTS5's function computes IDF and average length over the whole table. A hidden doc then moves a visible doc's score, and the score, rank and count of a probe query reveal that a hidden doc exists. So the index keeps its own `postings` table of term frequencies and computes BM25F itself over the readable set.
 
 ## Text handling
 
-One JavaScript tokenizer is used for indexing and for queries: NFC, lowercase, split on letters, digits and combining marks, then each token hex-encoded and indexed with FTS5's `ascii` tokenizer. User text never reaches an FTS5 `MATCH` expression, so `"`, `*`, `NEAR(`, `AND` and column filters are plain words. A query is read up to 10,000 characters and uses at most 32 distinct terms.
+One JavaScript tokenizer is used for indexing and for queries: NFC, lowercase, split on letters, digits and combining marks, then each token HMAC-keyed and stored in `postings`. User text never reaches an FTS5 or SQL expression, so `"`, `*`, `NEAR(`, `AND` and column filters are plain words. A query is read up to 10,000 characters and uses at most 32 distinct terms.
 
 ## Evidence
 
-- Tests: `pnpm --filter @anvesx/rank test`. Unit, fast-check properties, differential test against a brute-force oracle, canary leak test, edge cases, a real SQLite file, and the no-fake guard.
+- Tests: `pnpm --filter @anvesx/rank test`. Unit, fast-check properties, differential test against a brute-force oracle, canary leak test, edge cases, a real SQLite file, what the file reveals, and the no-fake guard.
 - Quality: `tests/eval`. On a synthetic corpus of 400 docs and 46 labelled queries, BM25F reaches nDCG@10 0.989 and plain bm25 reaches 0.766. See `tests/eval/README.md` for what this does and does not show.
 - Mutation: `pnpm --filter @anvesx/rank mutation`.
 

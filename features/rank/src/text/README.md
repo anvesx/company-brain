@@ -8,13 +8,12 @@ One tokenizer serves indexing and querying, so the two cannot disagree.
 
 1. Normalise to NFC and lowercase.
 2. Split on `/[\p{L}\p{N}\p{M}]+/gu`: letters, digits and combining marks stay inside a token.
-3. Hex-encode each token as UTF-8.
 
-The hex form goes to SQLite FTS5 with the plain `ascii` tokenizer. FTS5 never sees user text, so it cannot interpret `"`, `*`, `NEAR(` or column filters as syntax, and its own unicode folding cannot split a token differently from this code. `queryTerms` reads at most the first 10,000 characters, keeps distinct tokens and caps them at 32.
+`keyed.ts` turns a token into the stored term: HMAC-SHA256 under the caller's key, first 128 bits as hex. Neither FTS5 nor any query syntax sees user text, so `"`, `*`, `NEAR(` and column filters are plain words. `queryTerms` reads at most the first 10,000 characters, keeps distinct tokens and caps them at 32. It returns plain tokens; the caller keys them.
 
 ## formula.ts
 
-BM25F computed over the set of documents the asker may see. See the package README for the full formula and the reason FTS5's built-in `bm25()` is not used.
+BM25F computed over the set of documents the asker may see. See the package README for the full formula and the reason SQLite FTS5's built-in `bm25()` is not used.
 
 - `idf(n, df)` is `ln(1 + (n - df + 0.5) / (df + 0.5))`, always positive.
 - `textScore(terms, lengths, averages, weights)` sums per-term `idf * tf' / (k1 + tf')` where `tf'` is the length-normalised, column-weighted term frequency.
