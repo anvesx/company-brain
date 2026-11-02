@@ -1,6 +1,6 @@
 # Spec: acl-filter
 
-Ticket: #35   Tier: feature   Milestone: M0   Design cards: sec.acl
+Ticket: #35   Tier: feature   Milestone: M0   Design cards: acl.enf (ac_filter)
 
 Exact source: [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (permissions enforced at retrieval), [Slite](../../brain/research/exact/slite-company-brain-solutions.md). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose

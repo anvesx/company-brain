@@ -1,6 +1,6 @@
 # Spec: connector-kit
 
-Ticket: #31   Tier: feature   Milestone: M0   Design cards: src.rt
+Ticket: #31   Tier: feature   Milestone: M0   Design cards: src.rt. Deviation: so_sdk describes a manifest plus code hook; ours is a TypeScript `Connector` interface with `list`, `fetch`, `canRead?` and `listMemberships?`
 
 Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) (signals in from canonical sources). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose

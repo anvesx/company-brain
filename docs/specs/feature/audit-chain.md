@@ -1,6 +1,6 @@
 # Spec: audit-chain
 
-Ticket: #36   Tier: feature   Milestone: M0   Design cards: sec.audit
+Ticket: #36   Tier: feature   Milestone: M0   Design cards: acl.enf (ac_audit)
 
 Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose

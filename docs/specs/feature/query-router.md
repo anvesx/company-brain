@@ -1,6 +1,6 @@
 # Spec: query-router
 
-Tier: feature. Design cards: qry router group. Legacy research (removed from the repo, not an exact source): adaptive-rag, unims-rag, self-rag.
+Tier: feature. Design cards: qry.plan. Legacy research (removed from the repo, not an exact source): adaptive-rag, unims-rag, self-rag.
 
 Exact source: our proposal, no exact source backs it. Audit table: [exact research README](../../brain/research/exact/README.md).
 

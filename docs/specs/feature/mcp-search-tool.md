@@ -1,6 +1,6 @@
 # Spec: mcp-search-tool
 
-Ticket: #37   Tier: feature   Milestone: M0   Design cards: ifc.mcp
+Ticket: #37   Tier: feature   Milestone: M0   Design cards: llm.mcp
 
 Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [GBrain](../../brain/research/exact/gbrain.md) (MCP interface). Audit table: [exact research README](../../brain/research/exact/README.md).
 ## Purpose

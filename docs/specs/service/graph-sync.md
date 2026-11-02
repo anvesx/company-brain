@@ -1,6 +1,6 @@
 # Spec: graph-sync
 
-Tier: service. ADR 0004. Design cards: ix_link, ix_fresh. Depends on `@brain/core-types`, `@brain/connector-kit` (types only) and `@brain/graph-store`.
+Tier: service. ADR 0004. Design cards: ix_link, ix_fresh, ac_grp, ac_scim (membership sync, step 3a, our proposal for the mechanism; the cards require it). Depends on `@brain/core-types`, `@brain/connector-kit` (types only) and `@brain/graph-store`.
 
 Exact source: [Slite](../../brain/research/exact/slite-company-brain-solutions.md), [Meta](../../brain/research/exact/meta-organizational-second-brain.md), [GBrain](../../brain/research/exact/gbrain.md) (graph filled from connectors, metadata only). Audit table: [exact research README](../../brain/research/exact/README.md).
 
