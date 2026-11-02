@@ -25,6 +25,6 @@ The script is `e2e`, not `test`, so the pre-commit `turbo run test` does not sta
 
 ## Not covered
 
-OAuth sign-in and callback, sync and the graph file, the token file, re-authorise, disconnect, editing zones on the detail page, a custom connector registered from the page (the page has no such form; it is driven over HTTP), a custom oauth2 connector, expired bearers, and any browser but Chromium. There is no CI job yet: `apps/connections` is excluded from CI builds while it links `@anvesx/connectors` from a sibling checkout.
+OAuth sign-in and callback, sync and the graph file, the token file, re-authorise, disconnect, editing zones on the detail page, a custom connector registered from the page (the page has no such form; it is driven over HTTP), a custom oauth2 connector, expired bearers, and any browser but Chromium. CI runs it as the `e2e` job.
 
 To reuse an installed Chromium instead of downloading one, set `E2E_CHROMIUM_PATH` to its executable.
