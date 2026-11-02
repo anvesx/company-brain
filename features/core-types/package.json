@@ -26,5 +26,8 @@
     "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
 }

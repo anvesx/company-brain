@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { IdSchema } from "./principal.js";
 
-const Id = z.string().min(1).max(256);
+const Id = IdSchema;
 
 export const AclSchema = z.object({
   allowUsers: z.array(Id).default([]),

@@ -21,7 +21,7 @@ const pointer = PointerSchema.parse(row); // throws ZodError on bad input
 
 ## Limits
 
-Ids up to 256 chars, addresses up to 2048, groups up to 1000 per principal.
+Ids up to 256 chars and well-formed Unicode (lone surrogates are rejected), addresses up to 2048, groups up to 1000 per principal.
 
 ## Test
 
