@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check every URL in research/*.jsonl and write research/url-check.json.
+"""Check every URL in research/*.jsonl (none today) and write research/url-check.json.
 
 Verdicts: ok (2xx/3xx), blocked (401/403/429/999: the site refuses bots, not proof the page is gone),
 dead (404/410/5xx/DNS/TLS/timeout after one retry). build.py refuses to cite a dead ref.

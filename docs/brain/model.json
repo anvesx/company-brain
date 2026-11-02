@@ -40916,7 +40916,7 @@
    "cite": "Slack Developer Docs: Slack MCP server uses user tokens and scopes",
    "url": "https://docs.slack.dev/ai/slack-mcp-server/",
    "topic": "Techniques: permissions",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40924,7 +40924,7 @@
    "cite": "Huang, Auditing MCP Servers for Over-Privileged Tool Capabilities (2026)",
    "url": "https://arxiv.org/abs/2603.21641",
    "topic": "Papers: security",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40932,7 +40932,7 @@
    "cite": "MCP spec 2025-11-25: MCP authorization: audience-bound tokens, no passthrough",
    "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
    "topic": "Techniques: permissions",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40940,7 +40940,7 @@
    "cite": "Nango, GitHub repository, 12949 stars, licence NOASSERTION",
    "url": "https://github.com/NangoHQ/nango",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40948,7 +40948,7 @@
    "cite": "Glean blog: Glean identity schema: sync users, groups, memberships",
    "url": "https://www.glean.com/blog/using-our-identity-schema-to-deliver-personalized-permissions-aware-results",
    "topic": "Techniques: permissions",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40956,7 +40956,7 @@
    "cite": "Atlassian Developer: Jira Cloud points-based rate limits",
    "url": "https://developer.atlassian.com/cloud/jira/platform/rate-limiting/",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40964,7 +40964,7 @@
    "cite": "Airbyte, GitHub repository, 22253 stars, licence NOASSERTION",
    "url": "https://github.com/airbytehq/airbyte",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40972,7 +40972,7 @@
    "cite": "Arceo and coauthor, Securing the Agent: Vendor-Neutral, Multitenant Enterprise Retrieval and Tool Use (2026)",
    "url": "https://arxiv.org/abs/2605.05287",
    "topic": "Papers: security",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40980,7 +40980,7 @@
    "cite": "Descope (ReBAC vendor): Live authorization check as the counterpoint",
    "url": "https://www.descope.com/blog/post/rebac-rag",
    "topic": "Techniques: permissions",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40988,7 +40988,7 @@
    "cite": "agentgateway, GitHub repository, 5512 stars, licence Apache-2.0",
    "url": "https://github.com/agentgateway/agentgateway",
    "topic": "Repos: 3 MCP gateway",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -40996,7 +40996,7 @@
    "cite": "Glean developer docs: Glean connector pipeline: fetch, transform, push",
    "url": "https://developers.glean.com/libraries/indexing-sdk/",
    "topic": "Techniques: flexibility",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41004,7 +41004,7 @@
    "cite": "Microsoft Learn: Microsoft: prebuilt plus custom connectors via a schema",
    "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
    "topic": "Techniques: flexibility",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41012,7 +41012,7 @@
    "cite": "Dropbox Tech: Connector effort at Dropbox: every app is a snowflake",
    "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
    "topic": "Techniques: flexibility",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41020,7 +41020,7 @@
    "cite": "dlt, GitHub repository, 5998 stars, licence Apache-2.0",
    "url": "https://github.com/dlt-hub/dlt",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41028,7 +41028,7 @@
    "cite": "Microsoft Learn: Graph change-notification lifetimes and latency",
    "url": "https://learn.microsoft.com/en-us/graph/api/resources/subscription",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41036,7 +41036,7 @@
    "cite": "Microsoft Learn: Graph delta query: tokens, replays, 410, tombstones",
    "url": "https://learn.microsoft.com/en-us/graph/delta-query-overview",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41044,7 +41044,7 @@
    "cite": "Google Developers: Google Drive changes feed and push channels",
    "url": "https://developers.google.com/workspace/drive/api/guides/push",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41052,7 +41052,7 @@
    "cite": "Microsoft Learn: Webhook loss and subscription expiry are normal",
    "url": "https://learn.microsoft.com/en-us/graph/api/resources/subscription",
    "topic": "Techniques: quality-ops",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41060,7 +41060,7 @@
    "cite": "Ahmed, Stale-Document Poisoning: When Outdated Retrieval Overrides Correct Model Answers (2026)",
    "url": "https://arxiv.org/abs/2609.31342",
    "topic": "Papers: evaluation",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41068,7 +41068,7 @@
    "cite": "Pipedream, GitHub repository, 11758 stars, licence NOASSERTION",
    "url": "https://github.com/PipedreamHQ/pipedream",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41076,7 +41076,7 @@
    "cite": "CocoIndex, GitHub repository, 11742 stars, licence Apache-2.0",
    "url": "https://github.com/cocoindex-io/cocoindex",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41084,7 +41084,7 @@
    "cite": "Slack Developer Docs: Slack API limits and ToS tightening for non-Marketplace apps",
    "url": "https://docs.slack.dev/changelog/2025/05/29/rate-limit-changes-for-non-marketplace-apps",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41092,7 +41092,7 @@
    "cite": "Notion Developers: Notion API request limits",
    "url": "https://developers.notion.com/reference/request-limits",
    "topic": "Techniques: freshness",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41100,7 +41100,7 @@
    "cite": "Stacksync docs: Rate-limit window guidance for sync engines",
    "url": "https://www.stacksync.com/two-way-sync/smart-api-rate-limits.md",
    "topic": "Techniques: freshness",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41108,7 +41108,7 @@
    "cite": "DesignGurus guide (secondary): Per-app queues because limits differ",
    "url": "https://www.designgurus.io/answers/detail/what-to-expect-in-the-glean-system-design-interview",
    "topic": "Techniques: flexibility",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41116,7 +41116,7 @@
    "cite": "Temporal, GitHub repository, 23930 stars, licence MIT",
    "url": "https://github.com/temporalio/temporal",
    "topic": "Repos: 8 durable jobs",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41124,7 +41124,7 @@
    "cite": "Barnett et al., Seven Failure Points When Engineering a Retrieval Augmented Generation System (2024)",
    "url": "https://arxiv.org/abs/2401.05856",
    "topic": "Papers: rag-enterprise",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41132,7 +41132,7 @@
    "cite": "MCP spec: MCP as universal live adapter",
    "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
    "topic": "Techniques: flexibility",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41140,7 +41140,7 @@
    "cite": "Slack Developer Docs: Slack Real-Time Search API: query without storing",
    "url": "https://docs.slack.dev/changelog/2026/02/17/slack-mcp",
    "topic": "Techniques: index-not-copy",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41148,7 +41148,7 @@
    "cite": "Microsoft Learn (updated Oct 2026): Microsoft Copilot: synced vs federated connectors",
    "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
    "topic": "Techniques: index-not-copy",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41156,7 +41156,7 @@
    "cite": "Narajala et al., Enterprise-Grade Security for the Model Context Protocol (MCP): Frameworks and Mitigation Strategies (2025)",
    "url": "https://arxiv.org/abs/2504.08623",
    "topic": "Papers: security",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41164,7 +41164,7 @@
    "cite": "arXiv (Reddy and Gujral): EchoLeak: prompt injection via retrieved email",
    "url": "https://arxiv.org/html/2509.10540v1",
    "topic": "Techniques: quality-ops",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41172,7 +41172,7 @@
    "cite": "MCP reference servers, GitHub repository, 91495 stars, licence NOASSERTION",
    "url": "https://github.com/modelcontextprotocol/servers",
    "topic": "Repos: 3 MCP",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41180,7 +41180,7 @@
    "cite": "FastMCP, GitHub repository, 28173 stars, licence Apache-2.0",
    "url": "https://github.com/PrefectHQ/fastmcp",
    "topic": "Repos: 3 MCP",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41188,7 +41188,7 @@
    "cite": "Notion Blog: Notion: per-span hashing avoids re-embedding",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41196,7 +41196,7 @@
    "cite": "Yadav, Temporal Validity in Retrieval Memory: Eliminating Stale-Fact Errors for AI Agents over Evolving Knowledge (2026)",
    "url": "https://arxiv.org/abs/2606.26511",
    "topic": "Papers: evaluation",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41204,7 +41204,7 @@
    "cite": "Zou et al., PoisonedRAG: Knowledge Corruption Attacks to Retrieval-Augmented Generation of Large Language Models (2024)",
    "url": "https://arxiv.org/abs/2402.07867",
    "topic": "Papers: security",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41212,7 +41212,7 @@
    "cite": "GitHub Docs: GitHub webhook delivery contract",
    "url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41220,7 +41220,7 @@
    "cite": "Steampipe, GitHub repository, 7989 stars, licence AGPL-3.0",
    "url": "https://github.com/turbot/steampipe",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41228,7 +41228,7 @@
    "cite": "Google Developers: Google Drive changes.list page tokens",
    "url": "https://developers.google.com/workspace/drive/api/guides/manage-changes",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41236,7 +41236,7 @@
    "cite": "Microsoft Learn: Delta replays and resets",
    "url": "https://learn.microsoft.com/en-us/graph/delta-query-overview",
    "topic": "Techniques: quality-ops",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41244,7 +41244,7 @@
    "cite": "Debezium, GitHub repository, 13263 stars, licence Apache-2.0",
    "url": "https://github.com/debezium/debezium",
    "topic": "Repos: 8 CDC/events",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41252,7 +41252,7 @@
    "cite": "Anthropic Engineering: Resumable agent/workflow state",
    "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
    "topic": "Techniques: freshness",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41260,7 +41260,7 @@
    "cite": "Notion Blog: Notion: two ingestion paths",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41268,7 +41268,7 @@
    "cite": "Practitioner blog (secondary, low confidence): Soft-deleted vectors may persist in indexes",
    "url": "https://tianpan.co/blog/2026-04-20-gdpr-llm-memory-erasure-vector-database",
    "topic": "Techniques: index-not-copy",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41276,7 +41276,7 @@
    "cite": "turbopuffer docs: Strong vs eventual consistency in the index",
    "url": "https://turbopuffer.com/docs/architecture",
    "topic": "Techniques: quality-ops",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41284,7 +41284,7 @@
    "cite": "arXiv (Vec2Text): Embeddings are invertible",
    "url": "https://arxiv.org/abs/2310.06816",
    "topic": "Techniques: index-not-copy",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41292,7 +41292,7 @@
    "cite": "Securiti summary of EDPB opinion: EDPB Opinion 28/2024 on AI models and personal data",
    "url": "https://securiti.ai/summary-of-edpb-opinion-282024-concerning-ai-models-processing-of-personal-data",
    "topic": "Techniques: index-not-copy",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41300,7 +41300,7 @@
    "cite": "Dropbox Dash security whitepaper: Dash ingest: metadata and content in index, plus dedupe",
    "url": "https://aem.dropbox.com/cms/content/dam/dropbox/warp/en-us/dash/Dash-Security-Architecture-Overview_Whitepaper.pdf",
    "topic": "Techniques: index-not-copy",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41308,7 +41308,7 @@
    "cite": "Chen et al., SPANN: Highly-efficient Billion-scale Approximate Nearest Neighbor Search (2021)",
    "url": "https://arxiv.org/abs/2111.08566",
    "topic": "Papers: index-at-scale",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41316,7 +41316,7 @@
    "cite": "pgvector, GitHub repository, 23447 stars, licence NOASSERTION",
    "url": "https://github.com/pgvector/pgvector",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41324,7 +41324,7 @@
    "cite": "Notion blog: Two years of vector search at Notion (permissions as metadata on every span; patch when only permissions change)",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Core at scale (checked 2026-10-24)",
-   "status": "verified",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41332,7 +41332,7 @@
    "cite": "Patel et al., ACORN: Performant and Predicate-Agnostic Search Over Vector Embeddings and Structured Data (2024)",
    "url": "https://arxiv.org/abs/2403.04871",
    "topic": "Papers: index-at-scale",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41340,7 +41340,7 @@
    "cite": "Das, Recall-Bounded Staleness for Filtered Multi-Tenant ANN Graph Indexes under Concurrent Updates (2026)",
    "url": "https://arxiv.org/abs/2610.15130",
    "topic": "Papers: index-at-scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41348,7 +41348,7 @@
    "cite": "Wavect (practitioner blog): Pre-filter vs post-filter for ACLs",
    "url": "https://wavect.io/blog/rag-permissions-sharepoint-confluence-drive/",
    "topic": "Techniques: permissions",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41356,7 +41356,7 @@
    "cite": "OpenAI docs: OpenAI file search: metadata filters and rate limits",
    "url": "https://developers.openai.com/api/docs/guides/tools-file-search",
    "topic": "Techniques: retrieval",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41364,7 +41364,7 @@
    "cite": "turbopuffer docs: turbopuffer published limits",
    "url": "https://turbopuffer.com/docs/limits",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41372,7 +41372,7 @@
    "cite": "Qdrant, GitHub repository, 35198 stars, licence Apache-2.0",
    "url": "https://github.com/qdrant/qdrant",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41380,7 +41380,7 @@
    "cite": "Vespa, GitHub repository, 7143 stars, licence Apache-2.0",
    "url": "https://github.com/vespa-engine/vespa",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41388,7 +41388,7 @@
    "cite": "Edge et al. (Microsoft), From Local to Global: A Graph RAG Approach to Query-Focused Summarization (2024)",
    "url": "https://arxiv.org/abs/2404.16130",
    "topic": "Papers: graph-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41396,7 +41396,7 @@
    "cite": "Rasmussen et al., Zep: A Temporal Knowledge Graph Architecture for Agent Memory (2025)",
    "url": "https://arxiv.org/abs/2501.13956",
    "topic": "Papers: agent-memory",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41404,7 +41404,7 @@
    "cite": "Dropbox Tech: Knowledge graph as index bundles, not a graph DB",
    "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
    "topic": "Techniques: retrieval",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41412,7 +41412,7 @@
    "cite": "Glean: Glean knowledge graph per customer",
    "url": "https://glean.com/resources/glean-knowledge-graph",
    "topic": "Techniques: retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41420,7 +41420,7 @@
    "cite": "Graphiti (Zep), GitHub repository, 32153 stars, licence Apache-2.0",
    "url": "https://github.com/getzep/graphiti",
    "topic": "Repos: 4 agent memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41428,7 +41428,7 @@
    "cite": "Cognee, GitHub repository, 32683 stars, licence Apache-2.0",
    "url": "https://github.com/topoteretes/cognee",
    "topic": "Repos: 4 agent memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41436,7 +41436,7 @@
    "cite": "Jimenez Gutierrez et al. (HippoRAG 2), From RAG to Memory: Non-Parametric Continual Learning for Large Language Models (2025)",
    "url": "https://arxiv.org/abs/2502.14802",
    "topic": "Papers: graph-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41444,7 +41444,7 @@
    "cite": "Microsoft Research, LazyGraphRAG blog (claims indexing cost about 0.1 percent of full GraphRAG; no method given)",
    "url": "https://www.microsoft.com/en-us/research/blog/lazygraphrag/",
    "topic": "Core at scale (checked 2026-10-24)",
-   "status": "verified",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41452,7 +41452,7 @@
    "cite": "Jimenez Gutierrez et al., HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models (2024)",
    "url": "https://arxiv.org/abs/2405.14831",
    "topic": "Papers: graph-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41460,7 +41460,7 @@
    "cite": "Guo et al., LightRAG: Simple and Fast Retrieval-Augmented Generation (2024)",
    "url": "https://arxiv.org/abs/2410.05779",
    "topic": "Papers: graph-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41468,7 +41468,7 @@
    "cite": "LightRAG, GitHub repository, 40279 stars, licence MIT",
    "url": "https://github.com/HKUDS/LightRAG",
    "topic": "Repos: 6 GraphRAG",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41476,7 +41476,7 @@
    "cite": "Vu et al., FreshLLMs: Refreshing Large Language Models with Search Engine Augmentation (2023)",
    "url": "https://arxiv.org/abs/2310.03214",
    "topic": "Papers: evaluation",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41484,7 +41484,7 @@
    "cite": "arXiv 2609.27257: UniDataAgent: An Ontology-Grounded Agent for Enterprise Question-to-Report Automation (2026)",
    "url": "https://arxiv.org/abs/2609.27257",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41492,7 +41492,7 @@
    "cite": "arXiv 2610.23317: AgentOnto: Ontology-Guided LLM Agents for Enterprise Data Analytics (2026)",
    "url": "https://arxiv.org/abs/2610.23317",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41500,7 +41500,7 @@
    "cite": "arXiv 2610.12540: Organizational Context for the Enterprise Security Brain (2026)",
    "url": "https://arxiv.org/abs/2610.12540",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41508,7 +41508,7 @@
    "cite": "arXiv 2604.11364: The Missing Knowledge Layer in Cognitive Architectures for AI Agents (2026)",
    "url": "https://arxiv.org/abs/2604.11364",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41516,7 +41516,7 @@
    "cite": "Lewis et al. (Facebook AI), Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (2020)",
    "url": "https://arxiv.org/abs/2005.11401",
    "topic": "Papers: rag-enterprise",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41524,7 +41524,7 @@
    "cite": "Analytics at Meta: How we built an AI second brain for 60k knowledge workers (Medium)",
    "url": "https://medium.com/@AnalyticsAtMeta/how-we-built-an-ai-second-brain-for-60k-knowledge-workers-78c507dd795b",
    "topic": "Products: company brain",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "blocked"
   },
   {
@@ -41532,7 +41532,7 @@
    "cite": "Docling, GitHub repository, 69403 stars, licence MIT",
    "url": "https://github.com/docling-project/docling",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41540,7 +41540,7 @@
    "cite": "Unstructured, GitHub repository, 15594 stars, licence Apache-2.0",
    "url": "https://github.com/Unstructured-IO/unstructured",
    "topic": "Repos: 2 connectors/sync",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41548,7 +41548,7 @@
    "cite": "RAGFlow, GitHub repository, 92694 stars, licence Apache-2.0",
    "url": "https://github.com/infiniflow/ragflow",
    "topic": "Repos: 1 enterprise search",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41556,7 +41556,7 @@
    "cite": "Greshake et al., Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection (2023)",
    "url": "https://arxiv.org/abs/2302.12173",
    "topic": "Papers: security",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41564,7 +41564,7 @@
    "cite": "Anthropic: Contextual retrieval: BM25 + embeddings + rerank",
    "url": "https://www.anthropic.com/news/contextual-retrieval",
    "topic": "Techniques: retrieval",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41572,7 +41572,7 @@
    "cite": "Liu et al., Lost in the Middle: How Language Models Use Long Contexts (2023)",
    "url": "https://arxiv.org/abs/2307.03172",
    "topic": "Papers: rag-enterprise",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41580,7 +41580,7 @@
    "cite": "LlamaIndex, GitHub repository, 52629 stars, licence MIT",
    "url": "https://github.com/run-llama/llama_index",
    "topic": "Repos: 6 RAG framework",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41588,7 +41588,7 @@
    "cite": "Anthropic Engineering: Per-query live fetch (hydration) cost: tool definitions and results",
    "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
    "topic": "Techniques: index-not-copy",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41596,7 +41596,7 @@
    "cite": "Morris et al., Text Embeddings Reveal (Almost) As Much As Text (2023)",
    "url": "https://arxiv.org/abs/2310.06816",
    "topic": "Papers: security",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41604,7 +41604,7 @@
    "cite": "Zeng et al., The Good and The Bad: Exploring Privacy Issues in Retrieval-Augmented Generation (RAG) (2024)",
    "url": "https://arxiv.org/abs/2402.16893",
    "topic": "Papers: security",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41612,7 +41612,7 @@
    "cite": "Notion Blog: Notion: self-hosted embeddings on Ray",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41620,7 +41620,7 @@
    "cite": "Notion Blog: Notion: workspace-ID sharding and generations",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41628,7 +41628,7 @@
    "cite": "Notion Blog: Embedding model migration by re-index and cutover",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: quality-ops",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41636,7 +41636,7 @@
    "cite": "Airweave, GitHub repository, 6557 stars, licence MIT",
    "url": "https://github.com/airweave-ai/airweave",
    "topic": "Repos: 1 enterprise search",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41644,7 +41644,7 @@
    "cite": "arXiv 2610.32851: Reimagining Enterprise RAG for Multi-Agent Systems: A Knowledge Layer That Organizes Before It Retrieves (2026)",
    "url": "https://arxiv.org/abs/2610.32851",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41652,7 +41652,7 @@
    "cite": "arXiv 2609.25991: Knowledge-as-Skill: A Structural Design for Autonomous Knowledge-Base Use by LLM Agents (2026)",
    "url": "https://arxiv.org/abs/2609.25991",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41660,7 +41660,7 @@
    "cite": "OpenSearch, GitHub repository, 13898 stars, licence Apache-2.0",
    "url": "https://github.com/opensearch-project/OpenSearch",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41668,7 +41668,7 @@
    "cite": "Elasticsearch, GitHub repository, 78347 stars, licence NOASSERTION",
    "url": "https://github.com/elastic/elasticsearch",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41676,7 +41676,7 @@
    "cite": "Glean (Glean), product documentation",
    "url": "https://docs.glean.com/connectors/about",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41684,7 +41684,7 @@
    "cite": "Elastic search connectors (Elastic), product documentation",
    "url": "https://www.elastic.co/docs/reference/search-connectors/es-connectors-security",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41692,7 +41692,7 @@
    "cite": "Elastic Search Labs: Elastic BBQ quantization",
    "url": "https://www.elastic.co/search-labs/blog/elasticsearch-bbq-vs-opensearch-faiss",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41700,7 +41700,7 @@
    "cite": "turbopuffer docs: turbopuffer cold vs warm latency",
    "url": "https://turbopuffer.com/docs/architecture",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41708,7 +41708,7 @@
    "cite": "Singh et al. (Microsoft), FreshDiskANN: A Fast and Accurate Graph-Based ANN Index for Streaming Similarity Search (2021)",
    "url": "https://arxiv.org/abs/2105.09613",
    "topic": "Papers: index-at-scale",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41716,7 +41716,7 @@
    "cite": "LanceDB, GitHub repository, 11747 stars, licence Apache-2.0",
    "url": "https://github.com/lancedb/lancedb",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41724,7 +41724,7 @@
    "cite": "Milvus, GitHub repository, 46454 stars, licence Apache-2.0",
    "url": "https://github.com/milvus-io/milvus",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41732,7 +41732,7 @@
    "cite": "Hugging Face, Embedding Quantization (binary is 32x smaller; 96.45 percent of quality with rescoring on one model)",
    "url": "https://huggingface.co/blog/embedding-quantization",
    "topic": "Core at scale (checked 2026-10-24)",
-   "status": "verified",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41740,7 +41740,7 @@
    "cite": "turbopuffer docs: Architecture (object-storage-first, centroid index, cold query 3 to 4 round trips)",
    "url": "https://turbopuffer.com/docs/architecture",
    "topic": "Core at scale (checked 2026-10-24)",
-   "status": "verified",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41748,7 +41748,7 @@
    "cite": "turbopuffer blog: ANN v3 (1-bit RaBitQ codes, 100B vectors)",
    "url": "https://turbopuffer.com/blog/ann-v3",
    "topic": "Core at scale (checked 2026-10-24)",
-   "status": "verified",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41756,7 +41756,7 @@
    "cite": "Gemini Enterprise (formerly Agentspace) (Google Cloud), product documentation",
    "url": "https://docs.cloud.google.com/agentspace/docs/introduction-to-connectors-and-data-stores",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41764,7 +41764,7 @@
    "cite": "OpenFGA, GitHub repository, 6026 stars, licence Apache-2.0",
    "url": "https://github.com/openfga/openfga",
    "topic": "Repos: 7 authorization",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41772,7 +41772,7 @@
    "cite": "Moveworks Enterprise Search (Moveworks (ServiceNow)), product documentation",
    "url": "https://docs.moveworks.com/ai-assistant/search-connectors",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41780,7 +41780,7 @@
    "cite": "Akkiraju et al. (NVIDIA), FACTS About Building Retrieval Augmented Generation-based Chatbots (2024)",
    "url": "https://arxiv.org/abs/2407.07858",
    "topic": "Papers: rag-enterprise",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41788,7 +41788,7 @@
    "cite": "Onyx (formerly Danswer), GitHub repository, 32885 stars, licence NOASSERTION",
    "url": "https://github.com/onyx-dot-app/onyx",
    "topic": "Repos: 1 enterprise search",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41796,7 +41796,7 @@
    "cite": "SpiceDB, GitHub repository, 7168 stars, licence Apache-2.0",
    "url": "https://github.com/authzed/spicedb",
    "topic": "Repos: 7 authorization",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41804,7 +41804,7 @@
    "cite": "Microsoft Learn: Copilot connectors: ACL per item, permission-based filtering",
    "url": "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/overview",
    "topic": "Techniques: permissions",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41812,7 +41812,7 @@
    "cite": "Practitioner blog (secondary): Wrong-ACL and leak testing",
    "url": "https://tianpan.co/blog/2026/04/17/vector-store-access-control-rag-rls",
    "topic": "Techniques: quality-ops",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41820,7 +41820,7 @@
    "cite": "Bhatt et al., Enterprise AI Must Enforce Participant-Aware Access Control (2025)",
    "url": "https://arxiv.org/abs/2509.14608",
    "topic": "Papers: security",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41828,7 +41828,7 @@
    "cite": "Slack Real-time Search API + MCP server (Salesforce / Slack), product documentation",
    "url": "https://docs.slack.dev/changelog/2026/02/17/slack-mcp",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41836,7 +41836,7 @@
    "cite": "Claude connectors / remote MCP / enterprise search (Anthropic), product documentation",
    "url": "https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41844,7 +41844,7 @@
    "cite": "Cerbos, GitHub repository, 4631 stars, licence Apache-2.0",
    "url": "https://github.com/cerbos/cerbos",
    "topic": "Repos: 7 authorization",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41852,7 +41852,7 @@
    "cite": "Qi et al., Benchmarking Knowledge-Extraction Attack and Defense on Retrieval-Augmented Generation (2026)",
    "url": "https://arxiv.org/abs/2602.09319",
    "topic": "Papers: security",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41860,7 +41860,7 @@
    "cite": "arXiv 2610.04195: MemLeak: Cross-User Semantic Leakage in Multi-Tenant AI Agent Memory (2026)",
    "url": "https://arxiv.org/abs/2610.04195",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41868,7 +41868,7 @@
    "cite": "arXiv 2609.25563: AkasicMEM: Governed Enterprise Memory for Agents (2026)",
    "url": "https://arxiv.org/abs/2609.25563",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41876,7 +41876,7 @@
    "cite": "Jeong et al., Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity (2024)",
    "url": "https://arxiv.org/abs/2403.14403",
    "topic": "Papers: agentic-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41884,7 +41884,7 @@
    "cite": "Wang et al., UniMS-RAG: A Unified Multi-source Retrieval-Augmented Generation for Personalized Dialogue Systems (2024)",
    "url": "https://arxiv.org/abs/2401.13256",
    "topic": "Papers: federated-routing",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41892,7 +41892,7 @@
    "cite": "Jin et al., Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning (2025)",
    "url": "https://arxiv.org/abs/2503.09516",
    "topic": "Papers: agentic-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41900,7 +41900,7 @@
    "cite": "Choi et al., Toward Agentic Retrieval-Augmented Generation for Enterprise Retail Workflows over Heterogeneous Data Sources (2026)",
    "url": "https://arxiv.org/abs/2610.25096",
    "topic": "Papers: federated-routing",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41908,7 +41908,7 @@
    "cite": "Anthropic Engineering: Agentic multi-step retrieval is token-expensive",
    "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
    "topic": "Techniques: retrieval",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41916,7 +41916,7 @@
    "cite": "Haystack, GitHub repository, 26814 stars, licence Apache-2.0",
    "url": "https://github.com/deepset-ai/haystack",
    "topic": "Repos: 6 RAG framework",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41924,7 +41924,7 @@
    "cite": "Dropbox Tech (Clemm, Jan 2026): Dropbox Dash chose index over federated",
    "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
    "topic": "Techniques: index-not-copy",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41932,7 +41932,7 @@
    "cite": "Microsoft 365 Copilot connectors (Graph connectors, semantic index) (Microsoft), product documentation",
    "url": "https://learn.microsoft.com/graph/connecting-external-content-connectors-overview",
    "topic": "Products",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41940,7 +41940,7 @@
    "cite": "Asai et al., Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection (2023)",
    "url": "https://arxiv.org/abs/2310.11511",
    "topic": "Papers: agentic-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41948,7 +41948,7 @@
    "cite": "arXiv 2610.25096: Toward Agentic Retrieval-Augmented Generation for Enterprise Retail Workflows over Heterogeneous Data Sources (2026)",
    "url": "https://arxiv.org/abs/2610.25096",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41956,7 +41956,7 @@
    "cite": "arXiv 2607.22571: SCAIR: Schema-Conditioned Agentic Iterative Reasoning for Enterprise Knowledge Graphs (2026)",
    "url": "https://arxiv.org/abs/2607.22571",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41964,7 +41964,7 @@
    "cite": "Vespa docs: Vespa hybrid ranking and RRF",
    "url": "https://learn.vespa.ai/vector-search/hybrid-search",
    "topic": "Techniques: retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41972,7 +41972,7 @@
    "cite": "Dropbox Tech: Federated retrieval limits (Dash on MCP)",
    "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
    "topic": "Techniques: index-not-copy",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41980,7 +41980,7 @@
    "cite": "Voyage via MongoDB blog + third-party latency: Reranker quality and latency",
    "url": "https://mongodb.com/company/blog/product-release-announcements/rerank-2-5-and-rerank-2-5-lite-instruction-following-rerankers",
    "topic": "Techniques: retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41988,7 +41988,7 @@
    "cite": "Santhanam et al., PLAID: An Efficient Engine for Late Interaction Retrieval (2022)",
    "url": "https://arxiv.org/abs/2205.09707",
    "topic": "Papers: index-at-scale",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -41996,7 +41996,7 @@
    "cite": "arXiv 2608.12888: When Your Agent Opens the Chat App: Agent-Controlled Search over Raw Chat Logs Rivals Structured Memory (2026)",
    "url": "https://arxiv.org/abs/2608.12888",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42004,7 +42004,7 @@
    "cite": "Es et al., Ragas: Automated Evaluation of Retrieval Augmented Generation (2023)",
    "url": "https://arxiv.org/abs/2309.15217",
    "topic": "Papers: evaluation",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42012,7 +42012,7 @@
    "cite": "Chhabra et al., Case-Aware LLM-as-a-Judge Evaluation for Enterprise-Scale RAG Systems (2026)",
    "url": "https://arxiv.org/abs/2602.20379",
    "topic": "Papers: evaluation",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42020,7 +42020,7 @@
    "cite": "Dropbox Tech: Dash relevance eval with an LLM judge",
    "url": "https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash",
    "topic": "Techniques: retrieval",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42028,7 +42028,7 @@
    "cite": "arXiv 2609.03201: MemoryLACE: Memory Lifecycle-Aware Consolidation and Evidence Retrieval (2026)",
    "url": "https://arxiv.org/abs/2609.03201",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42036,7 +42036,7 @@
    "cite": "arXiv 2607.04391: Memory-Orchestrated Semantic System (MOSS): An Auditable Agentic Memory Architecture (2026)",
    "url": "https://arxiv.org/abs/2607.04391",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42044,7 +42044,7 @@
    "cite": "IBM MCP Context Forge, GitHub repository, 4681 stars, licence Apache-2.0",
    "url": "https://github.com/IBM/mcp-context-forge",
    "topic": "Repos: 3 MCP gateway",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42052,7 +42052,7 @@
    "cite": "R2R (SciPhi), GitHub repository, 8044 stars, licence MIT",
    "url": "https://github.com/SciPhi-AI/R2R",
    "topic": "Repos: 6 RAG framework",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42060,7 +42060,7 @@
    "cite": "Anthropic Engineering: Start eval with ~20 real queries",
    "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
    "topic": "Techniques: quality-ops",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42068,7 +42068,7 @@
    "cite": "Singh et al., Agentic Retrieval-Augmented Generation: A Survey on Agentic RAG (2025)",
    "url": "https://arxiv.org/abs/2501.09136",
    "topic": "Papers: agentic-retrieval",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42076,7 +42076,7 @@
    "cite": "Jiang et al., Anatomy of Agentic Memory: Taxonomy and Empirical Analysis of Evaluation and System Limitations (2026)",
    "url": "https://arxiv.org/abs/2602.19320",
    "topic": "Papers: agent-memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42084,7 +42084,7 @@
    "cite": "Open Policy Agent, GitHub repository, 12394 stars, licence Apache-2.0",
    "url": "https://github.com/open-policy-agent/opa",
    "topic": "Repos: 7 authorization",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42092,7 +42092,7 @@
    "cite": "arXiv 2607.07721: Context Graphs for Proactive Enterprise Agents (2026)",
    "url": "https://arxiv.org/abs/2607.07721",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42100,7 +42100,7 @@
    "cite": "MCP Registry, GitHub repository, 7396 stars, licence NOASSERTION",
    "url": "https://github.com/modelcontextprotocol/registry",
    "topic": "Repos: 3 MCP",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42108,7 +42108,7 @@
    "cite": "MCP Gateway & Registry, GitHub repository, 1012 stars, licence Apache-2.0",
    "url": "https://github.com/agentic-community/mcp-gateway-registry",
    "topic": "Repos: 3 MCP gateway",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42116,7 +42116,7 @@
    "cite": "Notion Blog (Feb 2026): Notion: 10x scale, ~90% cost cut",
    "url": "https://www.notion.com/blog/two-years-of-vector-search-at-notion",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42124,7 +42124,7 @@
    "cite": "arXiv 2609.05510: Memory as Infrastructure: Reliability Engineering for Persistent Agent Memory in Months-Long LLM-Assisted Development (2026)",
    "url": "https://arxiv.org/abs/2609.05510",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42132,7 +42132,7 @@
    "cite": "turbopuffer: turbopuffer pricing",
    "url": "https://turbopuffer.com/pricing",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42140,7 +42140,7 @@
    "cite": "arXiv 2608.10224: Self-evolving Agentic Customer Support System at LinkedIn (2026)",
    "url": "https://arxiv.org/abs/2608.10224",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42148,7 +42148,7 @@
    "cite": "Pinecone: Pinecone serverless: blob store + freshness layer",
    "url": "https://www.pinecone.io/blog/serverless-architecture/",
    "topic": "Techniques: scale",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42156,7 +42156,7 @@
    "cite": "Weaviate, GitHub repository, 16905 stars, licence NOASSERTION",
    "url": "https://github.com/weaviate/weaviate",
    "topic": "Repos: 5 search engine",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42164,7 +42164,7 @@
    "cite": "Pinecone docs: Pinecone read-unit and storage pricing",
    "url": "https://docs.pinecone.io/guides/manage-cost/understanding-cost",
    "topic": "Techniques: scale",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42172,7 +42172,7 @@
    "cite": "arXiv 2607.21503: Agentic Context Management (2026)",
    "url": "https://arxiv.org/abs/2607.21503",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42180,7 +42180,7 @@
    "cite": "Mem0, GitHub repository, 67671 stars, licence Apache-2.0",
    "url": "https://github.com/mem0ai/mem0",
    "topic": "Repos: 4 agent memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42188,7 +42188,7 @@
    "cite": "Purview considerations for M365 Copilot",
    "url": "https://learn.microsoft.com/en-us/purview/ai-m365-copilot-considerations",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42196,7 +42196,7 @@
    "cite": "Glean security principles",
    "url": "https://docs.glean.com/security/security-principles",
    "topic": "security",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42204,7 +42204,7 @@
    "cite": "OWASP LLM08 Vector and Embedding Weaknesses",
    "url": "https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "blocked"
   },
   {
@@ -42212,7 +42212,7 @@
    "cite": "Supermemory company-brain, GitHub repository, 1049 stars, licence Apache-2.0",
    "url": "https://github.com/supermemoryai/company-brain",
    "topic": "Repos: 1 company brain",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42220,7 +42220,7 @@
    "cite": "Morris et al. Text Embeddings Reveal (Almost) As Much As Text (EMNLP 2023)",
    "url": "https://arxiv.org/pdf/2310.06816",
    "topic": "security",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42228,7 +42228,7 @@
    "cite": "Manage Recall (Microsoft Learn)",
    "url": "https://learn.microsoft.com/en-us/windows/client-management/manage-recall",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42236,7 +42236,7 @@
    "cite": "GDPR erasure vs retention",
    "url": "https://edpb.europa.eu/sites/default/files/article-60-final-decisions/summary/publishable_fr_2019-10_right_to_erasure_ignored_summarypublic.pdf",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42244,7 +42244,7 @@
    "cite": "Glean CMK/BYO-VPC",
    "url": "https://www.theladders.com/job/software-engineer-cloud-infrastructure-glean-san-francisco-ca_88164829",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "blocked"
   },
   {
@@ -42252,7 +42252,7 @@
    "cite": "OWASP LLM06 Excessive Agency",
    "url": "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "blocked"
   },
   {
@@ -42260,7 +42260,7 @@
    "cite": "Simon Willison, The lethal trifecta",
    "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42268,7 +42268,7 @@
    "cite": "Chhikara et al., Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory (2025)",
    "url": "https://arxiv.org/abs/2504.19413",
    "topic": "Papers: agent-memory",
-   "status": "search-snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42276,7 +42276,7 @@
    "cite": "Letta, GitHub repository, 25234 stars, licence Apache-2.0",
    "url": "https://github.com/letta-ai/letta",
    "topic": "Repos: 4 agent memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42284,7 +42284,7 @@
    "cite": "OWASP Top 10 for LLM Apps 2025",
    "url": "https://genai.owasp.org/llm-top-10/",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "blocked"
   },
   {
@@ -42292,7 +42292,7 @@
    "cite": "arXiv 2610.09608: When My Skill Becomes Agent Skill: How Knowledge Workers Share Their Expertise with AI Systems (2026)",
    "url": "https://arxiv.org/abs/2610.09608",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42300,7 +42300,7 @@
    "cite": "arXiv 2608.08883: AquiLLM: An Architecture for Supporting Tacit Knowledge Capture in Research Groups (2026)",
    "url": "https://arxiv.org/abs/2608.08883",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42308,7 +42308,7 @@
    "cite": "Google Workspace domain-wide delegation",
    "url": "https://knowledge.workspace.google.com/admin/apps/control-api-access-with-domain-wide-delegation",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42316,7 +42316,7 @@
    "cite": "Entra tenant-wide admin consent",
    "url": "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42324,7 +42324,7 @@
    "cite": "Glean API authentication",
    "url": "https://developers.glean.com/get-started/authentication",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42332,7 +42332,7 @@
    "cite": "RFC 8693 Token Exchange",
    "url": "https://www.rfc-editor.org/rfc/rfc8693",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42340,7 +42340,7 @@
    "cite": "RFC 8707 Resource Indicators",
    "url": "https://www.rfc-editor.org/rfc/rfc8707",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42348,7 +42348,7 @@
    "cite": "RFC 9700 s2.2.2, 2.3, 4.10",
    "url": "https://www.rfc-editor.org/rfc/rfc9700",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42356,7 +42356,7 @@
    "cite": "MCP Authorization spec (draft)",
    "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42364,7 +42364,7 @@
    "cite": "MCP Security Best Practices (draft)",
    "url": "https://modelcontextprotocol.io/specification/draft/basic/security_best_practices",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42372,7 +42372,7 @@
    "cite": "Auth0 Token Vault",
    "url": "https://auth0.com/docs/secure/call-apis-on-users-behalf/token-vault",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42380,7 +42380,7 @@
    "cite": "Slack token rotation",
    "url": "https://docs.slack.dev/authentication/using-token-rotation",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42388,7 +42388,7 @@
    "cite": "Claude Code docs (read earlier; page URL not retained)",
    "url": "https://code.claude.com/docs/en/hooks",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42396,7 +42396,7 @@
    "cite": "Codex docs (via learn.chatgpt.com, read earlier)",
    "url": "https://learn.chatgpt.com/codex",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42404,7 +42404,7 @@
    "cite": "MCP specification (sampling, roots, elicitation)",
    "url": "https://modelcontextprotocol.io/specification",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42412,7 +42412,7 @@
    "cite": "TotalRecall coverage (Hagenah, Beaumont)",
    "url": "https://www.bankinfosecurity.com/microsoft-recall-again-spills-secrets-a-31083",
    "topic": "security",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42420,7 +42420,7 @@
    "cite": "gitleaks",
    "url": "https://github.com/gitleaks/gitleaks",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42428,7 +42428,7 @@
    "cite": "BetrVG 87(1)6 and AI",
    "url": "https://technologyquotient.freshfields.com/post/102jnt2/eu-ai-act-unpacked-17-the-role-of-employee-representatives",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42436,7 +42436,7 @@
    "cite": "AI Act Art 26",
    "url": "https://artificialintelligenceact.eu/article/26/",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42444,7 +42444,7 @@
    "cite": "Apple notarization",
    "url": "https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution",
    "topic": "security",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42452,7 +42452,7 @@
    "cite": "Desktop extension allowlist",
    "url": "https://support.claude.com/en/articles/12592343-enabling-and-using-the-desktop-extension-allowlist",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42460,7 +42460,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42468,7 +42468,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42476,7 +42476,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42484,7 +42484,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42492,7 +42492,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42500,7 +42500,7 @@
    "cite": "Anthropic Compliance API",
    "url": "https://platform.claude.com/docs/en/manage-claude/compliance-api.md",
    "topic": "capture",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42508,7 +42508,7 @@
    "cite": "OpenAI enterprise privacy",
    "url": "https://openai.com/enterprise-privacy/",
    "topic": "capture",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42516,7 +42516,7 @@
    "cite": "Secondary blogs",
    "url": "https://anarlog.so/blog/chatgpt-data-retention-policy/",
    "topic": "capture",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42524,7 +42524,7 @@
    "cite": "GitHub docs: review Copilot audit logs",
    "url": "https://docs.github.com/en/copilot/how-tos/administer-copilot/manage-for-enterprise/review-audit-logs",
    "topic": "capture",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42532,7 +42532,7 @@
    "cite": "Cursor compliance and monitoring",
    "url": "https://cursor.com/docs/enterprise/compliance-and-monitoring.md",
    "topic": "capture",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42540,7 +42540,7 @@
    "cite": "Google Vault help (read earlier)",
    "url": "https://support.google.com/vault",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42548,7 +42548,7 @@
    "cite": "Microsoft Graph aiInteractionHistory (read earlier)",
    "url": "https://learn.microsoft.com/graph/api/resources/aiinteractionhistory",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42556,7 +42556,7 @@
    "cite": "Cursor Analytics API",
    "url": "https://cursor.com/docs/account/teams/analytics-api",
    "topic": "capture",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42564,7 +42564,7 @@
    "cite": "arXiv 2610.19836: EGCForest: Structured Agent Memory Organization for Enterprise Group Chats (2026)",
    "url": "https://arxiv.org/abs/2610.19836",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42572,7 +42572,7 @@
    "cite": "arXiv 2609.37673: KUPAS MASTER: Distilling the Tacit Expertise of Master Practitioners into Agent-Ready Experience Corpora (2026)",
    "url": "https://arxiv.org/abs/2609.37673",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42580,7 +42580,7 @@
    "cite": "arXiv 2609.11060: Grounding Agent Memory: Environment-Probing Curation for Enterprise Agents (2026)",
    "url": "https://arxiv.org/abs/2609.11060",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42588,7 +42588,7 @@
    "cite": "arXiv 2608.00122: Shared Organizational Memory for Enterprise Coding Agents (2026)",
    "url": "https://arxiv.org/abs/2608.00122",
    "topic": "Papers: company-brain 2026 batch 2 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42596,7 +42596,7 @@
    "cite": "arXiv 2609.04377: Corporate Language Model (CLM): Transforming Tacit and Fragmented Enterprise Knowledge into a Sovereign, Auditable, and Executable Corporate Intelligence Layer (2026)",
    "url": "https://arxiv.org/abs/2609.04377",
    "topic": "Papers: company-brain 2026 (read 2026-10-30)",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42604,7 +42604,7 @@
    "cite": "Entire",
    "url": "https://entire.com/?redirected_from=entire.io",
    "topic": "products2",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42612,7 +42612,7 @@
    "cite": "Debenedetti et al., Defeating Prompt Injections by Design (CaMeL)",
    "url": "https://arxiv.org/abs/2503.18813",
    "topic": "security",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42620,7 +42620,7 @@
    "cite": "Anthropic IP addresses doc",
    "url": "https://platform.claude.com/docs/en/api/ip-addresses",
    "topic": "standalone",
-   "status": "snippet",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42628,7 +42628,7 @@
    "cite": "Hu et al., Memory in the Age of AI Agents (2025)",
    "url": "https://arxiv.org/abs/2512.13564",
    "topic": "Papers: agent-memory",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42636,7 +42636,7 @@
    "cite": "Khoj, GitHub repository, 37793 stars, licence AGPL-3.0",
    "url": "https://github.com/khoj-ai/khoj",
    "topic": "Repos: 1 enterprise search",
-   "status": "fetched",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42644,7 +42644,7 @@
    "cite": "Slack AI",
    "url": "https://slack.com/features/ai",
    "topic": "products2",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42652,7 +42652,7 @@
    "cite": "Atlassian Rovo",
    "url": "https://www.atlassian.com/software/rovo",
    "topic": "products2",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42660,7 +42660,7 @@
    "cite": "Writer",
    "url": "https://writer.com/platform/",
    "topic": "products2",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   },
   {
@@ -42668,7 +42668,7 @@
    "cite": "Dust",
    "url": "https://dust.tt/",
    "topic": "products2",
-   "status": "ok",
+   "status": "legacy-not-exact",
    "verdict": "ok"
   }
  ],
@@ -56909,7 +56909,8 @@
    "refs": 220,
    "layers": 6
   },
-  "refs_researched": 363
+  "refs_researched": 363,
+  "research_note": "Refs below came from research removed on 2026-11-02 because it was not about a company brain. Treat them as legacy. Authoritative sources: docs/brain/research/exact/README.md."
  },
  "stack": {
   "layers": [

@@ -7,7 +7,7 @@ OPA or Cedar, OpenTelemetry). No em dashes, no emoji. Plain short sentences.
 
 ## Inputs
 - `skeleton.json` (ids, labels, kinds, PINs), `stages/<stage>/<group>.json` (the existing spec card: read `deep.algorithm`,
-  `inn`, `out`, `store`), `research/INDEX.md`, `research/repos.md`, `research/techniques.md`, `research/products.md`.
+  `inn`, `out`, `store`), `research/exact/README.md` and the cards it lists.
 - Read `EXAMPLE-build.json` for the exact shape.
 
 ## Output
@@ -30,7 +30,7 @@ Build block keys (all required):
 - `pitfalls`: list, at least 2. Concrete traps with the symptom.
 
 ## Truth rules
-- Only vendor facts present in `research/*`. Do not invent API fields or version numbers; if unsure write "check current docs" in `why`.
+- Only vendor facts present in `research/exact/*` or fetched from official vendor docs. Do not invent API fields or version numbers; if unsure write "check current docs" in `why`.
 - Use the card's PIN as the core of `code`.
 - Keep each string under 1500 chars except `code`.
 

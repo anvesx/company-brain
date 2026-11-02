@@ -26,11 +26,10 @@ The brain is its own product and is not part of any OS. Never write "Devx OS", "
    performance, edge cases). Follow it exactly EXCEPT: the "Extensibility" section there refers to a different
    project's stage ids, ignore it; instead say in `deep.edge_cases` or `deep.purpose` how a new app joins through the
    connector manifest (`so_sdk`) or the MCP bridge (`so_mcp`), where relevant.
-4. `research/INDEX.md`: every citable source with key and what it says. Cite only those keys.
+4. `research/exact/README.md`: the only citable sources (company-brain specific). Cite only the cards there.
 5. Requirements: set `req` to `Requirement: '<quote of at most 15 words>'` only if a source in research/ says it; set `prop` to
    `Proposal: <why this exists>`. Every card needs at least one of the two, plus at least one ref key in `deep.refs`.
-   Also read `research/clients.md` and `research/clients.json` for AI-client cards.
-6. Full research prose if you need more than the index: `research/papers.md`, `repos.md`, `products.md`, `techniques.md`.
+6. Full source text: the cards in `research/exact/`.
 
 ## Output
 For each group you own, write `stages/<stage>/<group>.json` (create dirs) with:
@@ -52,7 +51,7 @@ For each group you own, write `stages/<stage>/<group>.json` (create dirs) with:
 ## Truth rules
 - Numbers need a source key, or the word "default" / "tune" with how it is chosen, or `(design)`.
 - Do not invent URLs, API fields, benchmark numbers or quotes. Quote at most 15 words from any source.
-- Vendor facts (webhook expiries, delta APIs, rate limits) come only from `research/INDEX.md` rows. Where
+- Vendor facts (webhook expiries, delta APIs, rate limits) come only from official vendor docs fetched at build time (the old research index was removed). Where
   research found no delta API (Notion, Jira, GitHub, HubSpot, Linear, Figma), say the sweep or poll covers it.
 - Honest limits: no paper tests a pointer-index with live fetch against a full-copy index; say "our inference".
 - Plain words, short sentences, define a term on first use per card. Security and performance sections must be
