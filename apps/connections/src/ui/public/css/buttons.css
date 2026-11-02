@@ -1,0 +1,46 @@
+button {
+  font: inherit;
+  font-weight: 500;
+  padding: 8px 16px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--ink);
+  color: #fff;
+  cursor: pointer;
+}
+button:hover {
+  background: #fff;
+  color: var(--ink);
+}
+button.quiet {
+  background: #fff;
+  color: var(--ink);
+}
+button.quiet:hover {
+  background: var(--ink);
+  color: #fff;
+}
+button.danger {
+  background: #fff;
+  color: var(--warn);
+  border-color: var(--warn);
+}
+button.danger:hover {
+  background: var(--warn);
+  color: #fff;
+}
+button.link {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  text-decoration: underline;
+}
+button.link:hover {
+  background: none;
+  color: var(--ink);
+}
+#confirm {
+  display: block;
+  margin-top: 8px;
+}

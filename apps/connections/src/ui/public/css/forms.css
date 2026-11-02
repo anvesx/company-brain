@@ -1,0 +1,40 @@
+form {
+  max-width: 520px;
+}
+.field {
+  margin: 0 0 18px;
+}
+.field > label {
+  display: block;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+input,
+select {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: #fff;
+}
+input:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+.hint.bad {
+  color: var(--warn);
+}
+.rule-box {
+  border-left: 2px solid var(--accent);
+  background: var(--paper-2);
+  padding: 10px 14px;
+  margin: 0 0 18px;
+  font-size: 13px;
+}
