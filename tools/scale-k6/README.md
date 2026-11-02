@@ -34,18 +34,18 @@ The profile is deliberately modest: the machine was also running other work (loa
 
 Hardware: Apple M1, 8 logical cores, 16 GiB, macOS (Darwin 27.0.0, arm64), Node v26.0.0, k6 v2.3.0. k6, the server under test and everything else shared that one machine over loopback, so the numbers carry no network time.
 
-## Results of the reference run
+## Results of the reference runs
 
-One run of `pnpm --filter @anvesx/scale-k6 scale`, 2026-11-02, exit 0. The load average before the run was 3.65.
+Ten consecutive runs of `pnpm --filter @anvesx/scale-k6 scale` on 2026-11-02, all exit 0. The 1-minute load average before each run ranged from 2.79 to 5.96.
 
-| Script  | p95      | avg      | max      | Failed    | Checks passed  | Dropped |
-| ------- | -------- | -------- | -------- | --------- | -------------- | ------- |
-| rank    | 70.53 ms | 21.39 ms | 99.82 ms | 0 of 301  | 602 of 602     | 0       |
-| catalog | 0.319 ms | 0.197 ms | 2.99 ms  | 0 of 9001 | 18002 of 18002 | 0       |
+| Script  | p95 (min to max)     | Requests per run | Failed | Checks failed | Dropped |
+| ------- | -------------------- | ---------------- | ------ | ------------- | ------- |
+| rank    | 67.07 ms to 78.87 ms | 300 to 301       | 0      | 0             | 0       |
+| catalog | 0.315 ms to 0.378 ms | 9000 to 9001     | 0      | 0             | 0       |
 
-The earlier rank run gave p95 69.85 ms and p50 16.13 ms, so run to run spread is under 1 ms at p95. The rank limit (100 ms) is about 1.4 times the measured p95; the catalog limit (10 ms) is about 30 times, because that endpoint is an in-memory list and any limit tighter than a few milliseconds would only measure scheduler noise on a busy laptop. The rank spread (median 14 ms, p95 70 ms) comes from the query mix: queries on common words match many postings.
+An earlier verifier run, with the catalog scenario capped at 40 virtual users, dropped 1 and 29 iterations in two of three runs even though latency was fine: k6 stalled on a busy machine and had no spare users to catch up. The catalog scenario now pre-allocates 100 users and may grow to 400; the `dropped_iterations` limit is unchanged. The rank limit (100 ms) is about 1.3 times the worst measured p95; the catalog limit (10 ms) is about 26 times, because that endpoint is an in-memory list and a tighter limit would only measure scheduler noise on a busy laptop. The rank spread (median about 15 ms, p95 about 70 ms) comes from the query mix: queries on common words match many postings.
 
-Rank saturates near 37 queries per second (see `features/rank/scripts/bench`). At `RATE=80 DURATION=10s` the thresholds fail as intended: `dropped_iterations` 287 and p95 1.36 s.
+Rank saturates near 37 queries per second (see `features/rank/scripts/bench`). At `RATE=80 DURATION=10s` the rank thresholds fail as intended: `dropped_iterations` 287 and p95 1.36 s.
 
 ## Layout
 
