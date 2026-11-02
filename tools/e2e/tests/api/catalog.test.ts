@@ -42,7 +42,9 @@ const rawStatus = (path: string) =>
   });
 
 test("a path that climbs out of /ui is refused, however the dots are written", async () => {
-  for (const path of ["/ui/../../package.json", "/ui/%2e%2e/%2e%2e/package.json", "/ui/%2e%2e%2f%2e%2e%2fpackage.json", "/ui/..%2f..%2fpackage.json"]) {
+  const ups = ["..", "%2e%2e", "%2e%2e%2f..", "..%2f.."];
+  const paths = ups.flatMap((u) => [2, 3, 4].map((n) => `/ui/${Array(n).fill(u).join("/")}/package.json`));
+  for (const path of paths) {
     const { status, body } = await rawStatus(path);
     expect(status, path).not.toBe(200);
     expect(body, path).not.toContain("@anvesx");
