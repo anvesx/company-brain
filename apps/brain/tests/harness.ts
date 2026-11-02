@@ -49,7 +49,7 @@ export async function start(over: Partial<BrainDeps> = {}) {
     port: 0,
     ...over,
   });
-  return { app, auditDbPath };
+  return { app, auditDbPath: over.auditDbPath ?? auditDbPath };
 }
 
 export async function connect(port: number | undefined, token?: string): Promise<Client> {
