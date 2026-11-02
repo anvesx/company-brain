@@ -1,0 +1,7 @@
+# Test constants (not secrets) in the history of the rank feature, which moved to anvesx/rag.
+0422b6b1fa9c5d6c499e002476aba9eb7e3b2e3d:features/rank/tests/eval/run.ts:generic-api-key:7
+6f8ace237169e589e8e4b2379bfc7a4b4c1bc605:features/rank/tests/eval/run.ts:generic-api-key:7
+6f8ace237169e589e8e4b2379bfc7a4b4c1bc605:features/rank/scripts/bench/run.mjs:generic-api-key:18
+6f8ace237169e589e8e4b2379bfc7a4b4c1bc605:features/rank/tests/support/docs.ts:generic-api-key:18
+0422b6b1fa9c5d6c499e002476aba9eb7e3b2e3d:features/rank/scripts/bench/run.mjs:generic-api-key:18
+0422b6b1fa9c5d6c499e002476aba9eb7e3b2e3d:features/rank/tests/support/docs.ts:generic-api-key:18
