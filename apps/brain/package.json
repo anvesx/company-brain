@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@anvesx/connector-kit": "workspace:*",
-    "@anvesx/connectors": "link:../../../connectors/packages/connectors",
+    "@anvesx/connectors": "link:../../../connectors/services/connectors",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*"
   },

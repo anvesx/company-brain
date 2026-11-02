@@ -13,7 +13,7 @@ const ghRoutes = {
   [R]: ok("github/repo"),
   [`${R}/git/trees/main`]: ok("github/tree"),
   [`${R}/git/trees/9fb037999f264ba9281fc6cbd2d9dff8d1c1d5b1`]: ok("github/tree"),
-  [`${R}/collaborators`]: ok("github/collaborators"),
+  [`${R}/collaborators`]: ok("github-members/collaborators"),
   [`${R}/teams`]: { status: 404, body: {} },
 };
 const dirs: string[] = [];

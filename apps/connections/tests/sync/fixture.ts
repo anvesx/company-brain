@@ -12,8 +12,8 @@ export const routes = {
   [R]: ok("github/repo"),
   [`${R}/git/trees/main`]: ok("github/tree"),
   [`${R}/git/trees/${TREE}`]: ok("github/tree"),
-  [`${R}/collaborators`]: ok("github/collaborators"),
-  [`${R}/teams`]: ok("github/teams"),
+  [`${R}/collaborators`]: ok("github-members/collaborators"),
+  [`${R}/teams`]: ok("github-members/teams"),
   "/orgs/acme/teams/justice-league/members": ok("github-members/justice-league"),
   "/orgs/acme/teams/docs/members": ok("github-members/docs"),
 };
