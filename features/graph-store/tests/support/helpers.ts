@@ -55,3 +55,13 @@ export function code(fn: () => unknown): string | undefined {
   }
   return undefined;
 }
+
+/** The message of the error `fn` throws, so tests can check it names the offending field. */
+export function message(fn: () => unknown): string | undefined {
+  try {
+    fn();
+  } catch (e) {
+    return (e as Error).message;
+  }
+  return undefined;
+}

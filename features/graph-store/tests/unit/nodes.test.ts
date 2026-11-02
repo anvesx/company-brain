@@ -34,4 +34,39 @@ describe("nodes", () => {
     s.upsertNode(node("a", { props: { y: "2", x: "1" } }), 5);
     expect(s.history("t1", "a")).toHaveLength(1);
   });
+
+  it("every node kind is accepted", () => {
+    const s = openStore();
+    for (const kind of ["person", "team", "document", "repo", "channel", "ticket", "project"] as const) {
+      s.upsertNode(node(kind, { kind }), 1);
+      expect(s.node("t1", kind)?.kind).toBe(kind);
+    }
+  });
+
+  it("a change to any single field supersedes the row", () => {
+    const base = node("a", { props: { k: "v" } });
+    const one: Partial<typeof base>[] = [{ title: "T" }, { version: "2" }, { source: "box" }, { address: "x" }, { kind: "repo" }, { props: { k: "w" } }];
+    for (const c of one) {
+      const s = openStore();
+      s.upsertNode(base, 1);
+      s.upsertNode({ ...base, ...c }, 2);
+      expect(s.history("t1", "a")).toHaveLength(2);
+    }
+  });
+
+  it("returns props keys in sorted order", () => {
+    const s = openStore();
+    s.upsertNode(node("a", { props: { m: "1", z: "2", b: "3" } }), 1);
+    expect(Object.keys(s.node("t1", "a")?.props ?? {})).toEqual(["b", "m", "z"]);
+  });
+
+  it("an update at the current row's own validFrom is allowed; an earlier one rolls back cleanly", () => {
+    const s = openStore();
+    s.upsertNode(node("a", { title: "one" }), 10);
+    s.upsertNode(node("a", { title: "two" }), 10);
+    expect(s.node("t1", "a")?.title).toBe("two");
+    expect(() => s.upsertNode(node("a", { title: "past" }), 5)).toThrow(/before/);
+    s.upsertNode(node("a", { title: "three" }), 20);
+    expect(s.node("t1", "a")?.title).toBe("three");
+  });
 });
