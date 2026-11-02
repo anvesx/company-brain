@@ -1,7 +1,7 @@
 {
   "testRunner": "vitest",
   "concurrency": 1,
-  "vitest": { "configFile": "../../vitest.config.ts" },
+  "vitest": { "configFile": "../../../../vitest.config.ts" },
   "mutate": ["src/**/*.ts", "!src/index.ts"],
   "thresholds": {
     "high": 90,
