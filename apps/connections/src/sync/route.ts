@@ -5,6 +5,7 @@ import { providerFor } from "../oauth/providers.js";
 import { refreshAccount } from "../oauth/state/refresh.js";
 import { accessTokenOf } from "../tokens/access-token.js";
 import { rewriteTokens } from "../tokens/rewrite.js";
+import { closeStaleEdges } from "./data/stale.js";
 import { runAccountSync } from "./run.js";
 
 /** Adds `POST /:id/sync` to the accounts router. Owner only; an oauth account is refreshed first. */
@@ -33,6 +34,8 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
       return c.json(r);
     } catch (e) {
       return c.json({ error: "source sync failed", code: (e as { code?: string }).code ?? "UNKNOWN" }, 502);
+    } finally {
+      closeStaleEdges(d, cur); // a PATCH or DELETE that landed mid-sync must not be undone by the sync's writes
     }
   });
 }

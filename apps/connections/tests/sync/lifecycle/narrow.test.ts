@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { root } from "../../http/fixture.js";
+import { boot, root } from "../../http/fixture.js";
 import { bootSync } from "../fixture.js";
 
 let h: Awaited<ReturnType<typeof bootSync>> | undefined;
-afterEach(async () => h?.close());
+afterEach(async () => {
+  await h?.close();
+  h = undefined;
+});
 const cur = () => h as NonNullable<typeof h>;
 const pat = { provider: "github", label: "work", kind: "pat", token: "ghp_secret", access: "private" };
 const make = async (dataZone: string) => ((await (await cur().s.call("POST", "/v1/accounts", root, { ...pat, dataZone })).json()) as { id: string }).id;
@@ -40,5 +43,16 @@ describe("PATCH /v1/accounts/:id narrowing dataZone", () => {
     const id = await synced("company");
     expect((await patch(id, { dataZone: "bogus" })).status).toBe(400);
     expect(edges(id)).toBeGreaterThan(0);
+  });
+  it("answers 200 and does not throw when no graph is configured", async () => {
+    const s = await boot();
+    try {
+      const { id } = (await (await s.call("POST", "/v1/accounts", root, { ...pat, dataZone: "company" })).json()) as { id: string };
+      const r = await s.call("PATCH", `/v1/accounts/${id}`, root, { dataZone: "private" });
+      expect(r.status).toBe(200);
+      expect(((await r.json()) as { dataZone: string }).dataZone).toBe("private");
+    } finally {
+      await s.close();
+    }
   });
 });

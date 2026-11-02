@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fixture, startReplay } from "@anvesx/connectors/testing/replay";
 import { createGraphStore } from "@anvesx/graph-store";
 import { boot } from "../http/fixture.js";
+import { startGate } from "./gate.js";
 
 const TREE = "9fb037999f264ba9281fc6cbd2d9dff8d1c1d5b1";
 const R = "/repos/acme/handbook";
@@ -31,20 +32,23 @@ export const withOther = {
 };
 
 /** The real app over a real graph file; the GitHub SDK talks to a local HTTP server that answers with recorded JSON. */
-export async function bootSync(extra: Parameters<typeof boot>[0] = {}, replayRoutes: Parameters<typeof startReplay>[0] = routes) {
+export async function bootSync(extra: Parameters<typeof boot>[0] = {}, replayRoutes: Parameters<typeof startReplay>[0] = routes, gated = false) {
   const gh = await startReplay(replayRoutes);
+  const gate = await startGate(gh.url);
   const dir = mkdtempSync(join(tmpdir(), "conn-graph-"));
   const graphPath = join(dir, "graph.db");
   const graph = createGraphStore({ path: graphPath });
-  const s = await boot({ sync: { graph, githubApiUrl: gh.url }, ...extra });
+  const s = await boot({ sync: { graph, githubApiUrl: gated ? gate.url : gh.url }, ...extra });
   return {
     s,
     gh,
+    gate,
     graph,
     graphPath,
     close: async () => {
       await s.close();
       graph.close();
+      await gate.close();
       await gh.close();
       rmSync(dir, { recursive: true, force: true });
     },
