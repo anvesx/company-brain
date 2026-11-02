@@ -6,18 +6,30 @@ import { escapes } from "./folder-path.js";
 
 const denyAll = (): Acl => ({ allowUsers: [], allowGroups: [], version: 0 });
 
+/** Reads `<file>.acl.json`. A missing sidecar denies all; an unparsable or invalid one throws BAD_ACL. */
 export const readAcl = async (root: string, documentPath: string): Promise<Acl> => {
   const sidecar = `${documentPath}.acl.json`;
+  let text: string;
   try {
     const resolved = await realpath(sidecar);
     if (escapes(root, resolved)) {
       throw new ConnectorError("PATH_ESCAPE", `ACL sidecar leaves root: ${sidecar}`);
     }
-    return AclSchema.parse(JSON.parse(await readFile(resolved, "utf8")));
+    text = await readFile(resolved, "utf8");
   } catch (error: unknown) {
     if ((error as { code?: string }).code === "ENOENT") return denyAll();
     throw error;
   }
+  const bad = new ConnectorError("BAD_ACL", `Invalid ACL sidecar: ${sidecar}`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw bad;
+  }
+  const parsed = AclSchema.safeParse(raw);
+  if (!parsed.success) throw bad;
+  return parsed.data;
 };
 
 /** Document version `<mtimeMs>:<size>:<content digest>:<acl fingerprint>`: a same-size edit with a restored mtime still changes it. */

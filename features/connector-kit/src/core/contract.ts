@@ -10,7 +10,10 @@ export type ListedDoc = {
 };
 
 export type FakeDoc = ListedDoc & { text: string };
-export type ConnectorErrorCode = "NOT_FOUND" | "DUPLICATE" | "PATH_ESCAPE" | "BAD_CURSOR" | "FORBIDDEN";
+export type ConnectorErrorCode = "NOT_FOUND" | "DUPLICATE" | "PATH_ESCAPE" | "BAD_CURSOR" | "FORBIDDEN" | "BAD_ACL";
+
+/** A folder entry `list` could not describe: `BAD_ACL` (unreadable or invalid sidecar) or `VANISHED` (gone mid-scan). */
+export type Skipped = { address: string; code: "BAD_ACL" | "VANISHED"; message: string };
 
 export type Membership = { group: string; user: string };
 
@@ -21,6 +24,8 @@ export interface Connector {
   list(query: { cursor?: string; limit: number }): Promise<{
     items: ListedDoc[];
     nextCursor?: string;
+    /** Entries left out of this walk. Present only on the page that scanned (the call without a cursor), and only when non-empty. */
+    skipped?: Skipped[];
   }>;
   /** Optional metadata-only check that the token's owner can still read `address` at the source. False when the source hides it; throws when it cannot tell. */
   canRead?(address: string, context: { token: string }): Promise<boolean>;

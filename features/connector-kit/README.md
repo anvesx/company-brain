@@ -15,8 +15,8 @@ registry, SHA-256 hashing, a local-folder adapter, and an in-memory fake under t
 - `contentHash(text)` returns a lowercase SHA-256 hex digest.
 
 `ListedDoc` contains address, title, version, ACL, trust zone, and ISO update time. `FakeDoc` adds
-the text returned by `fetch`. `ConnectorError.code` is `NOT_FOUND`, `DUPLICATE`, `PATH_ESCAPE`, `FORBIDDEN` (401/403 at the source), or
-`BAD_CURSOR`.
+the text returned by `fetch`. `ConnectorError.code` is `NOT_FOUND`, `DUPLICATE`, `PATH_ESCAPE`, `FORBIDDEN` (401/403 at the source),
+`BAD_CURSOR`, or `BAD_ACL`.
 
 ## Usage
 
@@ -51,7 +51,7 @@ walks stay open per connector, the oldest is evicted, and a walk is dropped afte
 this instance did not issue, or whose walk finished or was evicted, throws `BAD_CURSOR`; restart without a
 cursor to see concurrent filesystem changes.
 The adapter follows internal symlinks once and suppresses directory cycles. Files must be UTF-8;
-malformed ACL JSON or ACL schema failures are surfaced unchanged. OAuth, networks, and webhooks are
+a malformed ACL sidecar or an entry that vanishes mid-scan does not abort `list`: the entry is left out and reported in `skipped` (`{ address, code: "BAD_ACL" | "VANISHED", message }`) on the page of the call without a cursor, only when non-empty. `fetch` of a document with a malformed sidecar throws `BAD_ACL`, and `fetch` never serves `*.acl.json` files (`NOT_FOUND`). A sidecar symlink leaving the root still aborts with `PATH_ESCAPE`. OAuth, networks, and webhooks are
 outside this package. The `token` argument exists for production adapters; the fake and folder
 adapters do not authenticate it.
 

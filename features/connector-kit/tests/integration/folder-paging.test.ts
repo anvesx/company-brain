@@ -33,11 +33,13 @@ describe("folder connector paging", () => {
     expect(new Date(item?.updatedAt ?? "").toISOString()).toBe(item?.updatedAt);
   });
 
-  it("rejects a malformed ACL sidecar instead of silently allowing", async () => {
+  it("never lists a document with a malformed ACL sidecar; reports it as skipped", async () => {
     const root = await temp();
     await writeFile(join(root, "a.md"), "abc");
     await writeFile(join(root, "a.md.acl.json"), "{not json");
-    await expect(createFolderConnector("f", root).list({ limit: 1 })).rejects.toThrow();
+    const page = await createFolderConnector("f", root).list({ limit: 1 });
+    expect(page.items).toEqual([]);
+    expect(page.skipped?.map((s) => s.code)).toEqual(["BAD_ACL"]);
   });
 
   it("keeps a walk on one snapshot but a fresh list sees new files", async () => {
