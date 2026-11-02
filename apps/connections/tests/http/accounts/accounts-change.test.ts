@@ -33,6 +33,22 @@ describe("PATCH and DELETE /v1/accounts/:id", () => {
     expect((await s.call("PATCH", `/v1/accounts/${shared}`, bob, { label: "x" })).status).toBe(403);
     expect((await s.call("DELETE", `/v1/accounts/${shared}`, bob)).status).toBe(403);
   });
+  it("fails closed: widening an account whose manifest is gone answers 403 even for an admin", async () => {
+    const orphan = s.store.create({
+      provider: "gone-custom",
+      label: "x",
+      kind: "pat",
+      access: "private",
+      dataZone: "private",
+      tenant: "t1",
+      owner: "root",
+      secret: "tok",
+    });
+    const r = await s.call("PATCH", `/v1/accounts/${orphan.id}`, root, { access: "company" });
+    expect(r.status).toBe(403);
+    expect(s.store.get(orphan.id)?.access).toBe("private");
+    expect((await s.call("PATCH", `/v1/accounts/${orphan.id}`, root, { label: "renamed" })).status).toBe(200);
+  });
   it("deletes the account and its credential for the owner", async () => {
     const id = await make(ann);
     expect((await s.call("DELETE", `/v1/accounts/${id}`, ann)).status).toBe(204);

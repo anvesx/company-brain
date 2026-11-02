@@ -23,7 +23,7 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     if ("error" in p) return c.json({ error: p.error }, 400);
     const { token, ...a } = p.value;
     const manifest = d.catalog.get(a.provider, caller.tenant);
-    const liveRecheck = manifest ? hasLiveRecheck(manifest) : true;
+    const liveRecheck = manifest ? hasLiveRecheck(manifest) : false; // no manifest: fail closed
     const zones = checkZones({ credential: a.kind, access: a.access, dataZone: a.dataZone, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     const made = d.store.create({ ...a, tenant: caller.tenant, owner: caller.user, secret: token });
@@ -40,7 +40,7 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const manifest = d.catalog.get(cur.provider, cur.tenant);
     if (p.value.repo && !manifest?.needsRepo) return c.json({ error: "only a github account has a repo" }, 400);
     const next = { access: p.value.access ?? cur.access, dataZone: p.value.dataZone ?? cur.dataZone };
-    const liveRecheck = manifest ? hasLiveRecheck(manifest) : true;
+    const liveRecheck = manifest ? hasLiveRecheck(manifest) : false; // no manifest: fail closed
     const zones = checkZones({ credential: cur.kind, ...next, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     const changed = d.store.update(cur.id, p.value);
