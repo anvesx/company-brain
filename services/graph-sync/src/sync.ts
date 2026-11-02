@@ -3,14 +3,15 @@ import { claim } from "./lease.js";
 import { syncMemberships } from "./membership/sync.js";
 import { type SyncDeps, SyncError, type SyncReport } from "./types.js";
 import { syncAccess } from "./write/access.js";
-import { type Ctx, nodeId, rootNode, syncDocument, writeNode } from "./write/document.js";
+import { type Ctx, nodeId, syncDocument } from "./write/document.js";
+import { writeRoot } from "./write/root.js";
 import { guarded, revoke } from "./write/skip.js";
 
 type Opts = { pageSize?: number; signal?: AbortSignal };
 
 async function run(c: Ctx, size: number, signal?: AbortSignal): Promise<void> {
   const { store, connector, tenant, now } = c.deps;
-  writeNode(c, rootNode(c));
+  writeRoot(c);
   const seen = new Map<string, string>();
   let cursor: string | undefined;
   for (;;) {
