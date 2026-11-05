@@ -8,7 +8,9 @@ Every expected number is hand-computed in a comment next to the assertion.
 - `property/` fast-check invariants, 200 runs each.
 - `research/` the seeded replication study against Dong 2009 Table 3.
 - `integration/` the public API through `src/index.ts` only.
-- `scale/` rule 14 timing with printed counts.
+- `scale/` rule 14 timing with printed counts. The mutation run (`vitest.stryker.config.ts` at the
+  repo root) leaves this folder out: instrumented code runs about 20% slower, which fails the 2 s CPU
+  bound for reasons unrelated to the code.
 
 ## Equivalent mutants
 
