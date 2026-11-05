@@ -22,7 +22,7 @@ progress against the full vision. It measures how much of the committed backlog 
 | Repo | Packages | Counted | Evidence |
 | --- | --- | --- | --- |
 | company-brain | 11 (8 features, 1 service, 2 apps) | 11 | ci success on main, run 42111951617 |
-| connectors | 1 (services/connectors) | 1 | ci success, release published @anvesx/connectors@0.1.0, run 41418112440 |
+| connectors | 1 (services/connectors) | 1 | ci success on main 113dd50, run 42120305596; release run 42120305695 published @anvesx/connectors@0.1.0 |
 | rag | 17 (7 features, 3 modules, 6 services, 1 app) | 14 | ci success on the merged ci/registry-consume branch, run 41432406130 |
 
 rag is counted from the branch run because the latest main run (41436491134) was still in progress
