@@ -47,4 +47,29 @@ describe("answer/groups", () => {
     const r = resolveClaims({ sources, claims: more }, { now: 10 });
     expect(r.items.map((i) => i.item)).toEqual(["a-item", "x"]);
   });
+
+  it("rule 6: a score gap exactly equal to epsilon is not a tie, the higher score wins", () => {
+    // signed s1 (0.95) says "a" at 1000, chat s2 (0.5) says "b" at 2000, one claim each so both keep
+    // their priors. n = 1: C(a) = log2(0.95 / 0.05) = log2(19) = 4.2479, C(b) = log2(0.5 / 0.5) = 0.
+    // The gap is log2(19). The newest claim ("b") belongs to the LOWER score, so the two branches differ.
+    const input = {
+      sources: [
+        { id: "s1", class: "signed" as const },
+        { id: "s2", class: "chat" as const },
+      ],
+      claims: [
+        { id: "c1", source: "s1", item: "x", value: "a", at: 1000 },
+        { id: "c2", source: "s2", item: "x", value: "b", at: 2000 },
+      ],
+    };
+    const gap = Math.log2(19);
+    const [top, next] = resolveClaims(input, { now: 3000 }).items[0]!.groups;
+    expect(top!.score - next!.score).toBeCloseTo(gap, 12);
+    // epsilon = the exact gap: gap >= epsilon, so the score decides. `>` would fall to the newest claim.
+    const exact = resolveClaims(input, { now: 3000, epsilon: top!.score - next!.score }).items[0]!;
+    expect([exact.value, exact.tie]).toEqual(["a", false]);
+    // Control: an epsilon just above the gap puts both inside the window, so the newest claim wins.
+    const wider = resolveClaims(input, { now: 3000, epsilon: gap + 1e-9 }).items[0]!;
+    expect([wider.value, wider.tie]).toEqual(["b", false]);
+  });
 });

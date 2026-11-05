@@ -29,6 +29,9 @@ const rows: Row[] = [
   ["prior above clamp", prior(0.995), "options.priors.chat"],
   ["prior negative", prior(-0.2), "options.priors.chat"],
   ["prior NaN", prior(Number.NaN), "options.priors.chat"],
+  // "0.5" >= 0.01 is true in JS (the string is coerced), so only the typeof check rejects it.
+  ["prior a numeric string", prior("0.5"), "options.priors.chat"],
+  ["options not an object", (call) => Reflect.set(call, "options", 5), "options"],
   ["priors not an object", option("priors", 5), "options.priors"],
   ["minClaims 0", option("minClaims", 0), "options.minClaims"],
   ["minClaims fractional", option("minClaims", 1.5), "options.minClaims"],

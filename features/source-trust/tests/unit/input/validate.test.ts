@@ -9,6 +9,10 @@ const notObject = (list: string) => (call: Parameters<Row[1]>[0]) => {
 const rows: Row[] = [
   ["source not an object", notObject("sources"), "sources[0]"],
   ["claim not an object", notObject("claims"), "claims[0]"],
+  ["input not an object", (call) => Reflect.set(call, "input", 5), "input"],
+  ["sources missing", (call) => Reflect.deleteProperty(call.input, "sources"), "sources"],
+  ["claims missing", (call) => Reflect.deleteProperty(call.input, "claims"), "claims"],
+  ['source class an array (hasOwn coerces it to "chat")', put("sources", 0, "class", ["chat"]), "sources[0].class"],
   ["sources not an array", (call) => Reflect.set(call.input, "sources", "x"), "sources"],
   ["claims not an array", (call) => Reflect.set(call.input, "claims", {}), "claims"],
   ["source id empty", put("sources", 0, "id", ""), "sources[0].id"],

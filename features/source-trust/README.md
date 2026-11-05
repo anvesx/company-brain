@@ -1,8 +1,7 @@
 # @anvesx/source-trust
 
-Status: built. 173 tests pass. Stryker score 98.61 (7 survived, 1 uncovered; six equivalent, see
-`tests/README.md`) is stale: it predates edits to validate, label, weight, newest, rounds, vote,
-accuracy and copy/factors; re-run when machine load allows.
+Status: built. 184 tests pass. Stryker score 98.21 (651 killed, 7 timeout, 10 survived, 2 not covered),
+from a run of the current code, not stale. All 12 survivors are equivalent mutants, see `tests/README.md`.
 
 Two sources often give different values for one fact: who owns a service, what a limit is, when
 a policy starts. This package picks the value to believe, says how sure it is, and keeps a trust
