@@ -1,0 +1,42 @@
+{
+  "claude-code": {
+    "client": "claude-code",
+    "format": "json",
+    "path": ".mcp.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"type\": \"http\",\n      \"url\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
+    "command": "claude mcp add --transport http 'company-brain' 'https://brain.example.com/mcp'",
+    "notes": []
+  },
+  "claude-desktop": {
+    "client": "claude-desktop",
+    "format": "json",
+    "path": "~/Library/Application Support/Claude/claude_desktop_config.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"https://brain.example.com/mcp\"\n      ]\n    }\n  }\n}\n",
+    "command": null,
+    "notes": ["command: check current docs", "args: check current docs"]
+  },
+  "codex": {
+    "client": "codex",
+    "format": "toml",
+    "path": "~/.codex/config.toml",
+    "body": "[mcp_servers.company-brain]\nurl = \"https://brain.example.com/mcp\"\n",
+    "command": null,
+    "notes": ["url: check current docs"]
+  },
+  "cursor": {
+    "client": "cursor",
+    "format": "json",
+    "path": "~/.cursor/mcp.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"url\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
+    "command": null,
+    "notes": ["url: check current docs"]
+  },
+  "gemini-cli": {
+    "client": "gemini-cli",
+    "format": "json",
+    "path": "~/.gemini/settings.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"httpUrl\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
+    "command": null,
+    "notes": ["httpUrl: check current docs"]
+  }
+}
