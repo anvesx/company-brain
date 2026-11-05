@@ -51,10 +51,13 @@ class TrustError extends Error { code: "BAD_INPUT" }
 1. Class priors, our proposal, overridable: signed 0.95, record 0.90, wiki 0.75, ticket 0.65,
    news 0.55, chat 0.50, draft 0.40, opinion 0.35. Opinion and news are separate classes on purpose
    (Budak 2016 Fig 1b; Wikipedia WP:RS).
-2. Vote weight of source S on an item with n competing values: A'(S) = log(n A(S) / (1 - A(S)))
+2. Vote weight of source S on an item with n competing values: A'(S) = log2(n A(S) / (1 - A(S)))
    with n = max(1, distinct values on that item - 1) and A clamped to [0.01, 0.99]
-   (data-fusion-dong-2015 Sec 2.3 Eq 3). A source below 1/(1+n) votes against its own value;
-   that is the paper's behaviour and stays.
+   (data-fusion-dong-2015 Sec 2.3, Eq 3 and 4). Base 2 is the only base under which
+   2^C(v) equals the product form of Eq 4 exactly. The paper's Example 2 prints 4.7, 2, 1.5 for
+   accuracies 0.97, 0.6, 0.4 at n = 5; no log base reproduces all three, so tests assert the
+   Eq 4 product form, not those printed numbers. A source below 1/(1+n) votes against its own
+   value; that is the paper's behaviour and stays.
 3. Score of value v: C(v) = sum of A'(S) over sources giving v, each term multiplied by its copy
    factor and its decay factor. Confidence P(v) = 2^C(v) / sum over v' of 2^C(v') (Eq 4), computed
    with max subtraction so no overflow.
@@ -99,8 +102,9 @@ class TrustError extends Error { code: "BAD_INPUT" }
 15. Empty claims give `items: []`, every source at its prior, `rounds: 0`, `converged: true`.
 
 ## Acceptance tests (written first, before any src file)
-- unit, hand-computed, one test each: the worked example from data-fusion-dong-2015 Example 2
-  (accuracies 0.97, 0.6, 0.4 with n = 5 give weights 4.7, 2.0, 1.5 to one decimal). A two-source
+- unit, hand-computed, one test each: the Eq 4 check on data-fusion-dong-2015 Example 2 inputs
+  (accuracies 0.97, 0.6, 0.4 with n = 5 give log2 weights 7.34, 2.91, 1.74, and the confidence
+  of a value equals the log2 of the product of nA/(1-A) over its sources). A two-source
   conflict where the signed source beats the chat source. A copier that cannot flip a vote. Decay
   that cannot flip a vote. A tie broken by the newest claim. A correction that lowers the wrong
   source's accuracy.
