@@ -31,7 +31,7 @@ interface CopyEdge { copier: string; original: string; share: number }
 interface Correction { item: string; value: string; at: number }
 interface TrustOptions {
   now: number;                                   // injected clock, ms since epoch
-  priors?: Partial<Record<SourceClass, number>>; // override the class priors, each in (0, 1)
+  priors?: Partial<Record<SourceClass, number>>; // override the class priors, each in [0.01, 0.99]
   minClaims?: number;                            // below this a source keeps its prior; default 5
   maxRounds?: number;                            // default 20
   epsilon?: number;                              // convergence and tie threshold; default 1e-6
@@ -62,8 +62,12 @@ class TrustError extends Error { code: "BAD_INPUT" }
    factor and its decay factor. Confidence P(v) = 2^C(v) / sum over v' of 2^C(v') (Eq 4), computed
    with max subtraction so no overflow.
 4. Copy factor: a claim whose source is a copier of an original that gives the same value for
-   the same item counts (1 - share) of its weight (Dong 2009 Eq 13 with the copy probability known).
-   A chain A copies B copies C discounts A against both. Copies never add a vote.
+   the same item counts (1 - share) of its weight (data-fusion-dong-2015 Eq 13 and 14, also source-dependence-dong-2009 Eq 11, with the copy probability known).
+   A chain A copies B copies C discounts A by the product of the two factors. Copies never add
+   a vote. Two monotonicity properties hold for positive weights at one round: a copy edge never
+   raises the copied value, and dropping a winner's claim never raises the winner. Below accuracy
+   1/(1+n) the weight turns negative and the paper's own formula breaks both, so the properties
+   scope to positive-weight classes and one round.
 5. Decay factor: with halfLifeMs, a claim of age t gets max(0.1, 0.5^(t / halfLife)). Age lowers
    the magnitude, never the sign. Without halfLifeMs the factor is 1.
 6. Winner: the value with the highest C. If the top two are within epsilon, the group with the
@@ -91,7 +95,7 @@ class TrustError extends Error { code: "BAD_INPUT" }
     | claim id, source id | duplicated |
     | claim.source, correction.item | names an unknown source or item |
     | at, now | not a finite non-negative integer |
-    | priors | any prior outside the open interval (0, 1) |
+    | priors | any prior outside [0.01, 0.99], the clamp range, so reported accuracies stay inside it |
     | minClaims, maxRounds | not a positive integer |
     | epsilon, halfLifeMs | not a positive finite number |
     | copy edge | copier equals original, an end is unknown, or share outside [0, 1] |
@@ -100,6 +104,12 @@ class TrustError extends Error { code: "BAD_INPUT" }
 14. Size: 100k claims over 10k items and 1k sources resolve in under 2 s on a laptop, 20 rounds.
     Cost per round is O(claims + copies). The scale test pins this with its denominator.
 15. Empty claims give `items: []`, every source at its prior, `rounds: 0`, `converged: true`.
+16. One source, one item: only the newest claim by a source on an item counts; older ones by the
+    same source are ignored for votes and accuracy. Items come back sorted by id.
+17. Corrections: a corrected value nobody claimed becomes its own group with no sources and
+    confidence 1. Two corrections on one item with the same time pick the smaller value.
+18. Labelling: a passage whose item is known but whose value matches no group is `other`. A
+    passage from a source the result does not know is `unresolved` with trust 0.
 
 ## Acceptance tests (written first, before any src file)
 - unit, hand-computed, one test each: the Eq 4 check on data-fusion-dong-2015 Example 2 inputs
@@ -114,7 +124,8 @@ class TrustError extends Error { code: "BAD_INPUT" }
   never raises the copied value's confidence; removing claims of the winner's sources never raises
   its confidence; converged true implies a further round changes nothing beyond epsilon.
 - research replication (tests/research): seeded synthetic data, 20 sources with accuracies drawn
-  from [0.3, 0.95], 500 items, 5 copiers at share 0.8. Measure precision of (a) majority vote
+  from [0.3, 0.95], 500 items, 5 copiers at share 0.8, each source speaking on 15% of items
+  (full coverage saturates majority vote at 500 of 500 and proves nothing). Measure precision of (a) majority vote
   (all priors equal, one round), (b) accuracy rounds, (c) accuracy plus copy edges. Assert
   (c) >= (b) >= (a) on the fixed seed and print all three with the denominator (Dong 2009 Table 3
   direction: 0.71, then 0.87). The README cites the numbers this test prints, nothing else.
