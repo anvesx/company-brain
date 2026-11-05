@@ -31,7 +31,7 @@ interface CopyEdge { copier: string; original: string; share: number }
 interface Correction { item: string; value: string; at: number }
 interface TrustOptions {
   now: number;                                   // injected clock, ms since epoch
-  priors?: Partial<Record<SourceClass, number>>; // override the class priors, each in (0, 1)
+  priors?: Partial<Record<SourceClass, number>>; // override the class priors, each in [0.01, 0.99]
   minClaims?: number;                            // below this a source keeps its prior; default 5
   maxRounds?: number;                            // default 20
   epsilon?: number;                              // convergence and tie threshold; default 1e-6
@@ -51,16 +51,25 @@ class TrustError extends Error { code: "BAD_INPUT" }
 1. Class priors, our proposal, overridable: signed 0.95, record 0.90, wiki 0.75, ticket 0.65,
    news 0.55, chat 0.50, draft 0.40, opinion 0.35. Opinion and news are separate classes on purpose
    (Budak 2016 Fig 1b; Wikipedia WP:RS).
-2. Vote weight of source S on an item with n competing values: A'(S) = log(n A(S) / (1 - A(S)))
+2. Vote weight of source S on an item with n competing values: A'(S) = log2(n A(S) / (1 - A(S)))
    with n = max(1, distinct values on that item - 1) and A clamped to [0.01, 0.99]
-   (data-fusion-dong-2015 Sec 2.3 Eq 3). A source below 1/(1+n) votes against its own value;
-   that is the paper's behaviour and stays.
+   (data-fusion-dong-2015 Sec 2.3, Eq 3 and 4). Base 2 is the only base under which
+   2^C(v) equals the product form of Eq 4 exactly. The paper's Example 2 prints 4.7, 2, 1.5 for
+   accuracies 0.97, 0.6, 0.4 at n = 5; no log base reproduces all three, so tests assert the
+   Eq 4 product form, not those printed numbers. A source below 1/(1+n) votes against its own
+   value; that is the paper's behaviour and stays.
 3. Score of value v: C(v) = sum of A'(S) over sources giving v, each term multiplied by its copy
    factor and its decay factor. Confidence P(v) = 2^C(v) / sum over v' of 2^C(v') (Eq 4), computed
    with max subtraction so no overflow.
 4. Copy factor: a claim whose source is a copier of an original that gives the same value for
-   the same item counts (1 - share) of its weight (Dong 2009 Eq 13 with the copy probability known).
-   A chain A copies B copies C discounts A against both. Copies never add a vote.
+   the same item counts (1 - share) of its weight (data-fusion-dong-2015 Eq 13 and 14, also source-dependence-dong-2009 Eq 11, with the copy probability known).
+   A chain A copies B copies C discounts A by the product of the two factors. Copies never add
+   a vote. Two monotonicity properties hold for positive weights at one round: a copy edge never
+   raises the copied value, and dropping a winner's claim never raises the winner. Below accuracy
+   1/(1+n) the weight turns negative and the paper's own formula breaks both, so the properties
+   scope to positive-weight classes and one round.
+   A copy cycle (A copies B, B copies A) is cut where it closes: the partner already being
+   evaluated counts as factor 1, so at share 1 both claims count 0.
 5. Decay factor: with halfLifeMs, a claim of age t gets max(0.1, 0.5^(t / halfLife)). Age lowers
    the magnitude, never the sign. Without halfLifeMs the factor is 1.
 6. Winner: the value with the highest C. If the top two are within epsilon, the group with the
@@ -78,7 +87,8 @@ class TrustError extends Error { code: "BAD_INPUT" }
     Date.now, no Math.random. Inputs are never mutated.
 11. labelPassages: trust = source accuracy; group best when the passage's item and value match
     the winner, other when they match a losing group, unresolved when the passage names no
-    item or the item is unknown. Output length equals input length, always.
+    item, the item is unknown, or the item's winner is null (no claim survived). Output length
+    equals input length, always.
 12. Every bad input raises BAD_INPUT naming the offending field. Validation runs before any
     maths, so one bad claim fails the whole call and nothing is swallowed.
 
@@ -88,19 +98,30 @@ class TrustError extends Error { code: "BAD_INPUT" }
     | claim id, source id | duplicated |
     | claim.source, correction.item | names an unknown source or item |
     | at, now | not a finite non-negative integer |
-    | priors | any prior outside the open interval (0, 1) |
+    | priors | any prior outside [0.01, 0.99], the clamp range, so reported accuracies stay inside it |
     | minClaims, maxRounds | not a positive integer |
     | epsilon, halfLifeMs | not a positive finite number |
     | copy edge | copier equals original, an end is unknown, or share outside [0, 1] |
 13. Unicode: values compare by exact string, after NFC normalisation, so "é" composed and
     decomposed are one value. Case is significant.
 14. Size: 100k claims over 10k items and 1k sources resolve in under 2 s on a laptop, 20 rounds.
-    Cost per round is O(claims + copies). The scale test pins this with its denominator.
+    Cost per round is O(claims + copies). The scale test counts the elements every instrumented
+    per-round loop visits (2 items + 2 claims + 5 values + 3 sources per round); a loop that does
+    not add to the counter is not pinned by it and is bounded only by the CPU ratio (< 3 on a 2x
+    input, which catches about n^1.585 and worse).
 15. Empty claims give `items: []`, every source at its prior, `rounds: 0`, `converged: true`.
+16. One source, one item: only the newest claim by a source on an item counts; older ones by the
+    same source are ignored for votes and accuracy. Items come back sorted by id.
+17. Corrections: a corrected value nobody claimed becomes its own group with no sources and
+    confidence 1. Two corrections on one item with the same time pick the smaller value.
+18. Labelling: a passage whose item is known, has a winner, and whose value matches no group is
+    `other`; with a null winner it is `unresolved` (rule 11). A passage from a source the result
+    does not know is `unresolved` with trust 0.
 
 ## Acceptance tests (written first, before any src file)
-- unit, hand-computed, one test each: the worked example from data-fusion-dong-2015 Example 2
-  (accuracies 0.97, 0.6, 0.4 with n = 5 give weights 4.7, 2.0, 1.5 to one decimal). A two-source
+- unit, hand-computed, one test each: the Eq 4 check on data-fusion-dong-2015 Example 2 inputs
+  (accuracies 0.97, 0.6, 0.4 with n = 5 give log2 weights 7.34, 2.91, 1.74, and the confidence
+  of a value equals the log2 of the product of nA/(1-A) over its sources). A two-source
   conflict where the signed source beats the chat source. A copier that cannot flip a vote. Decay
   that cannot flip a vote. A tie broken by the newest claim. A correction that lowers the wrong
   source's accuracy.
@@ -110,7 +131,8 @@ class TrustError extends Error { code: "BAD_INPUT" }
   never raises the copied value's confidence; removing claims of the winner's sources never raises
   its confidence; converged true implies a further round changes nothing beyond epsilon.
 - research replication (tests/research): seeded synthetic data, 20 sources with accuracies drawn
-  from [0.3, 0.95], 500 items, 5 copiers at share 0.8. Measure precision of (a) majority vote
+  from [0.3, 0.95], 500 items, 5 copiers at share 0.8, each source speaking on 15% of items
+  (full coverage saturates majority vote at 500 of 500 and proves nothing). Measure precision of (a) majority vote
   (all priors equal, one round), (b) accuracy rounds, (c) accuracy plus copy edges. Assert
   (c) >= (b) >= (a) on the fixed seed and print all three with the denominator (Dong 2009 Table 3
   direction: 0.71, then 0.87). The README cites the numbers this test prints, nothing else.
