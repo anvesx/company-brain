@@ -1,9 +1,9 @@
 # Spec: connections app
 
-Tier: app. Design cards: src.rt, acl.sync. Exact source: our proposal. [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) claims 2 and 5 (per-user permissions at retrieval, start with one workflow) set the access rules; the Claude connectors screen sets the UI shape.
+Tier: app. Design cards: src.rt, acl.sync. Access control list (ACL) and Model Context Protocol (MCP) are spelled out here once. Exact source: our proposal. [Vectorize](../../brain/research/exact/vectorize-how-to-build-company-brain.md) claims 2 and 5 (per-user permissions at retrieval, start with one workflow) set the access rules; the Claude connectors screen sets the UI shape.
 
 ## Purpose
-A web UI and small API where a person signs in to their accounts (Google Drive, GitHub, then Slack and Gmail), sees every connection in one list, and decides who may use each one and who may read what it syncs. It writes the per-user tokens that `brain serve` reads for live rechecks, and the connector config that `brain sync` reads.
+A web UI and small API where a person signs in to their accounts: Google Drive and GitHub first, then Slack and Gmail. They see every connection in one list and decide who may use each one and who may read what it syncs. It writes the per-user tokens that `brain serve` reads for live rechecks, and the connector config that `brain sync` reads.
 
 ## Reuse decision
 Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Composio, LlamaIndex readers, Unstructured, Meltano, Steampipe. Most coverage marks came from search snippets, so only the license and fit findings below are relied on.
@@ -16,7 +16,7 @@ Checked 2 Nov 2026 against Onyx, Airbyte, Nango, Pipedream, Activepieces, Compos
 - Ours alone: account model, the widening rule, access and data zones, mapping to `can-read` and `member-of` edges.
 
 ## Connector catalog and custom connectors
-The user wants nearly every app available, and companies must be able to add their own. So the app has a registry of manifests, and the four built-in apps are just the first entries.
+The user wants nearly every app available, and companies must be able to add their own. So the app has a registry of manifests, and the four built-in apps are the first entries.
 - A manifest is data: `id`, `name`, `auth` (`oauth2` with authorize and token URLs and scopes, `token`, or `pat`), `defaultZone`, and a `load` that returns a `Connector` (the connector-kit contract: `list`, `fetch`, `changes`, `canRead`).
 - Built-in manifests ship in [anvesx/connectors](https://github.com/anvesx/connectors) (`@anvesx/connectors`). A new app is one folder with one manifest and one adapter, and no change to the accounts, OAuth, token-file or UI code, which read the registry.
 - Custom connectors are per tenant. An admin registers a manifest through the API (`POST /v1/catalog`, tenant admin only). An `oauth2` or `token` manifest plus a module path or an HTTP endpoint that speaks the connector contract is enough. Custom entries show up only for that tenant.
@@ -29,16 +29,34 @@ The user wants nearly every app available, and companies must be able to add the
 - `Account`: `{id, owner, provider, label, credential, access, dataZone, status}`.
 - One owner may hold many accounts per provider (two Google accounts, a personal and a work GitHub).
 - `credential` is `oauth` (user consent), `admin-token` (org admin or service account that can list every user's data) or `pat` (pasted personal token). Stored encrypted, never returned by the API.
-- `access` says who may use the connection: `private` (owner only), `personal` (owner and the agents the owner runs), `company` (anyone in the tenant, through the tenant's ACLs).
+- `access` says who may use the connection: `private` (owner only), `personal` (owner and the agents the owner runs), `company` (anyone in the tenant, through the tenant's access control lists (ACLs)).
 - `dataZone` says who may read what it syncs, same three values, and is set separately from `access`. An admin-token account defaults to `company` data and `company` access only after an admin confirms.
 - In the graph, `dataZone` maps to a core-types zone: `company` stays `company`; `private` and `personal` become `personal` and the documents are written owner-only (one `can-read` edge, the owner; the source ACL is not copied).
 - `dataZone` can never be wider than the credential allows: a `pat` or `oauth` account cannot be `company` unless its owner is a tenant admin.
 
 ## Screens
-1. Connections list: one card per account (provider, label, owner, credential kind, access, data zone, status, last sync). Filters by provider and zone.
-2. Add connection: pick a provider, choose `oauth`, `admin-token` or `pat`, name it, set access and data zone, then sign in or paste the token.
-3. Account detail: change access or data zone, re-authorise, run a sync now, disconnect (deletes the stored credential and closes the account's graph edges).
-4. Sign-in uses the same `user:tenant:exp:hmac` bearer as the brain app.
+
+| Screen | Who sees it | Source of truth |
+|---|---|---|
+| Sign-up, sign-in, organization picker | everyone | identity feature |
+| Connections list, add, detail | signed-in user | accounts store |
+| MCP install guide | signed-in user | one manifest (name, url) |
+
+1. Sign-up and sign-in: email and password, served by the identity feature
+   ([spec](../feature/identity.md)). Sign-up creates a personal organization. A user in
+   several organizations picks one on the organization picker.
+2. Connections list, the landing page after sign-in: one card per account (provider, label,
+   owner, credential kind, access, data zone, status, last sync). Filters by provider and
+   zone. A user with no connections sees the catalog tiles first.
+3. Add connection: pick a provider, choose `oauth`, `admin-token` or `pat`, name it, set
+   access and data zone, then sign in or paste the token.
+4. Account detail: change access or data zone, re-authorise, run a sync now, disconnect
+   (deletes the stored credential and closes the account's graph edges).
+5. MCP install guide, under the connections list: one tab per client (Claude Code, Claude
+   Desktop, Codex, Cursor, Gemini CLI) with the rendered config file and a copy button. The
+   guide also lists the MCP clients the user has authorised, each with a revoke button.
+6. Callers: the browser uses the cookie session; the API accepts the same session or the
+   MCP access token. The old `user:tenant:exp:hmac` bearer is removed (ADR 0008).
 
 ## API (all under `/v1`, caller from the bearer)
 `GET /accounts`, `POST /accounts` (optional repo), `PATCH /accounts/:id` (label, access, dataZone, repo), `DELETE /accounts/:id`, `GET /oauth/:provider/start`, `GET /oauth/:provider/callback`, `POST /accounts/:id/sync`.

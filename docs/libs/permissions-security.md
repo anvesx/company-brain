@@ -35,11 +35,11 @@ PICK: `@cedar-policy/cedar-wasm@4.14.0`. Why: embeddable, schema-checked policie
 | openid-client (panva) | 6.8.8 | MIT | 2439 | 2026-10-28 | Use as the relying party for admin sign-in against the customer IdP |
 | jose (panva) | 6.2.14 | MIT | 7857 | 2026-10-29 | Use for JWT sign and verify (service tokens, JWKS) |
 | oidc-provider (panva/node-oidc-provider) | 9.13.3 | MIT | 3844 | 2026-10-29 | Use if we must issue tokens ourselves (client_credentials per app); in-process |
-| better-auth | 1.7.15 | MIT | 30542 | 2026-11-01 | Skip for service accounts; good if we later want built-in user and session tables; brings framework peer deps |
+| better-auth | 1.7.18 | MIT | 30542 | 2026-11-01 | Use for people: users, sessions, organizations, and the MCP OAuth server via `@better-auth/mcp` (ADR 0008) |
 | Keycloak (keycloak/keycloak) | server | Apache-2.0 | 37630 | 2026-11-01 | Skip: JVM server, not in-process |
 | Ory Kratos (ory/kratos) | @ory/client 1.22.66 | Apache-2.0 | 13948 | 2026-07-29 | Skip: Go server |
 
-PICK: `openid-client@6.8.8` plus `jose@6.2.14`; add `oidc-provider@9.13.3` only at the point we mint our own app tokens. Why: all three are one maintainer, MIT, pure Node, and run inside Vitest with a fake IdP. Thin adapter we write: `Identity` port with `verifyAdmin(idToken)` and `verifyServiceToken(jwt, expectedAppId)` returning `{tenantId, subject, kind}`, plus a `mintServiceToken(appId, scopes)` that uses jose and a per-app key.
+PICK (amended by [ADR 0008](../adr/product/0008-identity-on-better-auth.md), 6 Nov 2026): `better-auth@1.7.18` with `@better-auth/mcp@1.7.18` for people: sign-up, login, sessions, organizations as tenants, and the MCP OAuth authorization server (RFC 9728, 8414, PKCE, dynamic registration). `jose@6.2.14` stays for verifying the JWKS-signed access tokens. `openid-client@6.8.8` stays for admin sign-in against a customer IdP. `oidc-provider` is dropped: it issues tokens but has no users, sessions or organizations, so we would write all of those. Proven in a spike on 5 Nov 2026 (four shell flows, Node 26). The `Identity` port keeps the same shape: `verify(bearerOrSession)` returns `{tenantId, subject, kind}`.
 
 ## 4. Token vault for delegated user tokens
 
