@@ -25,7 +25,7 @@ describe("token file keys", () => {
   });
   it("leaves a needs-auth account out of both keys", () => {
     const one = t.store.create({ ...base, owner: "ann", secret: "ghp_one" });
-    t.store.setStatus(one.id, "needs-auth");
+    t.store.setStatus("t1", one.id, "needs-auth");
     writeTokenFile(t.store, file);
     expect(read()).toEqual({});
   });

@@ -40,7 +40,7 @@ describe("sync error bodies", () => {
     expect(await body(await sync(other.id))).toEqual({ status: 400, json: { error: "no connector for provider notion" } });
     const bad = mk({ kind: "oauth", secret: "not json" });
     expect(await body(await sync(bad.id))).toEqual({ status: 409, json: { error: "account has no usable credential" } });
-    h.s.store.setStatus(a.id, "needs-auth");
+    h.s.store.setStatus("t1", a.id, "needs-auth");
     expect(await body(await sync(a.id))).toEqual({ status: 409, json: { error: "account needs re-authorisation" } });
     expect(await body(await sync(mk({ provider: "github" }).id, root, { repo: "acme/missing" }))).toMatchObject({
       status: 502,

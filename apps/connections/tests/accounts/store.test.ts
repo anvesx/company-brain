@@ -14,7 +14,7 @@ describe("account store", () => {
     const a = store.create(input);
     expect(a).toMatchObject({ owner: "ann", provider: "github", label: "work", kind: "pat", access: "private", dataZone: "private", status: "active" });
     expect(JSON.stringify(a)).not.toContain("ghp_one");
-    expect(store.credential(a.id)).toBe("ghp_one");
+    expect(store.credential("t1", a.id)).toBe("ghp_one");
   });
   it("allows several accounts per owner and provider", () => {
     store.create(input);
@@ -35,24 +35,24 @@ describe("account store", () => {
   });
   it("updates label, access and dataZone, and answers undefined for an unknown id", () => {
     const a = store.create(input);
-    expect(store.update(a.id, { label: "new", access: "personal", dataZone: "personal" })).toMatchObject({
+    expect(store.update("t1", a.id, { label: "new", access: "personal", dataZone: "personal" })).toMatchObject({
       label: "new",
       access: "personal",
       dataZone: "personal",
     });
-    expect(store.get(a.id)?.label).toBe("new");
-    expect(store.update("nope", { label: "x" })).toBeUndefined();
+    expect(store.get("t1", a.id)?.label).toBe("new");
+    expect(store.update("t1", "nope", { label: "x" })).toBeUndefined();
   });
   it("removes the account and its credential", () => {
     const a = store.create(input);
-    expect(store.remove(a.id)).toBe(true);
-    expect(store.get(a.id)).toBeUndefined();
-    expect(store.credential(a.id)).toBeUndefined();
-    expect(store.remove(a.id)).toBe(false);
+    expect(store.remove("t1", a.id)).toBe(true);
+    expect(store.get("t1", a.id)).toBeUndefined();
+    expect(store.credential("t1", a.id)).toBeUndefined();
+    expect(store.remove("t1", a.id)).toBe(false);
   });
   it("marks needs-auth instead of deleting", () => {
     const a = store.create(input);
-    store.setStatus(a.id, "needs-auth");
-    expect(store.get(a.id)?.status).toBe("needs-auth");
+    store.setStatus("t1", a.id, "needs-auth");
+    expect(store.get("t1", a.id)?.status).toBe("needs-auth");
   });
 });

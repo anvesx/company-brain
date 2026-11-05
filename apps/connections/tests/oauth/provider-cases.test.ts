@@ -32,7 +32,7 @@ describe("google oauth with PKCE", () => {
     expect(r.status).toBe(201);
     const a = (await r.json()) as { id: string; provider: string };
     expect(a.provider).toBe("drive");
-    const stored = JSON.parse(h.s.store.credential(a.id) ?? "");
+    const stored = JSON.parse(h.s.store.credential("t1", a.id) ?? "");
     expect(stored).toMatchObject({ accessToken: expect.stringMatching(/^at_/), refreshToken: expect.stringMatching(/^rt_/) });
   });
 });

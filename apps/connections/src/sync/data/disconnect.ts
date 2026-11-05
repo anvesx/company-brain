@@ -18,6 +18,6 @@ export function closeAccountEdges(graph: NonNullable<Deps["sync"]>["graph"], a: 
 /** Disconnect: close the account's edges first (so a failure leaves the account in place), then drop the credential and refresh the token file. */
 export function disconnect(d: Deps, a: Account): void {
   if (d.sync) closeAccountEdges(d.sync.graph, a, d.now() * 1000);
-  d.store.remove(a.id);
+  d.store.remove(a.tenant, a.id);
   rewriteTokens(d);
 }

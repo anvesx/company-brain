@@ -23,19 +23,21 @@ const flight = singleFlight<RefreshResult>();
  * Concurrent calls for one account share a single upstream call (a rotating provider burns the old
  * refresh token on first use) and all get its result; different accounts run in parallel.
  */
-export const refreshAccount = (store: Store, p: OAuthProvider, id: string): Promise<RefreshResult> => flight(id, () => trade(store, p, id));
+export const refreshAccount = (store: Store, p: OAuthProvider, tenant: string, id: string): Promise<RefreshResult> =>
+  // Keyed by tenant and id so a wrong-tenant call can never share an in-flight refresh.
+  flight(`${tenant}:${id}`, () => trade(store, p, tenant, id));
 
-async function trade(store: Store, p: OAuthProvider, id: string): Promise<RefreshResult> {
-  const account = store.get(id);
-  const secret = store.credential(id);
+async function trade(store: Store, p: OAuthProvider, tenant: string, id: string): Promise<RefreshResult> {
+  const account = store.get(tenant, id);
+  const secret = store.credential(tenant, id);
   const refresh = secret === undefined ? undefined : refreshTokenOf(secret);
   if (account?.kind !== "oauth" || account.provider !== p.source || refresh === undefined) return "unsupported";
   try {
     const t = await new OAuth2Client(p.clientId, p.clientSecret, p.redirectURI).refreshAccessToken(p.tokenURL, refresh, p.scopes);
-    store.setCredential(id, JSON.stringify({ accessToken: t.accessToken(), refreshToken: t.hasRefreshToken() ? t.refreshToken() : refresh }));
+    store.setCredential(tenant, id, JSON.stringify({ accessToken: t.accessToken(), refreshToken: t.hasRefreshToken() ? t.refreshToken() : refresh }));
     return "refreshed";
   } catch {
-    store.setStatus(id, "needs-auth");
+    store.setStatus(tenant, id, "needs-auth");
     return "needs-auth";
   }
 }

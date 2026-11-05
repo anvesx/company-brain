@@ -21,16 +21,16 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     if (cur.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
     const manifest = d.catalog.get(cur.provider, cur.tenant);
     const idp = manifest && providerFor(d.oauth, manifest);
-    if (cur.kind === "oauth" && idp && (await refreshAccount(d.store, idp, cur.id)) !== "unsupported") {
+    if (cur.kind === "oauth" && idp && (await refreshAccount(d.store, idp, cur.tenant, cur.id)) !== "unsupported") {
       rewriteTokens(d);
-      if (d.store.get(cur.id)?.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
+      if (d.store.get(cur.tenant, cur.id)?.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
     }
-    const token = accessTokenOf(cur.kind, d.store.credential(cur.id) ?? "");
+    const token = accessTokenOf(cur.kind, d.store.credential(cur.tenant, cur.id) ?? "");
     if (token === undefined) return c.json({ error: "account has no usable credential" }, 409);
     try {
       const r = await runAccountSync(d.sync, cur, token, repo, d.now() * 1000, d.catalog);
       if ("error" in r) return c.json(r, 400);
-      d.store.setLastSync(cur.id, d.now() * 1000);
+      d.store.setLastSync(cur.tenant, cur.id, d.now() * 1000);
       return c.json(r);
     } catch (e) {
       return c.json({ error: "source sync failed", code: (e as { code?: string }).code ?? "UNKNOWN" }, 502);

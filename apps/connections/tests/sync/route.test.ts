@@ -57,7 +57,7 @@ describe("POST /v1/accounts/:id/sync", () => {
   it("refuses a needs-auth account with 409", async () => {
     h = await bootSync();
     const id = await make();
-    h.s.store.setStatus(id, "needs-auth");
+    h.s.store.setStatus("t1", id, "needs-auth");
     const r = await sync(id);
     expect(r.status).toBe(409);
     expect(((await r.json()) as { error: string }).error).toMatch(/re-authoris/);

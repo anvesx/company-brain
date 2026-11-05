@@ -1,4 +1,5 @@
 import { chmodSync, renameSync, writeFileSync } from "node:fs";
+import { secretsOf } from "../accounts/secrets.js";
 import type { Store } from "../accounts/store.js";
 import { sourceOf } from "../sync/connector.js";
 import { accessTokenOf } from "./access-token.js";
@@ -12,7 +13,7 @@ import { userKey } from "./user-key.js";
 export function writeTokenFile(store: Store, file: string): { users: number; tokens: number } {
   const out: Record<string, Record<string, string>> = {};
   let tokens = 0;
-  for (const s of store.secrets()) {
+  for (const s of secretsOf(store)) {
     const token = accessTokenOf(s.kind, s.secret);
     if (token === undefined) continue;
     const who = userKey(s.tenant, s.owner);

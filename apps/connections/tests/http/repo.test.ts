@@ -73,7 +73,7 @@ describe("the repo field of a github account", () => {
       secret: "s",
       repo: "a/b",
     });
-    expect(store.get(made.id)?.repo).toBe("a/b");
+    expect(store.get("t1", made.id)?.repo).toBe("a/b");
     store.close();
     rmSync(dir, { recursive: true });
   });

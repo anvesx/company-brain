@@ -41,7 +41,7 @@ describe("writeTokenFile", () => {
   it("keeps the oldest active account per provider and skips needs-auth ones", () => {
     const first = t.store.create({ ...base, owner: "ann", kind: "pat", secret: "old" });
     t.store.create({ ...base, owner: "ann", kind: "pat", secret: "newer" });
-    t.store.setStatus(first.id, "needs-auth");
+    t.store.setStatus("t1", first.id, "needs-auth");
     writeTokenFile(t.store, file);
     expect(read()).toEqual({ "t1:ann": { github: "newer" } });
   });

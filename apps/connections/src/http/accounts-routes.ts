@@ -46,7 +46,7 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
     // Edges written at the wider zone must not outlive it; the next sync rewrites them at the new zone.
     if (d.sync && narrows(cur.dataZone, next.dataZone)) closeAccountEdges(d.sync.graph, cur, d.now() * 1000);
-    const changed = d.store.update(cur.id, p.value);
+    const changed = d.store.update(cur.tenant, cur.id, p.value);
     rewriteTokens(d);
     return c.json(changed);
   });

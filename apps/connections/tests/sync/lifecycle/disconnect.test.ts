@@ -73,7 +73,7 @@ describe("DELETE /v1/accounts/:id after a sync", () => {
     await sync(a, "acme/handbook");
     const n = (edges(a)[0] ?? 0) + (edges(a)[1] ?? 0);
     expect(n).toBeGreaterThan(2);
-    expect(closeAccountEdges(cur().graph, cur().s.store.get(a) as never, 5)).toBe(n);
-    expect(closeAccountEdges(cur().graph, cur().s.store.get(a) as never, 6)).toBe(0);
+    expect(closeAccountEdges(cur().graph, cur().s.store.get("t1", a) as never, 5)).toBe(n);
+    expect(closeAccountEdges(cur().graph, cur().s.store.get("t1", a) as never, 6)).toBe(0);
   });
 });

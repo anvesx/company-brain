@@ -14,9 +14,9 @@ describe("refreshAccount, unusable stored credentials", () => {
     const t = tempStore();
     const p = oauthProvider("github", { clientId: "cid", clientSecret: "csecret", redirectURI: "http://app.test/cb", tokenURL: `${replay.url}/token` });
     const a = t.store.create({ ...input, kind: "oauth", provider: "github", secret });
-    expect(await refreshAccount(t.store, p, a.id)).toBe("unsupported");
+    expect(await refreshAccount(t.store, p, "t1", a.id)).toBe("unsupported");
     expect(replay.tokenCalls).toBe(0);
-    expect(t.store.get(a.id)?.status).toBe("active");
+    expect(t.store.get("t1", a.id)?.status).toBe("active");
     await replay.close();
     t.done();
   });

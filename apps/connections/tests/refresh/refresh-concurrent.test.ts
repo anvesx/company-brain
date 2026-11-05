@@ -19,14 +19,14 @@ async function setup(opts: Parameters<typeof startReplay>[1] = {}) {
   const add = () => t.store.create({ ...input, kind: "oauth", provider: provider.source, secret: stored });
   return { replay, store: t.store, provider, add };
 }
-const cred = (s: { store: ReturnType<typeof tempStore>["store"] }, id: string) => JSON.parse(s.store.credential(id) as string);
+const cred = (s: { store: ReturnType<typeof tempStore>["store"] }, id: string) => JSON.parse(s.store.credential("t1", id) as string);
 
 describe("refreshAccount under concurrency", () => {
   it("makes one upstream call for N concurrent refreshes and persists the rotated token once", async () => {
     const s = await setup({ rotate: true });
     const a = s.add();
     const set = vi.spyOn(s.store, "setCredential");
-    const out = await Promise.all(Array.from({ length: 8 }, () => refreshAccount(s.store, s.provider, a.id)));
+    const out = await Promise.all(Array.from({ length: 8 }, () => refreshAccount(s.store, s.provider, "t1", a.id)));
     expect(out).toEqual(Array(8).fill("refreshed"));
     expect(s.replay.tokenCalls).toBe(1);
     expect(set).toHaveBeenCalledTimes(1);
@@ -35,16 +35,16 @@ describe("refreshAccount under concurrency", () => {
   it("does not serialise different accounts", async () => {
     const s = await setup();
     const [a, b] = [s.add(), s.add()];
-    await Promise.all([refreshAccount(s.store, s.provider, a.id), refreshAccount(s.store, s.provider, b.id)]);
+    await Promise.all([refreshAccount(s.store, s.provider, "t1", a.id), refreshAccount(s.store, s.provider, "t1", b.id)]);
     expect(s.replay.tokenCalls).toBe(2);
   });
   it("gives every waiter the failure and retries upstream on the next attempt", async () => {
     const s = await setup({ revoke: true });
     const a = s.add();
-    const out = await Promise.all([1, 2, 3].map(() => refreshAccount(s.store, s.provider, a.id)));
+    const out = await Promise.all([1, 2, 3].map(() => refreshAccount(s.store, s.provider, "t1", a.id)));
     expect(out).toEqual(["needs-auth", "needs-auth", "needs-auth"]);
     expect(s.replay.tokenCalls).toBe(1);
-    expect(await refreshAccount(s.store, s.provider, a.id)).toBe("needs-auth");
+    expect(await refreshAccount(s.store, s.provider, "t1", a.id)).toBe("needs-auth");
     expect(s.replay.tokenCalls).toBe(2);
   });
 });

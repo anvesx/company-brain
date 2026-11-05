@@ -34,13 +34,13 @@ describe("sync of an oauth account", () => {
     expect((await sync()).status).toBe(200);
     expect(idp.tokenCalls).toBe(1);
     expect(h.gh.seen.every((s) => s.authorization === "token at_refreshed_1")).toBe(true);
-    expect(JSON.parse(h.s.store.credential(a.id) as string).accessToken).toBe("at_refreshed_1");
+    expect(JSON.parse(h.s.store.credential("t1", a.id) as string).accessToken).toBe("at_refreshed_1");
   });
   it("flips to needs-auth and answers 409 when the refresh is refused", async () => {
     const { h, a, sync } = await setup({ revoke: true });
     const r = await sync();
     expect(r.status).toBe(409);
-    expect(h.s.store.get(a.id)?.status).toBe("needs-auth");
+    expect(h.s.store.get("t1", a.id)?.status).toBe("needs-auth");
     expect(h.gh.seen).toEqual([]);
   });
 });
