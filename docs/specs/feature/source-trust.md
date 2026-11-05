@@ -68,6 +68,8 @@ class TrustError extends Error { code: "BAD_INPUT" }
    raises the copied value, and dropping a winner's claim never raises the winner. Below accuracy
    1/(1+n) the weight turns negative and the paper's own formula breaks both, so the properties
    scope to positive-weight classes and one round.
+   A copy cycle (A copies B, B copies A) is cut where it closes: the partner already being
+   evaluated counts as factor 1, so at share 1 both claims count 0.
 5. Decay factor: with halfLifeMs, a claim of age t gets max(0.1, 0.5^(t / halfLife)). Age lowers
    the magnitude, never the sign. Without halfLifeMs the factor is 1.
 6. Winner: the value with the highest C. If the top two are within epsilon, the group with the
@@ -85,7 +87,8 @@ class TrustError extends Error { code: "BAD_INPUT" }
     Date.now, no Math.random. Inputs are never mutated.
 11. labelPassages: trust = source accuracy; group best when the passage's item and value match
     the winner, other when they match a losing group, unresolved when the passage names no
-    item or the item is unknown. Output length equals input length, always.
+    item, the item is unknown, or the item's winner is null (no claim survived). Output length
+    equals input length, always.
 12. Every bad input raises BAD_INPUT naming the offending field. Validation runs before any
     maths, so one bad claim fails the whole call and nothing is swallowed.
 
@@ -102,14 +105,18 @@ class TrustError extends Error { code: "BAD_INPUT" }
 13. Unicode: values compare by exact string, after NFC normalisation, so "é" composed and
     decomposed are one value. Case is significant.
 14. Size: 100k claims over 10k items and 1k sources resolve in under 2 s on a laptop, 20 rounds.
-    Cost per round is O(claims + copies). The scale test pins this with its denominator.
+    Cost per round is O(claims + copies). The scale test counts the elements every instrumented
+    per-round loop visits (2 items + 2 claims + 5 values + 3 sources per round); a loop that does
+    not add to the counter is not pinned by it and is bounded only by the CPU ratio (< 3 on a 2x
+    input, which catches about n^1.585 and worse).
 15. Empty claims give `items: []`, every source at its prior, `rounds: 0`, `converged: true`.
 16. One source, one item: only the newest claim by a source on an item counts; older ones by the
     same source are ignored for votes and accuracy. Items come back sorted by id.
 17. Corrections: a corrected value nobody claimed becomes its own group with no sources and
     confidence 1. Two corrections on one item with the same time pick the smaller value.
-18. Labelling: a passage whose item is known but whose value matches no group is `other`. A
-    passage from a source the result does not know is `unresolved` with trust 0.
+18. Labelling: a passage whose item is known, has a winner, and whose value matches no group is
+    `other`; with a null winner it is `unresolved` (rule 11). A passage from a source the result
+    does not know is `unresolved` with trust 0.
 
 ## Acceptance tests (written first, before any src file)
 - unit, hand-computed, one test each: the Eq 4 check on data-fusion-dong-2015 Example 2 inputs

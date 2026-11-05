@@ -1,0 +1,27 @@
+{
+  "name": "@anvesx/source-trust",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "mutation": "stryker run"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2",
+    "pure-rand": "8.4.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "features/source-trust"
+  },
+  "license": "MIT",
+  "private": true
+}

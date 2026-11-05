@@ -128,6 +128,15 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
+  features/source-trust:
+    devDependencies:
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      pure-rand:
+        specifier: 8.4.2
+        version: 8.4.2
+
   features/zone-policy:
     devDependencies:
       fast-check:
