@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "vitest run --config ../../vitest.config.ts --exclude '**/tests/scale/**'",
+    "scale": "vitest run --config ../../vitest.config.ts --no-file-parallelism tests/scale",
     "e2e": "PLAYWRIGHT=1 vitest run --config ../../vitest.config.ts --no-file-parallelism tests/e2e",
     "mutation": "stryker run"
   },

@@ -1,7 +1,7 @@
 import type { AuthContext } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { ensureStaticClients, revokeClient } from "./auth/clients.js";
-import { buildAuth } from "./auth/options.js";
+import { authOptions, buildAuth } from "./auth/options.js";
 import { type IdentityConfig, resolveConfig } from "./config.js";
 import { consentView } from "./consent/view.js";
 import { createLimits } from "./guard/limits.js";
@@ -21,6 +21,17 @@ export {
 } from "./install/render.js";
 export { breachedPasswords } from "./policy/password.js";
 export type { Caller, IdentityPort } from "./port.js";
+
+/**
+ * Create or update the tables. Run it, and wait for it, before `createIdentity`: better-auth checks the schema
+ * as soon as it boots, so tables made afterwards would first show up as a "schema mismatch" error in the log.
+ */
+export const migrateDatabase = async (input: IdentityConfig): Promise<void> => {
+  const notBooted = (): never => {
+    throw new Error("better-auth has not booted yet");
+  };
+  await (await getMigrations(authOptions(resolveConfig(input), notBooted))).runMigrations();
+};
 
 /** Build the identity service: sign-in, organizations, and the OAuth server MCP clients use. Throws BAD_INPUT on a bad config. */
 export const createIdentity = (input: IdentityConfig) => {

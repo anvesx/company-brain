@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { createIdentity, type IdentityConfig, type OutgoingEmail } from "../../src/index.js";
+import { createIdentity, type IdentityConfig, migrateDatabase, type OutgoingEmail } from "../../src/index.js";
 import { openDb, tempDbPath } from "./db.js";
 
 export const SECRET = "identity-test-secret-0123456789abcdef";
@@ -45,8 +45,14 @@ export async function boot(extra: Partial<IdentityConfig> = {}, path: string = t
     sendEmail: async (message) => void mail.push(message),
     ...extra,
   };
+  // Tables first, then better-auth: its start-up schema check then finds them and logs nothing.
+  await migrateDatabase(config);
   const identity = createIdentity(config);
   await identity.migrate();
+  // better-auth checks the schema in the background right after it boots. Wait for that check to settle, so a
+  // test that ends at once cannot close the database underneath it and log a false "could not validate" error.
+  const ctx = (await identity.auth.$context) as unknown as { checkSchema?: () => Promise<unknown> | undefined };
+  await ctx.checkSchema?.();
   app = new Hono();
   app.route("/", identity.routes);
   app.all("/mcp", (c) => identity.protect(async (_req, caller) => Response.json(caller))(c.req.raw));

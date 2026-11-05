@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { consentView as readConsent } from "../consent/view.js";
-import { authenticate, type Deps, html, redirect } from "./actions.js";
-import { mountForms } from "./forms.js";
+import { type Deps, html, redirect } from "./actions.js";
+import { authenticate, mountForms } from "./forms.js";
 import { mountAccount } from "./signed/account.js";
 import { mountConnections } from "./signed/connections.js";
 import { queryOf, signedInPages } from "./signed/guard.js";

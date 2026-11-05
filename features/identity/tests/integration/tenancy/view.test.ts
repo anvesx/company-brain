@@ -47,7 +47,19 @@ describe("consent view reads stored lists", () => {
   it("rule 7: an unknown client is BAD_INPUT on the oauth_query field", async () => {
     const { headers, query } = await setup({});
     const error = await failure(env.identity.consentView(headers, query.replace(/client_id=[^&]*/, "client_id=nope")));
-    expect([error.code, error.field, error.message]).toEqual(["BAD_INPUT", "oauth_query", "oauth_query: unknown client or organization"]);
+    expect([error.code, error.field, error.message]).toEqual(["BAD_INPUT", "oauth_query", "oauth_query: client_id does not match a registered client"]);
+  });
+
+  it("rule 13: a query with no client_id says client_id is missing", async () => {
+    const { headers, query } = await setup({});
+    const error = await failure(env.identity.consentView(headers, query.replace(/client_id=[^&]*&?/, "")));
+    expect([error.code, error.message]).toEqual(["BAD_INPUT", "oauth_query: the client_id parameter is missing"]);
+  });
+
+  it("rule 13: a query with no redirect_uri says redirect_uri is the problem", async () => {
+    const { headers, query } = await setup({});
+    const error = await failure(env.identity.consentView(headers, query.replace(/redirect_uri=[^&]*&?/, "")));
+    expect(error.message).toBe("oauth_query: redirect_uri is missing or does not match the client's registration");
   });
 
   it("rule 7: a redirect that is only a prefix of a stored one is BAD_INPUT", async () => {

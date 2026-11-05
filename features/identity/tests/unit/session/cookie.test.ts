@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIdentity } from "../../../src/index.js";
+import { createIdentity, migrateDatabase } from "../../../src/index.js";
 import { openDb } from "../../support/db.js";
 import { Browser, PASSWORD, signIn, signUp } from "../../support/http.js";
 import { boot, type Env, SECRET } from "../../support/server.js";
@@ -34,7 +34,9 @@ describe("session cookie", () => {
 
   it("rule 2: outside localhost the cookie is Secure", async () => {
     const base = "https://brain.example.com";
-    const identity = createIdentity({ baseUrl: base, secret: SECRET, database: openDb(), resource: `${base}/mcp` });
+    const config = { baseUrl: base, secret: SECRET, database: openDb(), resource: `${base}/mcp` };
+    await migrateDatabase(config);
+    const identity = createIdentity(config);
     await identity.migrate();
     const body = JSON.stringify({ name: "Ada", email: "ada@example.com", password: PASSWORD });
     const res = await identity.routes.request(`${base}/api/auth/sign-up/email`, {

@@ -1,4 +1,5 @@
-import type { AuthContext, BetterAuthPlugin } from "better-auth";
+import type { AuthContext, BetterAuthOptions, BetterAuthPlugin } from "better-auth";
+import type { Auth } from "./options.js";
 
 type Adapter = AuthContext["adapter"];
 
@@ -40,6 +41,24 @@ export const hitsPlugin = (): BetterAuthPlugin => ({
         key: { type: "string", required: true, index: true },
         at: { type: "number", required: true, bigint: true },
       },
+    },
+  },
+});
+
+/** Database hooks: every user gets a personal organization, and every new session starts in the user's first one. */
+export const identityHooks = (auth: () => Auth, adapter: () => Promise<Adapter>): BetterAuthOptions["databaseHooks"] => ({
+  user: {
+    create: {
+      after: async (user) => {
+        const org = await auth().api.createOrganization({ body: { name: user.name, slug: `p-${user.id.toLowerCase()}`, userId: user.id } });
+        // The sign-up session was made before this organization existed, so point it here.
+        await (await adapter()).updateMany({ model: "session", where: [{ field: "userId", value: user.id }], update: { activeOrganizationId: org?.id } });
+      },
+    },
+  },
+  session: {
+    create: {
+      before: async (session) => ({ data: { ...session, activeOrganizationId: await firstOrganization(await adapter(), session.userId) } }),
     },
   },
 });

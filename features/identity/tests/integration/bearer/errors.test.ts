@@ -1,6 +1,6 @@
 import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIdentity } from "../../../src/index.js";
+import { createIdentity, migrateDatabase } from "../../../src/index.js";
 import { failure } from "../../support/http.js";
 import { bearer } from "../../support/oauth.js";
 import { boot, type Env } from "../../support/server.js";
@@ -30,7 +30,9 @@ describe("expiry and errors", () => {
   it("rule 8: a key set that cannot be fetched is UNAUTHENTICATED 'signing keys are unavailable'", async () => {
     const token = (await login(env, "Ada")).tokens.access_token;
     // The issuer path /missing/api/auth/jwks answers 404 from the real server.
-    const elsewhere = createIdentity({ ...env.config, baseUrl: `${env.base}/missing` });
+    const config = { ...env.config, baseUrl: `${env.base}/missing` };
+    await migrateDatabase(config);
+    const elsewhere = createIdentity(config);
     await elsewhere.migrate();
     const error = await failure(elsewhere.port.fromBearer(new Headers(bearer(token))));
     expect([error.code, error.message]).toEqual(["UNAUTHENTICATED", "signing keys are unavailable"]);

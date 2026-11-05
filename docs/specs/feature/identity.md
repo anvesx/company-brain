@@ -104,7 +104,10 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
     injected time in tests. No Date.now outside the adapter.
 15. Scale: a session lookup is one indexed read; token verification is local (cached key set,
     refreshed hourly, or on an unknown key id at most once a minute so forged key ids cannot force fetches). The scale test runs 10,000 verifications in
-    under 1 s and 1,000 sign-ins against SQLite in under 20 s on a laptop, denominator printed.
+    under 1 s and 1,000 sign-ins against SQLite in under 30 s on a laptop, denominator printed.
+    The sign-in budget is hash-bound: better-auth's scrypt verify measures about 70 ms a call and
+    runs on node's libuv pool (4 threads by default), so 1,000 verifies floor at about 17.5 s of
+    pool time before HTTP and SQLite. Raise UV_THREADPOOL_SIZE in production for more throughput.
 
 ## Acceptance tests (written first)
 - unit: sign-up creates user and personal organization; password too short, breached and too

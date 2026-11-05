@@ -1,13 +1,22 @@
 import type { Hono } from "hono";
-import { IdentityError, InstallRenderError } from "../errors.js";
-import { api, csrfOk, type Deps, html, readForm, redirect } from "./actions.js";
-import { esc, page } from "./layout.js";
+import { IdentityError } from "../errors.js";
+import { api, csrfOk, type Deps, html, oops, readForm, redirect } from "./actions.js";
+import { signInView, signUpView } from "./views/auth.js";
 
-/** The error page for a refused or stale form. A broken install file is our fault, so it is a 500 that names the client. */
-export const oops = (error: unknown, status = 400): Response => {
-  const known = error instanceof IdentityError || error instanceof InstallRenderError;
-  const code = error instanceof InstallRenderError ? 500 : status;
-  return html(page("Cannot continue", `<p role="alert">${known ? esc(error.message) : "Something went wrong."}</p>`), code);
+const MESSAGES: Record<number, string> = { 401: "The email or password is wrong.", 429: "Too many attempts. Wait a few minutes and try again." };
+
+/** Sign up or sign in. Success goes on to the OAuth request being continued, or to the connections page. */
+export const authenticate = async (d: Deps, req: Request, mode: "sign-up" | "sign-in"): Promise<Response> => {
+  const form = await readForm(d, req);
+  if (form instanceof Response) return form;
+  const query = form["oauth_query"] ?? "";
+  const body =
+    mode === "sign-up" ? { name: form["name"], email: form["email"], password: form["password"] } : { email: form["email"], password: form["password"] };
+  const res = await api(d, req, `${mode}/email`, body);
+  if (res.ok) return redirect(query ? `/api/auth/oauth2/authorize?${query}` : "/connections", res);
+  const said = (await res.json().catch(() => ({}))) as { message?: string };
+  const error = MESSAGES[res.status] ?? said.message ?? "Something went wrong. Try again.";
+  return html((mode === "sign-up" ? signUpView : signInView)({ query, error }), res.status);
 };
 
 const json = async (res: Response): Promise<{ url?: string }> => (await res.json().catch(() => ({}))) as { url?: string };
@@ -28,6 +37,9 @@ export const mountForms = (app: Hono, d: Deps): void => {
   post("/sign-out", async (req) => redirect("/sign-in", await api(d, req, "sign-out", {})));
 
   post("/picker", async (req, form) => {
+    // Check membership first: set-active with a foreign organization would clear the session's active one.
+    const mine = await d.auth.api.listOrganizations({ headers: req.headers });
+    if (!mine.some((org) => org.id === form["organizationId"])) return oops(new IdentityError("BAD_INPUT", "That organization is not available to you."));
     const set = await api(d, req, "organization/set-active", { organizationId: form["organizationId"] });
     if (!set.ok) return oops(new IdentityError("BAD_INPUT", "That organization is not available to you."));
     const query = form["oauth_query"] ?? "";

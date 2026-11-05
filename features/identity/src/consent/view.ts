@@ -27,11 +27,15 @@ export const consentView = async (auth: Auth, adapter: Adapter, headers: Headers
   const view = await readSession(auth, headers);
   if (!view || view.organizationId === null) throw new IdentityError("UNAUTHENTICATED", "sign in first");
   const params = new URLSearchParams(oauthQuery);
-  const client = await adapter.findOne<ClientRow>({ model: "oauthClient", where: [{ field: "clientId", value: params.get("client_id") ?? "" }] });
+  // Each failure names the query parameter at fault, so the person fixing the link knows which one.
+  const clientId = params.get("client_id");
+  if (!clientId) throw new IdentityError("BAD_INPUT", "the client_id parameter is missing", "oauth_query");
+  const client = await adapter.findOne<ClientRow>({ model: "oauthClient", where: [{ field: "clientId", value: clientId }] });
+  if (!client) throw new IdentityError("BAD_INPUT", "client_id does not match a registered client", "oauth_query");
   const org = await adapter.findOne<{ id: string; name: string }>({ model: "organization", where: [{ field: "id", value: view.organizationId }] });
-  if (!client || !org) throw new IdentityError("BAD_INPUT", "unknown client or organization", "oauth_query");
+  if (!org) throw new IdentityError("BAD_INPUT", "the active organization no longer exists", "organization");
   const stored = listOf(client.redirectUris).find((uri) => uri === params.get("redirect_uri"));
-  if (!stored) throw new IdentityError("BAD_INPUT", "unknown client or organization", "oauth_query");
+  if (!stored) throw new IdentityError("BAD_INPUT", "redirect_uri is missing or does not match the client's registration", "oauth_query");
   const allowed = listOf(client.scopes);
   return {
     clientName: client.name ?? "an app",

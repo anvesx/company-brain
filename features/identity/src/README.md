@@ -10,4 +10,4 @@ Status: built. `createIdentity(config)` returns the better-auth instance, the id
 | `errors.ts` | `IdentityError` with the five codes and an optional `field`.                                        |
 
 Folders: `auth/` (better-auth setup), `guard/` (origin, limits, bearer, session), `install/` (config renderer),
-`policy/` (password rules and hash), `routes/` (HTTP surface), `consent/` (what the consent and account pages show) and `pages/` (server-rendered HTML).
+`policy/` (password and email rules), `routes/` (HTTP surface), `consent/` (what the consent and account pages show) and `pages/` (server-rendered HTML).

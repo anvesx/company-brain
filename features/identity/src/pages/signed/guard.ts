@@ -1,8 +1,7 @@
 import type { AuthContext } from "better-auth";
 import { readSession, type SessionView } from "../../guard/session.js";
 import { createCsrf } from "../../port.js";
-import { type Deps, redirect } from "../actions.js";
-import { oops } from "../forms.js";
+import { type Deps, oops, redirect } from "../actions.js";
 
 /** The query string of a URL without the leading question mark. */
 export const queryOf = (url: string): string => new URL(url).search.slice(1);

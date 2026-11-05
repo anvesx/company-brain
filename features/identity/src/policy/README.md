@@ -1,8 +1,7 @@
 # policy
 
-Password and email rules for sign-up.
+Password and email rules for sign-up. Hashing is not here: better-auth's own scrypt default is used.
 
-- `hash.ts`: scrypt hash and verify (N=16384, r=8, p=1, parameters stored in each hash).
 - `password.ts`: `checkPassword` (12 to 128 code points, not on the breached list), `checkEmail`.
 - `breached.txt`: one lowercase breached password per line; `regen.mjs` rebuilds it.
 

@@ -11,6 +11,7 @@ organization and mcp plugins (ADR 0008). Spec: `docs/specs/feature/identity.md`.
 
 ## Interface
 
+- `await migrateDatabase(cfg)` creates the tables. Run it before `createIdentity`, so better-auth's start-up schema check finds them.
 - `createIdentity(cfg)` returns `{ auth, routes, port, migrate, protect, revokeClient, consentView, csrf }`.
   Mount `routes` at `/`: it serves `/api/auth/*` and `/.well-known/*`.
 - `port.fromSession(headers)`, `port.fromBearer(headers)`, `port.require(headers)` return a
@@ -57,7 +58,8 @@ Additions to the spec's Public interface that the tests pin:
 ## Test
 
 ```sh
-pnpm --filter @anvesx/identity test        # unit, install, integration, property, scale
+pnpm --filter @anvesx/identity test        # unit, install, integration, property
+pnpm --filter @anvesx/identity scale       # rule 15 timings, one file at a time so no other suite contends
 PLAYWRIGHT=1 pnpm --filter @anvesx/identity e2e   # Playwright; starts tests/e2e/server.ts on port 18788
 pnpm --filter @anvesx/identity mutation
 ```
