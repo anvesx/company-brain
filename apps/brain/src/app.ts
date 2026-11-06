@@ -1,5 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import type { AsyncGraphStore } from "@anvesx/graph-store";
+import { type AsyncGraphStore, GraphError } from "@anvesx/graph-store";
 import { mountGraphView } from "@anvesx/graph-view";
 import type { createIdentity } from "@anvesx/identity";
 import { createAdaptorServer, getRequestListener } from "@hono/node-server";
@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { identityAliases } from "./gate/accounts.js";
 import type { Recheck } from "./live/recheck.js";
 import { mountDocuments } from "./routes/documents.js";
+import { tune } from "./serve/mount.js";
 
 export interface BrainDeps {
   store: AsyncGraphStore;
@@ -31,14 +32,19 @@ export interface BrainApp {
 export function createBrainApp(deps: BrainDeps): BrainApp {
   const { store, identity, recheck, cursorKey } = deps;
   const app = new Hono();
-  // Never show a caller a stack or a message from inside: a failure is a plain 500.
-  app.onError((_error, c) => c.json({ error: "internal" }, 500));
+  // One place for every route. The store rejects a NUL or lone surrogate with BAD_INPUT: that is the caller's fault, a 400
+  // with the store's own fixed reason (same body as /v1/graph). Anything else never shows a stack or message: a plain 500.
+  app.onError((error, c) =>
+    error instanceof GraphError && error.code === "BAD_INPUT"
+      ? c.json({ error: "bad_input", message: error.message }, 400)
+      : c.json({ error: "internal" }, 500),
+  );
   app.route("/", identity.routes);
   const aliases = identityAliases(identity);
   mountDocuments(app, { store, protect: identity.protect, aliases, ...(recheck && { recheck }) });
   mountGraphView(app, { store, port: identity.port, aliases, cursorKey });
 
-  const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+  const server = tune(createAdaptorServer({ fetch: app.fetch }) as Server);
   return {
     server,
     handler: getRequestListener(app.fetch),

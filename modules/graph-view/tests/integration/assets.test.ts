@@ -20,14 +20,14 @@ const resolve = createRequire(import.meta.url).resolve;
 const forceGraphUmd = join(dirname(resolve("3d-force-graph")), "3d-force-graph.min.js");
 const threeRoot = join(dirname(resolve("three")), "..");
 
-const bytes = async (path: string) => Buffer.from(await (await fetch(`${env.base}${path}`)).arrayBuffer());
-
 describe("rule 5: library files served byte for byte from node_modules", () => {
   it("/3d-force-graph.js is the installed UMD build, public, as JavaScript", async () => {
+    // One fetch, body read once: a second fetch with the first body unread leaves a half-used socket in the pool.
     const res = await fetch(`${env.base}/3d-force-graph.js`);
+    const body = Buffer.from(await res.arrayBuffer());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/javascript/);
-    expect(await bytes("/3d-force-graph.js")).toEqual(await readFile(forceGraphUmd));
+    expect(body).toEqual(await readFile(forceGraphUmd));
   });
 
   it.each([

@@ -40,6 +40,10 @@ describe("brain serve on Postgres", () => {
     const ok = await fetch(`${base}/v1/documents`, { headers: { cookie: me.cookie } });
     expect((await ok.json()).documents.map((d: { id: string }) => d.id)).toEqual(["d1"]);
     expect((await fetch(`${base}/v1/documents`)).status).toBe(401);
+    // The image test (tools/deploy) runs this same flow against the container; a second person must see nothing of the first.
+    const other = await signUp(base, db?.url ?? "");
+    const theirs = await fetch(`${base}/v1/documents`, { headers: { cookie: other.cookie } });
+    expect((await theirs.json()).documents).toEqual([]);
   });
 
   it("mounts identity: email sign-up works under /api/auth", async (ctx) => {
