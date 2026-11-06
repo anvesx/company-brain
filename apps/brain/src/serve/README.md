@@ -3,7 +3,7 @@
 The production entry (`brain serve`): Postgres, identity and a health check on one port.
 
 - `serve.ts`: `serve(env)` reads `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+ characters), `BRAIN_RETRY_MS` (2000), `IDENTITY_SECRET`, `BASE_URL`, `PORT` (8080) and `HOST` (0.0.0.0). It builds one `pg.Pool` that identity (as a kysely `PostgresDialect`) and the graph store share, listens first, then starts both. An unreachable database is retried (same pool, one `error` listener) while the server answers 503; any other error exits 1 with `brain: <message>`, as does a taken port (`brain: port N in use`).
-- `health.ts`: `GET /healthz` runs `select 1` with a 2 s limit: 200 `{"status":"ok"}` or 503 `{"status":"unavailable"}`. No auth.
+- `health.ts`: `GET /healthz` is 200 `{"status":"ok"}` only once identity and the graph are built AND `select 1` answers within 2 s; otherwise 503 `{"status":"unavailable"}`. No auth. While booting the pool already answers but every other route is 503, so "database up" alone would be a false ready signal to Cloud Run, the Docker `HEALTHCHECK` and the image test.
 - `mount.ts`: `mount` sends `/healthz` to health, `/api/auth/*` and `/.well-known/*` to identity, everything else to the brain handler.
 - `startup.ts`: start-up helpers. `isTransient` (connection errors and a migration race are retried, everything else is fatal), `listenOn` (a taken port becomes `port N in use`) and `migrateLocked` (identity's migrations under `pg_advisory_xact_lock(7410002)`, so two starting instances take turns).
 

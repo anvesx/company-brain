@@ -35,8 +35,8 @@ The "dialect factory" is the caller's `pg.Pool`: the composition root (`apps/bra
 `DATABASE_URL` and hands it to `createPostgresGraphStore({ pool })` and to identity as `{ dialect: new PostgresDialect({ pool }) }`.
 Error codes stay `BAD_INPUT | DEPTH_LIMIT | CLOSED`.
 
-Brain HTTP: `GET /healthz` (no auth) runs `select 1` on the pool with a 2 s timeout: `200 {"status":"ok"}` or
-`503 {"status":"unavailable"}`. Identity routes are mounted under `/api/auth/*` and `/.well-known/*`; `/v1/*` is unchanged.
+Brain HTTP: `GET /healthz` (no auth) is `200 {"status":"ok"}` once identity and the graph are built and `select 1` on the
+pool answers within 2 s, else `503 {"status":"unavailable"}` (so a booting server is not "ready"). Identity routes are mounted under `/api/auth/*` and `/.well-known/*`; `/v1/*` is unchanged.
 Env: `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+), `IDENTITY_SECRET` (32+), `BASE_URL`, `PORT` (default 8080), `HOST` (default `0.0.0.0`).
 Start-up errors: a short `BRAIN_AUTH_SECRET`, a taken port, or any database error that is not a connection error (wrong password, bad SQL) exits 1 with `brain: <message>`; connection errors retry while `/healthz` answers 503.
 
@@ -61,7 +61,8 @@ Start-up errors: a short `BRAIN_AUTH_SECRET`, a taken port, or any database erro
 7. An unreachable database makes `createPostgresGraphStore` reject (it never hangs past the pool's connect timeout).
 8. Five instances starting at once all succeed: DDL runs under `pg_advisory_xact_lock` (a bare `CREATE TABLE IF NOT EXISTS`
    race raises 23505 on `pg_type`). `close()` never ends the caller's pool; afterwards every call rejects `CLOSED`.
-9. `/healthz` answers 200 while the database answers, 503 while it does not, and the process stays up either way.
+9. `/healthz` answers 503 while booting (the pool answers but the routes do not exist yet), 200 once the routes are built
+   and the database answers, 503 again while it does not, and the process stays up either way.
 10. The image: multi-stage, `node:26-slim`, pnpm 8.15.0, runs as the non-root `node` user from `/app`, `EXPOSE 8080`,
     `HEALTHCHECK` on `/healthz` (on `${PORT:-8080}`). No host `dist/`, `node_modules`, `.git`, `.env*` or `*.db` enters the context.
 11. The npm token reaches `pnpm install` only through `RUN --mount=type=secret,id=npm_token`; it is in no ARG, ENV,

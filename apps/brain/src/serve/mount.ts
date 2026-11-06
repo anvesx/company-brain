@@ -11,7 +11,7 @@ export interface Parts {
 
 /** One request handler for the whole server: health first, then identity's paths, then the brain's own routes. */
 export function mount(pool: pg.Pool, parts: () => Parts | undefined): Handler {
-  const health = healthHandler(pool);
+  const health = healthHandler(pool, () => parts() !== undefined); // "ready" means both handlers below exist
   return (req, res) => {
     const path = new URL(req.url ?? "/", "http://x").pathname;
     if (path === "/healthz") return void health(req, res);

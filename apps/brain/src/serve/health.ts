@@ -20,8 +20,13 @@ export async function databaseUp(pool: pg.Pool, timeoutMs = HEALTH_TIMEOUT_MS): 
   }
 }
 
-/** `GET /healthz`: 200 `{"status":"ok"}` while the database answers, 503 `{"status":"unavailable"}` while it does not. No auth. */
-export const healthHandler = (pool: pg.Pool) => async (_req: IncomingMessage, res: ServerResponse) => {
-  const up = await databaseUp(pool);
+/**
+ * `GET /healthz`: 200 `{"status":"ok"}` once the routes are built AND the database answers; 503 `{"status":"unavailable"}`
+ * otherwise. No auth. `ready` is checked first: during boot the pool already answers `select 1` while identity's migrations
+ * and the graph store are still being built, and every other route answers 503 then. Reporting 200 at that moment would send
+ * traffic (Cloud Run readiness, the Docker HEALTHCHECK, a load balancer) to a server that cannot serve it yet.
+ */
+export const healthHandler = (pool: pg.Pool, ready: () => boolean) => async (_req: IncomingMessage, res: ServerResponse) => {
+  const up = ready() && (await databaseUp(pool));
   res.writeHead(up ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ status: up ? "ok" : "unavailable" }));
 };
