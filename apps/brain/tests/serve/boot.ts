@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { createPostgresGraphStore } from "@anvesx/graph-store";
 import pg from "pg";
 import type { Throwaway } from "../../../../features/graph-store/tests/support/pg/server.js";
 
