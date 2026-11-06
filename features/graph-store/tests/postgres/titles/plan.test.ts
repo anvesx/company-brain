@@ -37,7 +37,7 @@ describe.skipIf(pgFactory.skip !== undefined)("postgres: title queries use the t
         shown,
       ).toEqual([]);
       expect(
-        plan.some((s) => /^(Bitmap Index Scan|Index Scan) nodes_(title_trgm|tenant_seq)$/.test(s)),
+        plan.some((s) => /^Bitmap Index Scan nodes_title_trgm$/.test(s)), // the trigram index, not a (tenant, seq) walk
         shown,
       ).toBe(true);
     }
