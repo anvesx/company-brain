@@ -6,11 +6,12 @@ import { checkOrigin } from "../guard/origin.js";
 import { buildPages } from "../pages/serve.js";
 import { mapRejection, toRedirect } from "./errors.js";
 import { checkRedirect, labelNativeClient } from "./register.js";
-import { addressOf, bodyOf, checkSignUp, tooMany } from "./validate.js";
+import { addressOf, bodyOf, checkSetActive, checkSignUp, tooMany } from "./validate.js";
 
 const SIGN_IN = "/api/auth/sign-in/email";
 const SIGN_UP = "/api/auth/sign-up/email";
 const REGISTER = "/api/auth/oauth2/register";
+const SET_ACTIVE = "/api/auth/organization/set-active";
 
 /** The HTTP surface: better-auth under /api/auth, the discovery documents at the root, and our guards around both. */
 export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Hono => {
@@ -38,6 +39,10 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
     let email = "";
     if (path === SIGN_UP) {
       const bad = await checkSignUp(req);
+      if (bad) return bad;
+    }
+    if (path === SET_ACTIVE) {
+      const bad = await checkSetActive(req, auth);
       if (bad) return bad;
     }
     if (path === SIGN_IN) {

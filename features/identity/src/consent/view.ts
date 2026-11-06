@@ -1,7 +1,7 @@
 import type { AuthContext } from "better-auth";
 import type { Auth } from "../auth/options.js";
 import { IdentityError } from "../errors.js";
-import { readSession } from "../guard/session.js";
+import { activeTenant, readSession } from "../guard/session.js";
 
 type Adapter = AuthContext["adapter"];
 type ClientRow = { name?: string | null; redirectUris?: unknown; scopes?: unknown };
@@ -25,14 +25,17 @@ const listOf = (value: unknown): string[] => {
  */
 export const consentView = async (auth: Auth, adapter: Adapter, headers: Headers, oauthQuery: string) => {
   const view = await readSession(auth, headers);
-  if (!view || view.organizationId === null) throw new IdentityError("UNAUTHENTICATED", "sign in first");
+  if (!view) throw new IdentityError("UNAUTHENTICATED", "sign in first");
+  // The active organization may be unset or stale; fall back to the oldest membership, as the identity port does.
+  const tenant = await activeTenant(adapter, view);
+  if (tenant === null) throw new IdentityError("NO_ORGANIZATION", "You do not belong to an organization yet.");
   const params = new URLSearchParams(oauthQuery);
   // Each failure names the query parameter at fault, so the person fixing the link knows which one.
   const clientId = params.get("client_id");
   if (!clientId) throw new IdentityError("BAD_INPUT", "the client_id parameter is missing", "oauth_query");
   const client = await adapter.findOne<ClientRow>({ model: "oauthClient", where: [{ field: "clientId", value: clientId }] });
   if (!client) throw new IdentityError("BAD_INPUT", "client_id does not match a registered client", "oauth_query");
-  const org = await adapter.findOne<{ id: string; name: string }>({ model: "organization", where: [{ field: "id", value: view.organizationId }] });
+  const org = await adapter.findOne<{ id: string; name: string }>({ model: "organization", where: [{ field: "id", value: tenant }] });
   if (!org) throw new IdentityError("BAD_INPUT", "the active organization no longer exists", "organization");
   const stored = listOf(client.redirectUris).find((uri) => uri === params.get("redirect_uri"));
   if (!stored) throw new IdentityError("BAD_INPUT", "redirect_uri is missing or does not match the client's registration", "oauth_query");

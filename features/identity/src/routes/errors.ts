@@ -7,7 +7,7 @@ const FIELD_FOR: Record<string, string> = {
 };
 
 /** better-auth's schema check words a bad body as "[body.email] Invalid input: ...". Pull out the field names. */
-const badFields = (message: string): string[] => [...message.matchAll(/\[body\.([\w.]+)\]/g)].map((m) => m[1] ?? "");
+const badFields = (message: string): string[] => [...new Set([...message.matchAll(/\[body\.([\w.]+)\]/g)].map((m) => m[1] ?? ""))];
 
 /** better-auth answers a browser's authorize call with 200 and `{redirect, url}`. A browser needs a real 302. */
 export const toRedirect = async (res: Response): Promise<Response> => {
@@ -36,6 +36,9 @@ export const mapRejection = async (res: Response): Promise<Response> => {
     .catch(() => null)) as { code?: string; message?: string; error_description?: string } | null;
   if (body?.error_description?.includes("code_verifier")) return Response.json({ ...body, code: "BAD_INPUT", field: "code_verifier" }, { status: res.status });
   const code = body?.code ?? "";
+  // A body that is not JSON (400) or not a JSON/form content type (415) is the caller's input, so it is BAD_INPUT too.
+  if (code === "BAD_REQUEST" && body?.message?.startsWith("Invalid JSON")) return badInput("body", "body: send valid JSON");
+  if (code === "UNSUPPORTED_MEDIA_TYPE") return badInput("body", "body: send JSON or a form");
   if (code === "INVALID_EMAIL") return badInput("email", "email: must be an email address");
   const fields = code === "VALIDATION_ERROR" ? badFields(body?.message ?? "") : [];
   if (fields.length > 0) return badInput(fields[0] ?? "", `${fields.join(", ")}: is missing or the wrong type`);

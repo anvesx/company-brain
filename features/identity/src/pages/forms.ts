@@ -1,5 +1,8 @@
+import type { AuthContext } from "better-auth";
 import type { Hono } from "hono";
+import { isMember } from "../auth/hooks.js";
 import { IdentityError } from "../errors.js";
+import { readSession } from "../guard/session.js";
 import { api, csrfOk, type Deps, html, oops, readForm, redirect } from "./actions.js";
 import { signInView, signUpView } from "./views/auth.js";
 
@@ -14,9 +17,13 @@ export const authenticate = async (d: Deps, req: Request, mode: "sign-up" | "sig
     mode === "sign-up" ? { name: form["name"], email: form["email"], password: form["password"] } : { email: form["email"], password: form["password"] };
   const res = await api(d, req, `${mode}/email`, body);
   if (res.ok) return redirect(query ? `/api/auth/oauth2/authorize?${query}` : "/connections", res);
-  const said = (await res.json().catch(() => ({}))) as { message?: string };
-  const error = MESSAGES[res.status] ?? said.message ?? "Something went wrong. Try again.";
-  return html((mode === "sign-up" ? signUpView : signInView)({ query, error }), res.status);
+  const said = (await res.json().catch(() => ({}))) as { message?: string; code?: string };
+  // better-auth's own wording for a taken email tells a stranger nothing useful, so say it in our words.
+  const taken = said.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" || said.message?.startsWith("User already exists");
+  const error = taken
+    ? "email: an account with this email already exists. Sign in instead."
+    : (MESSAGES[res.status] ?? said.message ?? "Something went wrong. Try again.");
+  return html((mode === "sign-up" ? signUpView : signInView)({ query, error, email: form["email"] ?? "" }), res.status);
 };
 
 const json = async (res: Response): Promise<{ url?: string }> => (await res.json().catch(() => ({}))) as { url?: string };
@@ -38,8 +45,10 @@ export const mountForms = (app: Hono, d: Deps): void => {
 
   post("/picker", async (req, form) => {
     // Check membership first: set-active with a foreign organization would clear the session's active one.
-    const mine = await d.auth.api.listOrganizations({ headers: req.headers });
-    if (!mine.some((org) => org.id === form["organizationId"])) return oops(new IdentityError("BAD_INPUT", "That organization is not available to you."));
+    const session = await readSession(d.auth, req.headers);
+    const id = form["organizationId"] ?? "";
+    if (!session || !(await isMember((await d.auth.$context).adapter as AuthContext["adapter"], session.userId, id)))
+      return oops(new IdentityError("BAD_INPUT", "That organization is not available to you."));
     const set = await api(d, req, "organization/set-active", { organizationId: form["organizationId"] });
     if (!set.ok) return oops(new IdentityError("BAD_INPUT", "That organization is not available to you."));
     const query = form["oauth_query"] ?? "";

@@ -8,3 +8,4 @@ Rules 6 and 7: the organization in a token is the one chosen at consent.
 - `membership.test.ts`: a member removed from the consented organization cannot refresh; the
   access token already issued dies at 15 minutes.
 - `view.test.ts`: consent view list encodings, name fallback, BAD_INPUT on `oauth_query`.
+- `setactive.test.ts`: 3: API set-active with a bad organizationId is 400 and clears nothing; consent falls back to the remaining organization.

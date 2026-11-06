@@ -18,8 +18,8 @@ ${body}
 </main>${script ? `<script>${script}</script>` : ""}</body></html>`;
 
 /** A labelled text field. The label wraps the input, so clicking the label focuses it. */
-export const field = (label: string, name: string, type: string, auto: string): string =>
-  `<label>${esc(label)}<input name="${name}" type="${type}" autocomplete="${auto}" required></label>`;
+export const field = (label: string, name: string, type: string, auto: string, value = ""): string =>
+  `<label>${esc(label)}<input name="${name}" type="${type}" autocomplete="${auto}"${value ? ` value="${esc(value)}"` : ""} required></label>`;
 
 /** Hidden inputs carried by every form: the CSRF token (when signed in) and the OAuth query being continued. */
 export const hidden = (values: Record<string, string>): string =>

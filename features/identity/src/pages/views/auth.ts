@@ -4,16 +4,18 @@ export interface AuthForm {
   /** The OAuth query to continue after sign-in, empty for a plain visit. */
   query: string;
   error?: string;
+  /** The email the person typed, put back in the box after a refused post. */
+  email?: string;
 }
 
 const alert = (error?: string): string => (error ? `<p role="alert">${esc(error)}</p>` : "");
 
 /** The sign-in page. It has no script: the form posts to the server. */
-export const signInView = ({ query, error }: AuthForm): string =>
+export const signInView = ({ query, error, email }: AuthForm): string =>
   page(
     "Sign in",
     `${alert(error)}<form method="post" action="/sign-in">${hidden({ oauth_query: query })}
-${field("Email", "email", "email", "username")}${field("Password", "password", "password", "current-password")}
+${field("Email", "email", "email", "username", email)}${field("Password", "password", "password", "current-password")}
 <button type="submit">Sign in</button></form>
 <p>New here? <a href="/sign-up${query ? `?${esc(query)}` : ""}">Sign up</a></p>`,
   );

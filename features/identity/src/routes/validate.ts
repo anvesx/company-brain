@@ -1,6 +1,10 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
+import type { AuthContext } from "better-auth";
 import type { Context } from "hono";
+import { isMember } from "../auth/hooks.js";
+import type { Auth } from "../auth/options.js";
 import { IdentityError } from "../errors.js";
+import { readSession } from "../guard/session.js";
 import { checkEmail, checkPassword } from "../policy/password.js";
 
 /** The JSON body of a request, read from a clone so better-auth can still read the original. Null when it is not JSON. */
@@ -28,6 +32,20 @@ export const checkSignUp = async (req: Request): Promise<Response | null> => {
     if (error instanceof IdentityError && error.field) return badInput(error.field, error.message);
     throw error;
   }
+};
+
+/**
+ * better-auth clears the session's active organization BEFORE it checks the new one, so a refused or empty switch
+ * would leave a signed-in user with none. Check first: the body must name an organization the caller belongs to.
+ * With no session this returns null and better-auth answers 401 as usual.
+ */
+export const checkSetActive = async (req: Request, auth: Auth): Promise<Response | null> => {
+  const view = await readSession(auth, req.headers);
+  if (!view) return null;
+  const id = (await bodyOf(req))?.["organizationId"];
+  const adapter = (await auth.$context).adapter as AuthContext["adapter"];
+  if (typeof id === "string" && id.trim() !== "" && (await isMember(adapter, view.userId, id))) return null;
+  return badInput("organizationId", "organizationId: name an organization you belong to");
 };
 
 /** The shared key used when no address is known. */
