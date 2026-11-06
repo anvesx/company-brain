@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cursorKeyFrom } from "../../../src/serve/key.js";
+import { cursorKeyFrom } from "../../../src/serve/local/key.js";
 import { signUp } from "../../identity/boot.js";
 import { boot, SECRET, seed } from "./support.js";
 

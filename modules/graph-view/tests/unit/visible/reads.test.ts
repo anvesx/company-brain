@@ -29,14 +29,14 @@ function world() {
 }
 
 describe("rule 1: edges between visible non-documents", () => {
-  it("a can-read edge from a visible reader to a visible project is sent", () => {
-    const keys = edgeKeys(visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" }).edges);
+  it("a can-read edge from a visible reader to a visible project is sent", async () => {
+    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" })).edges);
     expect(keys).toContain("bob -can-read-> p1");
     expect(keys).toContain("alice -can-read-> p1");
   });
 
-  it("a can-read edge to an end that is not visible is still absent, and no edge is sent twice", () => {
-    const keys = edgeKeys(visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" }).edges);
+  it("a can-read edge to an end that is not visible is still absent, and no edge is sent twice", async () => {
+    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" })).edges);
     expect(keys.some((k) => k.includes("p-hidden"))).toBe(false);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -55,11 +55,11 @@ describe("rule 1: aliases of the caller", () => {
     return store;
   };
 
-  it("sees what an alias can read, and what the alias's teams can read, only when the alias is given", () => {
-    const ids = (aliases?: string[]) =>
-      visibleGraph(withAlias(), { cursorKey: KEY, tenant: "t1", user: "alice", ...(aliases && { aliases }) }).nodes.map((n) => n.id);
-    expect(ids()).not.toContain("d2");
-    expect(ids(["ann@x.io"])).toEqual(expect.arrayContaining(["d2", "d3", "eng"]));
-    expect(ids(["someone-else"])).not.toContain("d2");
+  it("sees what an alias can read, and what the alias's teams can read, only when the alias is given", async () => {
+    const ids = async (aliases?: string[]) =>
+      (await visibleGraph(withAlias(), { cursorKey: KEY, tenant: "t1", user: "alice", ...(aliases && { aliases }) })).nodes.map((n) => n.id);
+    expect(await ids()).not.toContain("d2");
+    expect(await ids(["ann@x.io"])).toEqual(expect.arrayContaining(["d2", "d3", "eng"]));
+    expect(await ids(["someone-else"])).not.toContain("d2");
   });
 });

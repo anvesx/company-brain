@@ -24,6 +24,9 @@ jobs:
       - run: pnpm deps
       - run: pnpm turbo run build
       - run: pnpm turbo run typecheck
+      # Puts the newest Postgres the runner ships on PATH (ubuntu-latest moved from 16 to 18 in 2026; the
+      # path carries the major). Fails loudly when none is installed, so CI=true never skips the pg tests.
+      - run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 | tee -a "$GITHUB_PATH" | grep .
       # Wall-clock scale tests need dedicated hardware; shared runners fail them on timing alone.
       # The --exclude is a vitest flag, so node --test in scale-k6 gets its own step (its tests are not wall-clock).
       - run: pnpm -r --filter='!@anvesx/scale-k6' run test --exclude '**/tests/scale/**'
@@ -51,6 +54,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
       - run: pnpm turbo run build
+      # Puts the newest Postgres the runner ships on PATH (ubuntu-latest moved from 16 to 18 in 2026; the
+      # path carries the major). Fails loudly when none is installed, so CI=true never skips the pg tests.
+      - run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 | tee -a "$GITHUB_PATH" | grep .
       - run: pnpm -r mutation
   integration:
     runs-on: ubuntu-latest
@@ -69,7 +75,13 @@ jobs:
         run: |
           pnpm exec turbo run integration --dry=json \
             | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).tasks.filter((x) => x.task === "integration" && x.command !== "<NONEXISTENT>"); if (t.length === 0) { console.error("no package defines an integration script"); process.exit(1); } console.log(t.map((x) => x.taskId).join("\n"))'
+      # Puts the newest Postgres the runner ships on PATH (ubuntu-latest moved from 16 to 18 in 2026; the
+      # path carries the major). Fails loudly when none is installed, so CI=true never skips the pg tests.
+      - run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 | tee -a "$GITHUB_PATH" | grep .
+      # turbo drops env vars it was not told about; turbo.json passThroughEnv lets this one reach the image build.
       - run: pnpm turbo run integration
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
   e2e:
     # Playwright against the real apps/connections launcher; @anvesx/connectors comes from the registry.
     runs-on: ubuntu-latest

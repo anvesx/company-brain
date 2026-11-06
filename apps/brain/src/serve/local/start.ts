@@ -1,8 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { createGraphStore } from "@anvesx/graph-store";
+import { createGraphStore, toAsync } from "@anvesx/graph-store";
 import { createIdentity, IdentityError, migrateDatabase } from "@anvesx/identity";
-import { type BrainApp, createBrainApp } from "../app.js";
-import { recheckFromEnv } from "../cli/recheck.js";
+import { type BrainApp, createBrainApp } from "../../app.js";
+import { recheckFromEnv } from "../../cli/recheck.js";
 import { ConfigError, readServeConfig } from "./config.js";
 import { cursorKeyFrom } from "./key.js";
 
@@ -27,7 +27,7 @@ export async function startBrain(env: Record<string, string | undefined>): Promi
   const recheck = recheckFromEnv(env);
   const app = createBrainApp({
     ...(recheck && { recheck }),
-    store: createGraphStore({ path: config.graphPath }),
+    store: toAsync(createGraphStore({ path: config.graphPath })),
     identity,
     cursorKey: cursorKeyFrom(config.secret),
     port: config.port,

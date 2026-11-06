@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createGraphStore } from "@anvesx/graph-store";
 import { createIdentity } from "@anvesx/identity";
-import { startBrain } from "../../../src/serve/start.js";
+import { startBrain } from "../../../src/serve/local/start.js";
 
 export const SECRET = "brain-serve-cursor-test-secret-".padEnd(44, "0"); // low-entropy on purpose: a literal here trips the secret scanner
 

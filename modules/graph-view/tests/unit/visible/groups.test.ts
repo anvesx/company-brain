@@ -4,10 +4,10 @@ import { KEY, node, openStore, write } from "../../support/store.js";
 import { seedWorld } from "../../support/world.js";
 
 describe("rule 2: groups and categories", () => {
-  it("documents are grouped by kind and source; every other kind by kind alone", () => {
+  it("documents are grouped by kind and source; every other kind by kind alone", async () => {
     const store = openStore();
     seedWorld(store);
-    const page = visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" });
+    const page = await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" });
     const groups = Object.fromEntries(page.nodes.map((n) => [n.id, n.group]));
     expect(groups).toEqual({
       alice: "person",
@@ -20,10 +20,10 @@ describe("rule 2: groups and categories", () => {
     });
   });
 
-  it("categories count visible nodes per group, sorted by group name", () => {
+  it("categories count visible nodes per group, sorted by group name", async () => {
     const store = openStore();
     seedWorld(store);
-    expect(visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" }).categories).toEqual([
+    expect((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" })).categories).toEqual([
       { group: "document:gdrive", count: 1 },
       { group: "document:notion", count: 1 },
       { group: "person", count: 2 },
@@ -33,7 +33,7 @@ describe("rule 2: groups and categories", () => {
     ]);
   });
 
-  it("each connector is its own cluster: three sources give three document groups", () => {
+  it("each connector is its own cluster: three sources give three document groups", async () => {
     const store = openStore();
     const docs = ["gdrive", "notion", "github", "notion"].map((source, i) => node("t1", `d${i}`, "document", source));
     write(
@@ -42,7 +42,7 @@ describe("rule 2: groups and categories", () => {
       [node("t1", "u", "person", "slack"), ...docs],
       docs.map((d) => ({ tenant: "t1", from: "u", to: d.id, kind: "can-read", source: "t" })),
     );
-    const counts = visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" }).categories;
+    const counts = (await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" })).categories;
     expect(counts.filter((c) => c.group.startsWith("document:"))).toEqual([
       { group: "document:gdrive", count: 1 },
       { group: "document:github", count: 1 },
@@ -50,7 +50,7 @@ describe("rule 2: groups and categories", () => {
     ]);
   });
 
-  it("the person's source does not split principals: slack and github people share one group", () => {
+  it("the person's source does not split principals: slack and github people share one group", async () => {
     const store = openStore();
     write(
       store,
@@ -61,6 +61,6 @@ describe("rule 2: groups and categories", () => {
         { tenant: "t1", from: "v", to: "d", kind: "can-read", source: "t" },
       ],
     );
-    expect(visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" }).categories).toContainEqual({ group: "person", count: 2 });
+    expect((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" })).categories).toContainEqual({ group: "person", count: 2 });
   });
 });

@@ -1,7 +1,7 @@
-import type { Edge, EdgeKind, GraphStore, NodeKind } from "@anvesx/graph-store";
+import type { Edge, EdgeKind, NodeKind } from "@anvesx/graph-store";
 import { categoriesOf, groupOf } from "./groups.js";
 import { checkAsOf, checkKey, decodeCursor, encodeCursor, pageSize } from "./limits.js";
-import { visibleSet } from "./visible.js";
+import { type ViewStore, visibleSet } from "./visible.js";
 
 /** Other names the sources know a user by (email, linked account ids): ACLs may name them instead of the user's id. */
 export type Aliases = (user: string) => Promise<string[]>;
@@ -27,12 +27,12 @@ export interface GraphViewPage {
  * The graph the caller may see, one page at a time (spec rules 1 to 3, 7 and 8). Tenant and user are the
  * caller's own, so a view can never reach another tenant. Throws GraphError BAD_INPUT on a bad limit or cursor.
  */
-export function visibleGraph(store: GraphStore, q: GraphViewQuery): GraphViewPage {
+export async function visibleGraph(store: ViewStore, q: GraphViewQuery): Promise<GraphViewPage> {
   const size = pageSize(q.limit);
   checkAsOf(q.asOf);
   checkKey(q.cursorKey);
   const after = decodeCursor(q.cursor, `${q.tenant}\n${q.user}`, q.cursorKey);
-  const { nodes, edges } = visibleSet(store, q);
+  const { nodes, edges } = await visibleSet(store, q);
 
   // Nodes are sorted by id, so a page is a slice and the cursor is the id of its last node.
   const start = after === undefined ? 0 : nodes.findIndex((n) => n.id > after);

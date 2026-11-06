@@ -1,9 +1,14 @@
-# docs/briefs
+# Builder briefs
 
-One brief per builder session. A brief names the goal, the files the builder owns, the frozen contract
-tests the builder must turn green without editing, the commands that prove it, and what is out of scope.
-Briefs never overlap in owned files.
+One brief per builder session. A brief names the goal, the files the builder owns (no overlap between
+builders), the public interface with real signatures, the acceptance tests that were written first, and
+the commands that prove it is done. The tests are the spec: a builder makes them pass and never edits them.
 
-| Brief                           | Package                                        | Status                         |
-| ------------------------------- | ---------------------------------------------- | ------------------------------ |
-| [graph-view.md](graph-view.md) | `modules/graph-view`, `apps/brain`, graph-store batch reads | Contract red, build pending |
+| Brief | Slice | Tests |
+|---|---|---|
+| [connector-accounts](connector-accounts.md) | connector accounts, token refresh sweep, Google login | `features/identity/tests/{unit/connectors,integration/connectors,integration/google}`, `services/token-refresh/tests` |
+| [deploy](deploy.md) | Postgres graph store, root Dockerfile, image workflow (spec `docs/specs/infra/deploy.md`) | `features/graph-store/tests/{contract,postgres}`, `tools/deploy/tests` |
+| [graph-view](graph-view.md) | `modules/graph-view`, `apps/brain`, graph-store batch reads | `modules/graph-view/tests`, `features/graph-store/tests/unit/batch` |
+
+Rules for every brief: builders never edit the lead-owned test folders named in the brief; a diff touching
+them is rejected. The verifier's PASS plus the pasted evidence decides the merge.

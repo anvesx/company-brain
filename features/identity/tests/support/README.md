@@ -8,3 +8,4 @@ Helpers shared by the test folders. No test files live here.
   a hand-moved clock, a mail collector and a per-path hit counter.
 - `http.ts`: a cookie-keeping client that sends Origin on writes, plus sign-up and sign-in.
 - `oauth.ts`: the MCP client steps: discovery, registration, PKCE, authorize, consent, token.
+- `process/`: real second node processes on the same SQLite file, for cross-process races.

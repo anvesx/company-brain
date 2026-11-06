@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import { IdentityError } from "../../errors.js";
 import { activeTenant } from "../../guard/session.js";
 import { type Deps, html } from "../actions.js";
+import { connectorData, mountConnectorRoutes } from "../connectors/routes.js";
 import { connectionsView } from "../views/connections.js";
 import type { signedInPages } from "./guard.js";
 
@@ -16,7 +17,11 @@ export const mountConnections = (app: Hono, d: Deps, pages: ReturnType<typeof si
       const org = await db.findOne<{ name: string }>({ model: "organization", where: [{ field: "id", value: tenant }] });
       const connections = (await d.cfg.connections?.(tenant)) ?? [];
       const { resource, serverName, templates, catalog } = d.cfg;
-      return html(connectionsView({ organization: org?.name ?? "", csrf: token, resource, serverName, templates, catalog: catalog ?? [], connections }));
+      const { tiles, accounts } = await connectorData(d, db, view.userId);
+      return html(
+        connectionsView({ organization: org?.name ?? "", csrf: token, resource, serverName, templates, catalog: catalog ?? [], connections, tiles, accounts }),
+      );
     }),
   );
+  mountConnectorRoutes(app, d, pages.adapter);
 };

@@ -20,34 +20,34 @@ function timeline(): GraphStore {
   return store;
 }
 
-const view = (store: GraphStore, asOf?: number) =>
-  visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice", ...(asOf === undefined ? {} : { asOf }) });
+const view = async (store: GraphStore, asOf?: number) =>
+  await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice", ...(asOf === undefined ? {} : { asOf }) });
 
 describe("rule 8: asOf draws the graph as it was", () => {
-  it("before the later writes, the view equals the original world", () => {
-    const page = view(timeline(), 1_500);
+  it("before the later writes, the view equals the original world", async () => {
+    const page = await view(timeline(), 1_500);
     expect(page.nodes.map((n) => n.id)).toEqual(ALICE_NODES);
     expect(edgeKeys(page.edges)).toEqual(ALICE_EDGES);
   });
 
-  it("titles come from the row valid at asOf", () => {
-    const title = (asOf?: number) => view(timeline(), asOf).nodes.find((n) => n.id === "d-alice")?.title;
-    expect(title(1_500)).toBe("Title of d-alice");
-    expect(title(2_500)).toBe("Renamed");
+  it("titles come from the row valid at asOf", async () => {
+    const title = async (asOf?: number) => (await view(timeline(), asOf)).nodes.find((n) => n.id === "d-alice")?.title;
+    expect(await title(1_500)).toBe("Title of d-alice");
+    expect(await title(2_500)).toBe("Renamed");
   });
 
-  it("between the writes, the new document is in and the old grant still holds", () => {
-    const ids = view(timeline(), 2_500).nodes.map((n) => n.id);
+  it("between the writes, the new document is in and the old grant still holds", async () => {
+    const ids = (await view(timeline(), 2_500)).nodes.map((n) => n.id);
     expect(ids).toEqual(["alice", "bob", "d-alice", "d-late", "d-shared", "eng", "p-launch", "r-api"]);
   });
 
-  it("without asOf, the view is now: the lost grant takes d-shared, its project and its reader with it", () => {
-    const page = view(timeline());
+  it("without asOf, the view is now: the lost grant takes d-shared, its project and its reader with it", async () => {
+    const page = await view(timeline());
     expect(page.nodes.map((n) => n.id)).toEqual(["alice", "d-alice", "d-late", "eng"]);
     expect(edgeKeys(page.edges)).toEqual(["alice -authored-> d-alice", "alice -can-read-> d-alice", "alice -can-read-> d-late", "alice -member-of-> eng"]);
   });
 
-  it("before anything existed, the view is empty", () => {
-    expect(view(timeline(), 500)).toEqual({ nodes: [], edges: [], categories: [] });
+  it("before anything existed, the view is empty", async () => {
+    expect(await view(timeline(), 500)).toEqual({ nodes: [], edges: [], categories: [] });
   });
 });

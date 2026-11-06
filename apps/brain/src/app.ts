@@ -1,15 +1,15 @@
-import type { Server } from "node:http";
-import type { GraphStore } from "@anvesx/graph-store";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import type { AsyncGraphStore } from "@anvesx/graph-store";
 import { mountGraphView } from "@anvesx/graph-view";
 import type { createIdentity } from "@anvesx/identity";
-import { createAdaptorServer } from "@hono/node-server";
+import { createAdaptorServer, getRequestListener } from "@hono/node-server";
 import { Hono } from "hono";
 import { identityAliases } from "./gate/accounts.js";
 import type { Recheck } from "./live/recheck.js";
 import { mountDocuments } from "./routes/documents.js";
 
 export interface BrainDeps {
-  store: GraphStore;
+  store: AsyncGraphStore;
   /** The identity service: sign-in, sessions and MCP tokens. The brain trusts its port and nothing else. */
   identity: ReturnType<typeof createIdentity>;
   /** Optional live check against the source, run per query after the graph says yes. */
@@ -21,6 +21,8 @@ export interface BrainDeps {
 }
 export interface BrainApp {
   server: Server;
+  /** The request handler on its own, so `serve/` can mount it next to other routes on one server. */
+  handler: (req: IncomingMessage, res: ServerResponse) => void;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
@@ -39,6 +41,7 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
   const server = createAdaptorServer({ fetch: app.fetch }) as Server;
   return {
     server,
+    handler: getRequestListener(app.fetch),
     listen: () =>
       new Promise((ok, fail) => {
         server.once("error", fail); // for example EADDRINUSE

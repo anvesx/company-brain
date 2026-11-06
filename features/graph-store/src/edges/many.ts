@@ -8,10 +8,10 @@ export const MAX_IDS = 100_000;
 const CHUNK = 5000;
 const VALID = "valid_from <= ? AND (valid_to IS NULL OR ? < valid_to)";
 const marks = (n: number): string => Array.from({ length: n }, () => "?").join(", ");
-const byId = (a: string, b: string): number => (a < b ? -1 : 1);
+export const byId = (a: string, b: string): number => (a < b ? -1 : 1);
 
 /** Checks the id list and returns it deduplicated and sorted, so chunking never changes the answer. */
-function cleanIds(ids: unknown): string[] {
+export function cleanIds(ids: unknown): string[] {
   if (!Array.isArray(ids)) return bad("ids must be an array");
   if (ids.length > MAX_IDS) bad(`ids has ${ids.length} entries, the limit is ${MAX_IDS}`);
   return [...new Set(ids.map((id) => text("id", id)))].sort(byId);

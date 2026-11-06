@@ -1,0 +1,83 @@
+# Builds the brain container image and pushes it to two registries:
+#   gcp job: Google Artifact Registry (runs only when the GCP_WIF_PROVIDER repository variable is set)
+#   aws job: Amazon ECR (runs only when the AWS_ROLE_ARN secret is set)
+# Both jobs log in with short-lived OIDC tokens. No key files and no AWS access keys are stored in GitHub.
+name: image
+
+on:
+  # Every push to main builds a new image, tagged with the commit sha.
+  push:
+    branches: [main]
+  # Lets a person start the same build by hand from the Actions tab.
+  workflow_dispatch:
+
+jobs:
+  gcp:
+    # Skipped (not failed) until the repository variable exists, so main stays green before GCP is set up.
+    if: vars.GCP_WIF_PROVIDER != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets GitHub mint a short-lived OIDC token. Google swaps it for a temporary credential.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          # Identifies the Workload Identity Federation provider. Stored as a repository variable.
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          # The service account that the temporary credential acts as.
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      # Lets docker push to the regional Artifact Registry host.
+      - run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: "${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/brain/brain:${{ github.sha }}"
+          # The npm token goes in as a BuildKit secret. It is never a build-arg, so it stays out of image layers.
+          secrets: "npm_token=${{ secrets.NPM_READ_TOKEN }}"
+
+  aws-gate:
+    # A job-level if cannot read secrets. This small job reads the secret and passes a plain true or false on.
+    runs-on: ubuntu-latest
+    outputs:
+      # Other jobs read this as needs.aws-gate.outputs.enabled.
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        run: |
+          # Writes enabled=true when the role secret is set, and enabled=false when it is empty.
+          echo "enabled=${{ secrets.AWS_ROLE_ARN != '' }}" >> "$GITHUB_OUTPUT"
+
+  aws:
+    # Skipped (not failed) when the gate says the AWS secret is not set.
+    needs: aws-gate
+    if: needs.aws-gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Same OIDC idea as the gcp job, used to assume an AWS role.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # The IAM role to assume, stored as a secret.
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # The region the ECR registry lives in.
+          aws-region: ${{ vars.AWS_REGION }}
+      # Logs docker in to ECR. The step id lets later steps read the registry host.
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: "${{ steps.ecr.outputs.registry }}/brain:${{ github.sha }}"
+          # Same BuildKit secret rule as the gcp job.
+          secrets: "npm_token=${{ secrets.NPM_READ_TOKEN }}"

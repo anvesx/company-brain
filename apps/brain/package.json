@@ -13,19 +13,25 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "vitest run --reporter=verbose --config ../../vitest.config.ts",
     "mutation": "stryker run"
   },
   "dependencies": {
     "@anvesx/connector-kit": "workspace:*",
     "@anvesx/connectors": "0.1.0",
+    "@anvesx/core-types": "workspace:*",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*",
     "@anvesx/graph-view": "workspace:*",
     "@anvesx/identity": "workspace:*",
     "@hono/node-server": "^2.1.5",
-    "hono": "^4.13.16"
+    "hono": "^4.13.16",
+    "kysely": "0.29.8",
+    "pg": "8.23.1"
   },
   "license": "MIT",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
 }

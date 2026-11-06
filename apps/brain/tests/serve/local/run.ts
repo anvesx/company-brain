@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 
-export const BIN = fileURLToPath(new URL("../../dist/bin.js", import.meta.url));
+export const BIN = fileURLToPath(new URL("../../../dist/bin.js", import.meta.url));
 const SECRET = "bin-test-secret-".padEnd(40, "0"); // low-entropy on purpose: a literal here trips the secret scanner
 
 /** The newest source file under `dir` (path and mtime), found by walking every folder. */
@@ -37,7 +37,7 @@ export function staleReason(bin: string, srcDir: string): string | undefined {
 
 /** Runs the real binary. `dir` is a fresh folder for the two database files. */
 export function run(env: Record<string, string>, args: string[] = [], prepare?: (dir: string) => void) {
-  const stale = staleReason(BIN, fileURLToPath(new URL("../../src", import.meta.url)));
+  const stale = staleReason(BIN, fileURLToPath(new URL("../../../src", import.meta.url)));
   if (stale) throw new Error(stale);
   const dir = mkdtempSync(join(tmpdir(), "brain-bin-"));
   prepare?.(dir); // a bad file or folder the operator might leave behind

@@ -35,6 +35,14 @@ BRAIN_GRAPH_PATH=./graph.db BRAIN_AUTH_DB=./auth.db BRAIN_AUTH_SECRET=<32+ chars
 
 A bad setting prints one `brain: ...` line and exits 1 before anything is created; an unknown argument exits 2.
 
+Production (Postgres, identity, `/healthz`; the container image runs this):
+
+```bash
+DATABASE_URL=postgres://... BRAIN_AUTH_SECRET=<32+> IDENTITY_SECRET=<32+> BASE_URL=https://brain.example.com node dist/bin.js serve
+```
+
+`PORT` defaults to 8080, `HOST` to `0.0.0.0`. Identity answers under `/api/auth/*` and `/.well-known/*`. See `src/serve/README.md`.
+
 ## Try it
 
 ```bash

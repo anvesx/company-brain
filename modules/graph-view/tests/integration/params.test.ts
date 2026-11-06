@@ -38,7 +38,7 @@ describe("tenant isolation and query parameters on /v1/graph", () => {
     const first = await page(await k.browser.call("/v1/graph?limit=1"));
     expect(first.nodes).toHaveLength(1);
     const rest = await page(await k.browser.call(`/v1/graph?limit=1&cursor=${encodeURIComponent(String(first.next))}`));
-    const whole = visibleGraph(store, { cursorKey: KEY, tenant: k.tenant, user: k.user });
+    const whole = await visibleGraph(store, { cursorKey: KEY, tenant: k.tenant, user: k.user });
     expect([...first.nodes, ...rest.nodes]).toEqual(whole.nodes);
   });
 

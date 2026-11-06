@@ -5,7 +5,7 @@ import { authenticate, mountForms } from "./forms.js";
 import { mountAccount } from "./signed/account.js";
 import { mountConnections } from "./signed/connections.js";
 import { queryOf, signedInPages } from "./signed/guard.js";
-import { signInView, signUpView } from "./views/auth.js";
+import { readQuery, signInView, signUpView } from "./views/auth.js";
 import { consentView, pickerView } from "./views/flow.js";
 
 /** The server-rendered pages and the form posts behind them. Forms use the JSON API through `call`, so its guards apply. */
@@ -15,8 +15,9 @@ export const buildPages = (d: Deps): Hono => {
   const { adapter, signedIn } = pages;
 
   app.get("/", () => redirect("/connections"));
-  app.get("/sign-in", (c) => html(signInView({ query: queryOf(c.req.url) })));
-  app.get("/sign-up", (c) => html(signUpView({ query: queryOf(c.req.url) })));
+  const google = d.cfg.google !== undefined;
+  app.get("/sign-in", (c) => html(signInView({ ...readQuery(c.req.url), google })));
+  app.get("/sign-up", (c) => html(signUpView({ ...readQuery(c.req.url), google })));
   app.post("/sign-in", (c) => authenticate(d, c.req.raw, "sign-in"));
   app.post("/sign-up", (c) => authenticate(d, c.req.raw, "sign-up"));
 

@@ -28,21 +28,21 @@ beforeAll(() => {
 afterAll(() => drop?.());
 
 describe("rule 6: visibleGraph at integration scale", () => {
-  it("the seeded file really holds 10,000 readable documents and exactly 50,000 edges", () => {
+  it("the seeded file really holds 10,000 readable documents and exactly 50,000 edges", async () => {
     expect(seeded.edges).toBe(50_000);
     expect(seeded.visible.filter((id) => /^d\d+$/.test(id))).toHaveLength(10_000);
   });
 
-  it("returns the whole visible graph in one page of 20,000, under 300 ms on a warm store", (ctx) => {
+  it("returns the whole visible graph in one page of 20,000, under 300 ms on a warm store", async (ctx) => {
     const query = { cursorKey: KEY, tenant: TENANT, user: USER, limit: 20_000 };
-    visibleGraph(store, query); // warm-up: first touch pages the SQLite file into memory
+    await visibleGraph(store, query); // warm-up: first touch pages the SQLite file into memory
     // Best of three timed runs: the budget is a property of the code, and the minimum is the
     // standard way to read it through scheduler noise on a shared machine (the result is checked
     // on every run, so a slow run can never hide a wrong answer).
-    let [ms, page] = [Number.POSITIVE_INFINITY, visibleGraph(store, query)];
+    let [ms, page] = [Number.POSITIVE_INFINITY, await visibleGraph(store, query)];
     for (let run = 0; run < 3; run++) {
       const start = performance.now();
-      page = visibleGraph(store, query);
+      page = await visibleGraph(store, query);
       ms = Math.min(ms, performance.now() - start);
     }
     console.log(`visibleGraph ${seeded.nodes} nodes / ${seeded.edges} edges -> ${page.nodes.length} visible: ${ms.toFixed(1)} ms (budget ${BUDGET_MS})`);
@@ -57,8 +57,8 @@ describe("rule 6: visibleGraph at integration scale", () => {
     ctx.skip();
   });
 
-  it("no invisible row leaks: outsiders, unreadable documents, foreign teams and their projects are absent", () => {
-    const page = visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER, limit: 20_000 });
+  it("no invisible row leaks: outsiders, unreadable documents, foreign teams and their projects are absent", async () => {
+    const page = await visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER, limit: 20_000 });
     const ends = new Set(page.edges.flatMap((e) => [e.from, e.to]));
     for (const id of ["x0", "x1999", "o0", "team2", "team4", "p50", "p59"]) {
       expect(ends.has(id)).toBe(false);
@@ -66,8 +66,8 @@ describe("rule 6: visibleGraph at integration scale", () => {
     }
   });
 
-  it("the default page stops at 5,000 nodes and points at the rest", () => {
-    const page = visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER });
+  it("the default page stops at 5,000 nodes and points at the rest", async () => {
+    const page = await visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER });
     expect(page.nodes).toHaveLength(5_000);
     expect(page.next).toBeTypeOf("string");
   });

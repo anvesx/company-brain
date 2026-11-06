@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.build.json && cp src/policy/breached.txt dist/policy/breached.txt",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config ../../vitest.config.ts --exclude '**/tests/scale/**'",
-    "scale": "vitest run --config ../../vitest.config.ts --no-file-parallelism tests/scale",
+    "scale": "vitest run --config ../../vitest.config.ts --no-file-parallelism --reporter=verbose tests/scale",
     "e2e": "PLAYWRIGHT=1 vitest run --config ../../vitest.config.ts --no-file-parallelism tests/e2e",
     "mutation": "stryker run"
   },

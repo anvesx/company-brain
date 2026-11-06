@@ -45,6 +45,6 @@ describe("brain binary refuses a bad setting in one line", () => {
   it("prints a usage line and exits 2 for an unknown argument", () => {
     const r = run({}, ["serv"]);
     expect(r.code).toBe(2);
-    expect(r.err).toBe("usage: brain [sync]   (no argument starts the server)\n");
+    expect(r.err).toBe("usage: brain [sync|serve]   (no argument starts the local server)\n");
   });
 });

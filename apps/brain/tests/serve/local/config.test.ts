@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IdentityError } from "@anvesx/identity";
 import { describe, expect, it } from "vitest";
-import { readServeConfig } from "../../src/serve/config.js";
-import { explain } from "../../src/serve/start.js";
+import { readServeConfig } from "../../../src/serve/local/config.js";
+import { explain } from "../../../src/serve/local/start.js";
 import { oneLine, run } from "./run.js";
 
 /** The binary must refuse in one line, exit 1 and leave the folder exactly as it found it. */

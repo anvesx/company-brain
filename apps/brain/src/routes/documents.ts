@@ -1,4 +1,4 @@
-import type { GraphNode, GraphStore } from "@anvesx/graph-store";
+import type { AsyncGraphStore, GraphNode } from "@anvesx/graph-store";
 import type { createIdentity } from "@anvesx/identity";
 import type { Hono } from "hono";
 import { canRead, readableDocuments } from "../gate/access.js";
@@ -13,7 +13,7 @@ const notFound = () => Response.json({ error: "not found" }, { status: 404 });
 /** `/v1/documents` and `/v1/documents/:id`: read-only, behind identity, pointers only. */
 export function mountDocuments(
   app: Hono,
-  deps: { store: GraphStore; protect: ReturnType<typeof createIdentity>["protect"]; aliases: Aliases; recheck?: Recheck },
+  deps: { store: AsyncGraphStore; protect: ReturnType<typeof createIdentity>["protect"]; aliases: Aliases; recheck?: Recheck },
 ): void {
   const { store, recheck } = deps;
   // identity.protect turns a missing or bad credential into its own 401 with the challenge header.
@@ -22,7 +22,7 @@ export function mountDocuments(
   app.all("/v1/documents", (c) =>
     guarded(async (req, caller) => {
       if (req.method !== "GET") return readOnly();
-      const docs = await stillReadable(readableDocuments(store, caller.tenant, caller.user, await deps.aliases(caller.user)), caller, recheck);
+      const docs = await stillReadable(await readableDocuments(store, caller.tenant, caller.user, await deps.aliases(caller.user)), caller, recheck);
       return Response.json({ documents: docs.map(pointer) });
     })(c.req.raw),
   );
@@ -30,9 +30,9 @@ export function mountDocuments(
   app.all("/v1/documents/:id", (c) =>
     guarded(async (req, caller) => {
       if (req.method !== "GET") return readOnly();
-      const node = store.node(caller.tenant, c.req.param("id"));
+      const node = await store.node(caller.tenant, c.req.param("id"));
       // Same 404 whether the document is missing, not a document, or not the caller's to read.
-      const visible = node?.kind === "document" && canRead(store, caller.tenant, caller.user, node.id, await deps.aliases(caller.user));
+      const visible = node?.kind === "document" && (await canRead(store, caller.tenant, caller.user, node.id, await deps.aliases(caller.user)));
       const live = visible ? await stillReadable([node], caller, recheck) : [];
       return live[0] ? Response.json(pointer(live[0])) : notFound();
     })(c.req.raw),

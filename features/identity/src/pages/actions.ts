@@ -8,8 +8,8 @@ import { esc, page } from "./layout.js";
 export interface Deps {
   auth: Auth;
   cfg: ResolvedConfig;
-  /** Runs a request through the guarded API routes (origin check, lockout, validation) without a network hop. */
-  call: (req: Request) => Promise<Response>;
+  /** Runs a request through the guarded API routes (origin check, lockout, validation) without a network hop. `env` is the socket behind the browser's request, so address limits see the real address. */
+  call: (req: Request, env?: unknown) => Promise<Response>;
 }
 
 /** HTML with the headers that stop other sites framing the page (clickjacking on the consent button). */
@@ -26,8 +26,8 @@ export const redirect = (to: string, from?: Response): Response => {
   return new Response(null, { status: 302, headers });
 };
 
-/** Calls the JSON API as the browser's own session: same cookie, and the Origin a real form post would carry. */
-export const api = (d: Deps, req: Request, path: string, body: unknown): Promise<Response> =>
+/** Calls the JSON API as the browser's own session: same cookie, the proxy's address header, and the Origin a real form post would carry. */
+export const api = (d: Deps, req: Request, path: string, body: unknown, env?: unknown): Promise<Response> =>
   d.call(
     new Request(`${d.cfg.baseUrl}/api/auth/${path}`, {
       method: "POST",
@@ -35,9 +35,11 @@ export const api = (d: Deps, req: Request, path: string, body: unknown): Promise
         "content-type": "application/json",
         origin: new URL(d.cfg.baseUrl).origin,
         cookie: req.headers.get("cookie") ?? "",
+        "x-forwarded-for": req.headers.get("x-forwarded-for") ?? "",
       },
       body: JSON.stringify(body),
     }),
+    env,
   );
 
 /** The error page for a refused or stale form. A broken install file is our fault, so it is a 500 that names the client. */

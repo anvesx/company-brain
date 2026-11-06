@@ -33,7 +33,7 @@ describe("rule 4: GET /v1/graph needs a caller", () => {
     const res = await ada.browser.call("/v1/graph");
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await page(res)).toEqual(visibleGraph(store, { cursorKey: KEY, tenant: ada.tenant, user: ada.user }));
+    expect(await page(res)).toEqual(await visibleGraph(store, { cursorKey: KEY, tenant: ada.tenant, user: ada.user }));
   });
 
   it("with an MCP bearer token, returns the same graph as the session does", async () => {
@@ -41,6 +41,6 @@ describe("rule 4: GET /v1/graph needs a caller", () => {
     const { tokens } = await connect(lin.browser, env.base, `${env.base}/mcp`);
     const res = await fetch(`${env.base}/v1/graph`, { headers: bearer(tokens.access_token) });
     expect(res.status).toBe(200);
-    expect(await page(res)).toEqual(visibleGraph(store, { cursorKey: KEY, tenant: lin.tenant, user: lin.user }));
+    expect(await page(res)).toEqual(await visibleGraph(store, { cursorKey: KEY, tenant: lin.tenant, user: lin.user }));
   });
 });

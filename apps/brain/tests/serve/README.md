@@ -1,5 +1,15 @@
 # tests/serve
 
-- `bin.test.ts`: runs the built `dist/bin.js` (build first: `pnpm turbo run build --filter=@anvesx/brain-app`) with bad settings. Each case must print one `brain: ...` line, exit 1 (2 for a bad argument), show no stack trace and create no database.
-- `config.test.ts`: more bad settings (port as hex or exponent, bad base URL, graph path that is a directory, not SQLite or read-only), each one line, exit 1, nothing created; plus `explain` for `EACCES`, SQLite errors and identity settings. `run.ts` is the shared binary runner.
-- `fresh.test.ts`: `staleReason` in `run.ts` refuses to run the binary when `dist/bin.js` is missing or older than any file in `src/`, and names the build command.
+- `local/`: the local entry's tests: bad settings, the built binary, stale-build guard (see its README).
+
+Real-server tests for `src/serve/`. They start a throwaway Postgres (the graph-store test helper) and no mocks.
+
+- `boot.ts`: shared helpers (token, env, wait, seed).
+- `health.test.ts`: `databaseUp` is true against Postgres, false when the port is dead, false when the server never answers.
+- `serve.test.ts`: `serve()` answers `/healthz`, serves the graph, mounts identity sign-up, survives a Postgres crash, and answers 503 while the database is unreachable.
+
+- `ready/`: what `/healthz` promises: 503 while the routes are still being built, 200 once they exist (see its README).
+- `start/`: start-up failures and races (see its README).
+- `stop/`: stopping early: a SIGTERM while loading, and `close()` during boot (see its README).
+
+A missing Postgres skips with a printed reason; under `CI=true` it fails.

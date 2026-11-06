@@ -1,9 +1,9 @@
 # src
 
-- `app.ts`: `createBrainApp({ store, identity, cursorKey, recheck?, port?, host? })`, a Hono app on `@hono/node-server`. It mounts identity's routes, the documents API and the graph view on one origin.
-- `bin.ts`: reads env, opens the graph and auth databases, starts identity and the app, or runs `sync`.
+- `app.ts`: `createBrainApp({ store, identity, cursorKey, recheck?, port?, host? })`, a Hono app on `@hono/node-server`. It mounts identity's routes, the documents API and the graph view on one origin, over an `AsyncGraphStore`. It returns `handler` (a Node request listener) for `serve/` to mount.
+- `bin.ts`: reads env and runs `sync`, `serve` (Postgres, production) or, with no argument, the local SQLite server (graph and auth databases, wrapped in `toAsync`).
 - `index.ts`: public exports.
-- `serve/`: `readServeConfig` (checks every env setting first, `ConfigError`) and `startBrain` (databases, identity, listen).
+- `serve/`: both entries. Local: `readServeConfig` (checks every env setting first, `ConfigError`) and `startBrain` (databases, identity, listen). Production: `serve` (Postgres pool, identity mount, `/healthz`). See its README.
 - `routes/`: `/v1/documents` behind `identity.protect` (pointers only) and the guard that shapes its 401.
 - `gate/`: who may read which documents, from `can-read` and `member-of` edges
 - `live/`: optional per-query permission recheck against the source

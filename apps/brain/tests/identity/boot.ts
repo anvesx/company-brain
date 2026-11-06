@@ -2,11 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGraphStore, type GraphStore } from "@anvesx/graph-store";
+import { createGraphStore, type GraphStore, toAsync } from "@anvesx/graph-store";
 import { createIdentity, type IdentityConfig, migrateDatabase } from "@anvesx/identity";
 import { openDb, tempDbPath } from "../../../../features/identity/tests/support/db.js";
 import { type BrainDeps, createBrainApp } from "../../src/app.js";
-import { cursorKeyFrom } from "../../src/serve/key.js";
+import { cursorKeyFrom } from "../../src/serve/local/key.js";
 
 // Reused from identity's own suite: a real cookie-keeping client, real sign-up and the full
 // OAuth 2.1 flow that ends in an MCP bearer token.
@@ -30,7 +30,7 @@ export type Env = Awaited<ReturnType<typeof bootBrain>>;
  * The real brain app on one origin: identity's routes, /v1/documents behind identity.protect and the
  * graph view. A temp-file graph store and a temp-file SQLite auth database.
  */
-export async function bootBrain(extra: Partial<BrainDeps> = {}) {
+export async function bootBrain(extra: Partial<Omit<BrainDeps, "store">> & { store?: GraphStore } = {}) {
   const port = await freePort();
   const base = `http://localhost:${port}`;
   const db = openDb(tempDbPath());
@@ -38,8 +38,10 @@ export async function bootBrain(extra: Partial<BrainDeps> = {}) {
   await migrateDatabase(config);
   const identity = createIdentity(config);
   await identity.migrate();
+  const { store: given, ...rest } = extra;
+  // Tests write through the sync store; the app reads through the async wrapper of the same file, unless a test hands it another.
   const store: GraphStore = createGraphStore({ path: join(mkdtempSync(join(tmpdir(), "brain-")), "graph.sqlite") });
-  const app = createBrainApp({ store, identity, cursorKey: cursorKeyFrom(SECRET), port, host: "127.0.0.1", ...extra });
+  const app = createBrainApp({ store: toAsync(given ?? store), identity, cursorKey: cursorKeyFrom(SECRET), port, host: "127.0.0.1", ...rest });
   await app.listen();
   const close = async () => {
     await app.close();
