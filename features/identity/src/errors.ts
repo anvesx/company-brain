@@ -26,3 +26,14 @@ export class InstallRenderError extends Error {
     this.client = client;
   }
 }
+
+/** Why a token could not be refreshed: the person must sign in again, another process holds it, the provider is down, or our own database failed (the provider may already have answered). */
+export class RefreshError extends Error {
+  override readonly name = "RefreshError";
+  readonly code: "NEEDS_AUTH" | "LEASED" | "PROVIDER_DOWN" | "STORE_FAILED";
+
+  constructor(code: RefreshError["code"], message: string) {
+    super(message);
+    this.code = code;
+  }
+}

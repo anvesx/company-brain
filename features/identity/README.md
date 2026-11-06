@@ -68,6 +68,15 @@ pnpm --filter @anvesx/identity mutation
 Every test uses its own SQLite file under the OS temp folder and a real HTTP server on a free
 port. The e2e tests skip unless `PLAYWRIGHT=1`; set `E2E_BASE_URL` to use a server you started.
 
+## Connectors and Google sign-in
+
+`providers` (a catalog with `kind: "generic" | "built-in"`), `sealKey` (64 hex characters) and `env` turn on linking a
+service from `/connections`. A provider with no `<ID>_CLIENT_ID` and `<ID>_CLIENT_SECRET` in `env` shows as "not
+configured". Tokens are sealed in the `account` table with AES-256-GCM. `google` adds Continue with Google on
+`/sign-in` and `/sign-up`. `refreshAccount` and `adapter` come back from `createIdentity` for `services/token-refresh`. `sealKey` is required whenever `google` or `providers` is set: tokens are never stored as plain text.
+`RefreshError.code` is `NEEDS_AUTH`, `LEASED`, `PROVIDER_DOWN` or `STORE_FAILED` (the database failed, not the provider).
+`names(userId)` returns `{ email, emailVerified, accountIds }` so apps do not read identity tables; open item: identity does not verify emails yet, so `emailVerified` is always false.
+
 ## Not yet wired
 
 The pages live in `src/pages` and are served by `routes`, but `apps/connections` does not mount

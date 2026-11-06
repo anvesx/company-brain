@@ -1,0 +1,26 @@
+{
+  "name": "@anvesx/token-refresh",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.build.json && vitest run --config ../../vitest.config.ts --exclude '**/tests/scale/**'",
+    "scale": "vitest run --config ../../vitest.config.ts --no-file-parallelism --reporter=verbose tests/scale",
+    "mutation": "stryker run",
+    "start": "node dist/bin/main.js"
+  },
+  "dependencies": {
+    "@anvesx/identity": "workspace:*"
+  },
+  "license": "MIT",
+  "private": true,
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "token-refresh": "dist/bin/main.js"
+  }
+}
