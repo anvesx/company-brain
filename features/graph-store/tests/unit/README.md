@@ -7,3 +7,5 @@
 - `reach/`: read-count and limit-enforcement tests for reach.
 - `validation/`: props, input and lifecycle checks.
 - `limits/`: field and props size limits, tombstone ordering, the `withEnv` helper.
+- `search/`: `searchTitles` literal-wildcard escaping, keyset paging, asOf and bounds.
+- `hardening/`: control characters in search text, `EXPLAIN QUERY PLAN` of the search SQL, `scanTitles` against the LIKE oracle.

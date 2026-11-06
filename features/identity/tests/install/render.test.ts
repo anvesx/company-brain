@@ -7,13 +7,16 @@ const manifest = { name: "company-brain", url: "https://brain.example.com/mcp" }
 const golden = (client: string): unknown => (JSON.parse(readFileSync(new URL("./golden.json", import.meta.url), "utf8")) as Record<string, unknown>)[client];
 
 describe("install renderer", () => {
-  it("rule 10: the five clients are the spec's, in order", () => {
-    expect([...INSTALL_CLIENTS]).toEqual(["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop"]);
+  it("rule 10: the seven clients are the spec's, in order, claude-code first", () => {
+    expect([...INSTALL_CLIENTS]).toEqual(["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop", "kiro", "antigravity"]);
   });
 
-  it.each(["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop"] as const)("rule 10: %s matches its golden file", (client) => {
-    expect(renderInstall(manifest, client)).toEqual(golden(client));
-  });
+  it.each(["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop", "kiro", "antigravity"] as const)(
+    "rule 10: %s matches its golden file",
+    (client) => {
+      expect(renderInstall(manifest, client)).toEqual(golden(client));
+    },
+  );
 
   it("rule 10: Claude Code renders a claude mcp add command as well as the file", () => {
     const out = renderInstall(manifest, "claude-code");

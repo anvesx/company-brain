@@ -38,5 +38,21 @@
     "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"httpUrl\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
     "command": null,
     "notes": ["httpUrl: check current docs"]
+  },
+  "kiro": {
+    "client": "kiro",
+    "format": "json",
+    "path": ".kiro/settings/mcp.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"url\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
+    "command": null,
+    "notes": ["url: check current docs"]
+  },
+  "antigravity": {
+    "client": "antigravity",
+    "format": "json",
+    "path": "~/.gemini/config/mcp_config.json",
+    "body": "{\n  \"mcpServers\": {\n    \"company-brain\": {\n      \"serverUrl\": \"https://brain.example.com/mcp\"\n    }\n  }\n}\n",
+    "command": null,
+    "notes": ["serverUrl: check current docs"]
   }
 }

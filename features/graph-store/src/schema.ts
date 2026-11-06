@@ -1,3 +1,5 @@
+import type { ScanPage, ScanQuery } from "./scan/scan.js";
+
 export type NodeKind = "person" | "team" | "document" | "repo" | "channel" | "ticket" | "project";
 export type EdgeKind = "authored" | "member-of" | "mentions" | "links-to" | "belongs-to" | "can-read";
 export interface GraphNode {
@@ -27,6 +29,12 @@ export interface GraphStore {
   neighbors(tenant: string, id: string, opts?: { kind?: EdgeKind; dir?: "out" | "in"; asOf?: number }): Edge[];
   reach(tenant: string, from: string, opts: { kinds: EdgeKind[]; depth: number; limit: number; asOf?: number }): GraphNode[];
   history(tenant: string, id: string): GraphNode[];
+  searchTitles(
+    tenant: string,
+    q: { text: string; kinds?: NodeKind[]; limit: number; after?: string; asOf?: number; reachedBy?: { from: string[]; kind: EdgeKind; only?: NodeKind } },
+  ): GraphNode[];
+  /** Title search in insertion order whose cost is bounded by `cap` candidates, not by the size of the graph. */
+  scanTitles(tenant: string, q: ScanQuery): ScanPage;
   close(): void;
 }
 

@@ -1,5 +1,5 @@
 /** One template per client: where its config file lives, its format, the server entry and the fields the vendor docs did not confirm. */
-export const INSTALL_CLIENTS = ["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop"] as const;
+export const INSTALL_CLIENTS = ["claude-code", "codex", "cursor", "gemini-cli", "claude-desktop", "kiro", "antigravity"] as const;
 
 export type InstallClient = (typeof INSTALL_CLIENTS)[number];
 
@@ -23,4 +23,7 @@ export const TEMPLATES: Readonly<Record<InstallClient, InstallTemplate>> = {
     entry: (url) => ({ command: "npx", args: ["-y", "mcp-remote", url] }),
     unconfirmed: ["command", "args"],
   },
+  // Shapes read back from `kiro-cli mcp add --scope workspace` and `agy mcp add --type http`.
+  kiro: { format: "json", path: ".kiro/settings/mcp.json", entry: (url) => ({ url }), unconfirmed: ["url"] },
+  antigravity: { format: "json", path: "~/.gemini/config/mcp_config.json", entry: (url) => ({ serverUrl: url }), unconfirmed: ["serverUrl"] },
 };

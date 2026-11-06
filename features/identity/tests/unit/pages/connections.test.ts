@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TEMPLATES } from "../../../src/install/render.js";
+import { INSTALL_CLIENTS, TEMPLATES } from "../../../src/install/render.js";
 import { connectionsView } from "../../../src/pages/views/connections.js";
 import { COPY_SCRIPT, guide } from "../../../src/pages/views/guide.js";
 
@@ -56,13 +56,13 @@ describe("install guide", () => {
 
   it("rule 10: every client gets a Copy button wired to its block", () => {
     expect(html).toContain('<button type="button" data-copy="cfg-codex">Copy</button>\n<p><small>url: check current docs</small></p>');
-    expect(html.match(/data-copy="cfg-/g)).toHaveLength(5);
+    expect(html.match(/data-copy="cfg-/g)).toHaveLength(INSTALL_CLIENTS.length);
   });
 
   it("rule 10: unconfirmed fields carry 'check current docs', side by side; confirmed ones carry none", () => {
     expect(html).toContain("<p><small>command: check current docs</small></p><p><small>args: check current docs</small></p>");
     expect(html).toContain("<h2>Install in your MCP client</h2>\n<h3>claude-code</h3>");
-    expect(html.match(/check current docs/g)).toHaveLength(5);
+    expect(html.match(/check current docs/g)).toHaveLength(INSTALL_CLIENTS.reduce((n, c) => n + TEMPLATES[c].unconfirmed.length, 0));
   });
 
   it("rule 10: the server name given by config names the entry", () => {
