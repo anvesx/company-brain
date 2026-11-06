@@ -22,7 +22,10 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
     const url = new URL(c.req.url);
     const server = url.pathname.startsWith("/.well-known/oauth-authorization-server");
     if (server) url.pathname = "/api/auth/.well-known/oauth-authorization-server";
-    return auth.handler(new Request(url, c.req.raw));
+    // Copy method and headers, not the Request itself: `c.req.raw` is a lazy Request from @hono/node-server, and
+    // undici in Node 26.13+ reads `duplex` off an init dictionary through its getter, which throws on that object.
+    // Discovery documents are read-only, so no body is forwarded.
+    return auth.handler(new Request(url, { method: c.req.raw.method, headers: c.req.raw.headers }));
   });
 
   app.all("/api/auth/*", async (c) => {

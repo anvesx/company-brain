@@ -2,6 +2,6 @@
 useDefault = true
 
 [allowlist]
-description = "research citations use a field named key; generated model JSON; fixed keys of the integration tests and bench"
+description = "research citations use a field named key; generated model JSON; fixed keys of the integration tests and bench; identity test fixtures (a sign-up password and the e2e cookie secret)"
 paths = ['''docs/brain/model\.json''', '''docs/brain/research/refs\.jsonl''', '''docs/html/.*''', '''docs/brain/builds/.*''']
-regexes = ['''integration-(bench|test|eval)-key-[0-9a-f]+''']
+regexes = ['''integration-(bench|test|eval)-key-[0-9a-f]+''', '''violet-anchor-quartz-1987''', '''e2e-secret-[0-9a-f-]+''']
