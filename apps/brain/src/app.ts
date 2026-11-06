@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { identityAliases } from "./gate/accounts.js";
 import type { Recheck } from "./live/recheck.js";
 import { mountDocuments } from "./routes/documents.js";
+import { tune } from "./serve/mount.js";
 
 export interface BrainDeps {
   store: AsyncGraphStore;
@@ -38,7 +39,7 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
   mountDocuments(app, { store, protect: identity.protect, aliases, ...(recheck && { recheck }) });
   mountGraphView(app, { store, port: identity.port, aliases, cursorKey });
 
-  const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+  const server = tune(createAdaptorServer({ fetch: app.fetch }) as Server);
   return {
     server,
     handler: getRequestListener(app.fetch),

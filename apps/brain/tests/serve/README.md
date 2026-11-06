@@ -11,6 +11,7 @@ Real-server tests for `src/serve/`. They start a throwaway Postgres (the graph-s
 
 - `ready/`: what `/healthz` promises: 503 while the routes are still being built, 200 once they exist (see its README).
 - `start/`: start-up failures and races (see its README).
+- `keepalive/`: the server's `keepAliveTimeout` and `headersTimeout` are above a proxy's idle time (see its README).
 - `stop/`: stopping early: a SIGTERM while loading, and `close()` during boot (see its README).
 
 A missing Postgres skips with a printed reason; under `CI=true` it fails.

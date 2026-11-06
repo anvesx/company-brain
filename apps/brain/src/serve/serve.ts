@@ -4,7 +4,7 @@ import { getRequestListener } from "@hono/node-server";
 import { PostgresDialect } from "kysely";
 import pg from "pg";
 import { createBrainApp } from "../app.js";
-import { mount, type Parts } from "./mount.js";
+import { mount, type Parts, tune } from "./mount.js";
 import { type BootDeps, isTransient, listenOn, migrateLocked, readEnv, realDeps } from "./startup.js";
 
 /** Start the production server: one Postgres pool shared by identity and the graph, listening on HOST:PORT. */
@@ -57,7 +57,7 @@ export async function serve(
     process.exit(1);
   };
 
-  const server = createServer(mount(pool, () => parts));
+  const server = tune(createServer(mount(pool, () => parts)));
   const host = env.HOST ?? "0.0.0.0";
   const port = Number(env.PORT ?? 8080);
   // A failed start must not leave the pool open: end it, then rethrow the original error.

@@ -8,6 +8,7 @@ import { openDb, tempDbPath } from "../../../../features/identity/tests/support/
 // OAuth 2.1 flow that ends in an MCP bearer token. Nothing here imitates identity.
 import { signUp } from "../../../../features/identity/tests/support/http.js";
 import { mountGraphView } from "../../src/index.js";
+import { tuned } from "./net/tuned.js";
 import { edge, KEY, node, write } from "./store.js";
 
 export { Browser, signUp } from "../../../../features/identity/tests/support/http.js";
@@ -25,7 +26,7 @@ export type Env = Awaited<ReturnType<typeof boot>>;
 export async function boot(store: GraphStore, aliases?: (user: string) => Promise<string[]>, cursorKey: Uint8Array = KEY) {
   // Listen first: identity needs its own base URL, and the free port is only known once bound.
   let app = new Hono();
-  const server = serve({ port: 0, fetch: (req, env) => app.fetch(req, env) });
+  const server = tuned(serve({ port: 0, fetch: (req, env) => app.fetch(req, env) }));
   await new Promise((done) => server.once("listening", done));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
   const db = openDb(tempDbPath());
@@ -51,7 +52,7 @@ export async function boot(store: GraphStore, aliases?: (user: string) => Promis
 export async function another(env: Env, store: GraphStore, cursorKey: Uint8Array) {
   const app = new Hono();
   mountGraphView(app, { store, port: env.identity.port, cursorKey });
-  const server = serve({ port: 0, fetch: app.fetch });
+  const server = tuned(serve({ port: 0, fetch: app.fetch }));
   await new Promise((done) => server.once("listening", done));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
   const close = () =>
