@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { decodeJwt } from "jose";
 import { createIdentity, type IdentityConfig, migrateDatabase, type OutgoingEmail } from "../../src/index.js";
 import { openDb, tempDbPath } from "./db.js";
 
@@ -15,6 +16,14 @@ export const testClock = () => {
       at += ms;
     },
   };
+};
+
+/**
+ * Moves the test clock one second past the token's own `exp`. better-auth stamps `exp` from the wall clock, so a
+ * fixed "15 minutes plus one second" from the frozen boot time falls short whenever sign-up took over a second.
+ */
+export const pastExpiry = (clock: ReturnType<typeof testClock>, token: string): void => {
+  clock.advance(Number(decodeJwt(token).exp) * 1000 - clock.now() + 1000);
 };
 
 export type Env = Awaited<ReturnType<typeof boot>>;

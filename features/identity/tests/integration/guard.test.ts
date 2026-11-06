@@ -3,7 +3,7 @@ import { createIdentity } from "../../src/index.js";
 import { MINUTE } from "../support/db.js";
 import { failure, signUp } from "../support/http.js";
 import { bearer, connect } from "../support/oauth.js";
-import { boot, type Env } from "../support/server.js";
+import { boot, type Env, pastExpiry } from "../support/server.js";
 
 let env: Env;
 beforeEach(async () => {
@@ -24,7 +24,7 @@ const expectChallenge = (res: Response) => {
 describe("MCP route guard", () => {
   it("rule 8: a token past its 15 minutes is EXPIRED and the route answers 401 with the challenge", async () => {
     const token = await tokenFor(env);
-    env.clock.advance(15 * MINUTE + 1000);
+    pastExpiry(env.clock, token);
     expect((await failure(env.identity.port.fromBearer(new Headers(bearer(token))))).code).toBe("EXPIRED");
     expectChallenge(await callMcp(env, token));
   });

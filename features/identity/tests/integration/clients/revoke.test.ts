@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { count, MINUTE } from "../../support/db.js";
+import { count } from "../../support/db.js";
 import { failure, json, type Person, signUp } from "../../support/http.js";
 import { bearer, connect, refresh } from "../../support/oauth.js";
-import { boot, type Env } from "../../support/server.js";
+import { boot, type Env, pastExpiry } from "../../support/server.js";
 
 let env: Env;
 let ada: Person;
@@ -33,7 +33,7 @@ describe("revocation", () => {
     const { client, tokens } = await connect(ada.browser, env.base, env.config.resource);
     await env.identity.revokeClient(ada.browser.headers(), client);
     const headers = new Headers(bearer(tokens.access_token));
-    env.clock.advance(15 * MINUTE + 1000);
+    pastExpiry(env.clock, tokens.access_token);
     expect((await failure(env.identity.port.fromBearer(headers))).code).toBe("EXPIRED");
   });
 

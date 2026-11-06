@@ -1,9 +1,8 @@
 import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MINUTE } from "../../support/db.js";
 import { failure, json, type Person, signUp } from "../../support/http.js";
 import { bearer, connect, refresh } from "../../support/oauth.js";
-import { boot, type Env } from "../../support/server.js";
+import { boot, type Env, pastExpiry } from "../../support/server.js";
 
 let env: Env;
 beforeEach(async () => {
@@ -44,7 +43,7 @@ describe("membership and refresh", () => {
     await removeBob();
     const headers = new Headers(bearer(tokens.access_token));
     expect((await env.identity.port.fromBearer(headers))?.kind).toBe("mcp");
-    env.clock.advance(15 * MINUTE + 1000);
+    pastExpiry(env.clock, tokens.access_token);
     expect((await failure(env.identity.port.fromBearer(headers))).code).toBe("EXPIRED");
   });
 });

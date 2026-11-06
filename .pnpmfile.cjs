@@ -4,7 +4,7 @@
 module.exports = {
   hooks: {
     readPackage(pkg) {
-      if (pkg.name === "better-auth" || pkg.name.startsWith("@better-auth/")) {
+      if (pkg.name === "better-auth" || pkg.name?.startsWith("@better-auth/")) {
         delete pkg.peerDependencies?.vitest;
         delete pkg.peerDependenciesMeta?.vitest;
       }
