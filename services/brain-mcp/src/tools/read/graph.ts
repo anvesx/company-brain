@@ -20,7 +20,7 @@ async function visibleIds(ctx: Ctx, can: Viewer): Promise<string[]> {
     for (const e of readers) found.add(e.from);
   }
   const all = [...found];
-  const seen = await inChunks(all, (id) => can.sees(id));
+  const seen = await can.seesMany(all.map((id) => ({ id }))); // one batch, chunked inside the viewer
   return all.filter((_, i) => seen[i]).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
@@ -33,7 +33,7 @@ export async function graph(ctx: Ctx, args: { cursor?: string | undefined; limit
   const nodes = (await store.nodesOf(caller.tenant, page)).map(publicNode);
   const out = await inChunks(page, async (id) => {
     const edges = await store.neighbors(caller.tenant, id, { dir: "out" });
-    const seen = await Promise.all(edges.map((e) => can.sees(e.to)));
+    const seen = await can.seesMany(edges.map((e) => ({ id: e.to })));
     return edges.filter((_, i) => seen[i]).map((e) => ({ from: e.from, to: e.to, kind: e.kind, source: e.source }));
   });
   const categories: Record<string, number> = {};

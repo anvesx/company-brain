@@ -2,6 +2,8 @@
 
 - `server.ts`: `bootBrain(limits?)`: identity plus brain-mcp behind one real HTTP server, temp SQLite
   files for both. Mirrors `features/identity/tests/support/server.ts`.
+  `storeFactories`: the SQLite and Postgres stores to loop a test over, modelled on graph-store's
+  `tests/support/pg/factories.ts`; Postgres runs on a throwaway server and skips only without binaries.
 - `users.ts`: `member` (own organisation), `colleague` (invited into another's), `linkAccount` (a real
   provider row in the identity database, tokens included).
 - `client.ts`: the SDK client with a bearer, `call`, `data`, raw request helpers, `tokenShapes`.

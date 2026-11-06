@@ -1,10 +1,12 @@
+import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { toAsync } from "@anvesx/graph-store";
+import { type AsyncGraphStore, createPostgresGraphStore, toAsync } from "@anvesx/graph-store";
 import { createIdentity, type IdentityConfig, migrateDatabase } from "@anvesx/identity";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { factories, schemaPool } from "../../../../features/graph-store/tests/support/pg/factories.js";
 import { tempDbPath } from "../../../../features/identity/tests/support/db.js";
 import { mountBrainMcp } from "../../src/index.js";
 import { tempStore, track } from "./graph.js";
@@ -15,6 +17,20 @@ const tempAuthPath = (): string => {
   track(dirname(path));
   return path;
 };
+
+/**
+ * The two stores brain-mcp runs on, modelled on graph-store's tests/support/pg/factories.ts: SQLite through `toAsync`,
+ * and Postgres in a fresh schema of a throwaway server. `skip` says why one cannot run on this machine (CI never skips).
+ * Stores come from this package's own `@anvesx/graph-store` import, so its GraphError is the class brain-mcp checks.
+ */
+export const storeFactories: { name: "sqlite" | "postgres"; skip: string | undefined; open(): Promise<AsyncGraphStore> }[] = [
+  { name: "sqlite", skip: undefined, open: async () => toAsync(tempStore()) },
+  {
+    name: "postgres",
+    skip: factories.find((f) => f.name === "postgres")!.skip,
+    open: async () => createPostgresGraphStore({ pool: await schemaPool(`m_${randomBytes(6).toString("hex")}`) }),
+  },
+];
 
 const SECRET = "brain-mcp-test-secret-0123456789abcdef";
 
