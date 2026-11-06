@@ -17,7 +17,7 @@ Switches a test can flip:
 - `replay.state.mode = "server_error"`: every refresh answers 500.
 - `replay.state.user = { ... }`: the next authorize signs in this person.
 - `replay.state.expiresIn`: seconds in the next token response.
-- `replay.state.delayMs`: milliseconds every refresh waits before answering (to overlap two processes).
+- `replay.state.hold`: a promise every refresh awaits before answering (null = at once), so a test can park one caller.
 
 Refresh tokens rotate, so refreshing the same row twice fails the second time. That is how the
 parallel sweep test proves each row is refreshed once.

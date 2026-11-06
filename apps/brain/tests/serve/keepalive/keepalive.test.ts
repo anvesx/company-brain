@@ -18,10 +18,15 @@ const keepAliveHeader = (port: number) =>
   });
 
 describe("keep-alive limits", () => {
-  it("tune puts keepAliveTimeout at 620 s and headersTimeout above it", () => {
+  it("tune raises only keepAliveTimeout; headersTimeout stays at Node's 60 s, under requestTimeout", () => {
     const server = tune(createServer());
-    expect([server.keepAliveTimeout, server.headersTimeout]).toEqual([620_000, 625_000]);
+    expect(server.keepAliveTimeout).toBe(620_000);
     expect(KEEP_ALIVE_MS).toBeGreaterThan(600_000); // above Google's 600 s backend keep-alive
+    // headersTimeout bounds a slow-header client, not an idle socket. Node's createServer rejects headersTimeout above
+    // requestTimeout (ERR_OUT_OF_RANGE), and assigning it afterwards would only dodge that check, so it is left alone.
+    expect(server.headersTimeout).toBe(60_000);
+    expect(server.headersTimeout).toBeLessThanOrEqual(server.requestTimeout);
+    expect(() => createServer({ headersTimeout: 625_000, requestTimeout: 300_000 })).toThrow(/ERR_OUT_OF_RANGE|headersTimeout/);
   });
 
   it("the local brain app (SQLite) tells a keep-alive client 620 s too, not Node's 5 s default", async () => {
