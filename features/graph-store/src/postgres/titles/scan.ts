@@ -18,7 +18,7 @@ export function scanOps(pool: pg.Pool) {
     const { cap, after } = scanBounds(q); // shared with SQLite, so both refuse the same input before any SQL
     const f = pgTitleFilter(tenant, q, [[]]); // $1 is the chunk's seq list; the filter's own values follow
     const candidates = (await pool.query(CANDIDATES, [tenant, after, likeArg(f.needle), cap])).rows.map((r) => Number(r.seq));
-    const nodes: GraphNode[] = [];
+    const [nodes, cursors]: [GraphNode[], number[]] = [[], []];
     for (let i = 0; i < candidates.length; i += CHUNK) {
       const args = [candidates.slice(i, i + CHUNK), ...f.args.slice(1)];
       const rows = (await pool.query(`SELECT n.*, n.seq AS rid FROM nodes n WHERE n.seq = ANY($1::bigint[]) AND ${f.where} ORDER BY n.seq`, args)).rows;
@@ -26,11 +26,14 @@ export function scanOps(pool: pg.Pool) {
         const n = toNode(r);
         if (q.accept && !q.accept(n)) continue;
         nodes.push(n);
-        if (nodes.length === q.limit) return { nodes, next: Number(r.rid), truncated: false };
+        const rid = Number(r.rid);
+        cursors.push(rid);
+        // Candidates and rows are both in seq order, so the row's place in the list is how many were examined.
+        if (nodes.length === q.limit) return { nodes, cursors, next: rid, truncated: false, examined: candidates.indexOf(rid, i) + 1 };
       }
     }
     const last = candidates[candidates.length - 1];
     const truncated = candidates.length === cap && last !== undefined;
-    return { nodes, ...(truncated ? { next: last } : {}), truncated };
+    return { nodes, cursors, ...(truncated ? { next: last } : {}), truncated, examined: candidates.length };
   };
 }

@@ -25,9 +25,10 @@ object accepts both shapes. Tests assert the exact success payloads and exact er
 
 ## Known limits
 
-- The store is async, so the read-edge check runs after each scan page, not inside it. Search tops up in at most
-  `MAX_ROUNDS` (4) rounds of the same candidate budget; a short page after that sets `truncated`.
-- `brain.search` looks at most 4,096 candidate titles per call (`MAX_CANDIDATES`). Bound: the per-candidate
+- The store is async, so the people, team, project and repo check runs after each scan, in one batch per scan.
+  When it leaves the page short, search scans on (1,000 rows at a time) from where it stopped. All scans of one
+  call share one budget; a short page when the budget runs out sets `truncated`.
+- `brain.search` looks at most 4,096 candidate titles per call (`MAX_CANDIDATES`), over all its scans. Bound: the per-candidate
   probe (tenant, validity, LIKE, read-edge check) costs about 2.2 microseconds, so 4,096 x 2.2 us is about 9 ms,
   plus about 2 ms to list candidates. Measured for a user who can read nothing (the worst case): p50 9.2 ms, max 15.7 ms.
   Budget is 50 ms (rule 12).

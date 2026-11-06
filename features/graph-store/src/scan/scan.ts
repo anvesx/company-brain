@@ -19,6 +19,10 @@ export interface ScanPage {
   next?: number;
   /** True when `cap` candidates were examined without filling `limit`: the page is partial, `next` continues. */
   truncated: boolean;
+  /** How many candidates this call looked at (at most `cap`): lets a caller spend one budget over several calls. */
+  examined: number;
+  /** `cursors[i]` continues right after `nodes[i]`, so a caller that keeps only some of the page can resume there. */
+  cursors: number[];
 }
 
 const CHUNK = 256; // candidates verified per SQL statement
@@ -55,18 +59,21 @@ export function scanOps(db: DatabaseSync) {
       .prepare(sql)
       .all(...head, after, f.tenant, f.like, cap)
       .map((r) => r["r"] as number);
-    const nodes: GraphNode[] = [];
+    const [nodes, cursors]: [GraphNode[], number[]] = [[], []];
     for (let i = 0; i < candidates.length; i += CHUNK) {
       const ids = candidates.slice(i, i + CHUNK);
       for (const r of db.prepare(chunkSql(f.where, ids.length)).all(...ids, ...f.args)) {
         const n = toNode(r);
         if (q.accept && !q.accept(n)) continue;
         nodes.push(n);
-        if (nodes.length === q.limit) return { nodes, next: r["rid"] as number, truncated: false };
+        const rid = r["rid"] as number;
+        cursors.push(rid);
+        // Candidates and rows are both in rowid order, so the row's place in the list is how many were examined.
+        if (nodes.length === q.limit) return { nodes, cursors, next: rid, truncated: false, examined: candidates.indexOf(rid, i) + 1 };
       }
     }
     const last = candidates[candidates.length - 1];
     const truncated = candidates.length === cap && last !== undefined;
-    return { nodes, ...(truncated ? { next: last } : {}), truncated };
+    return { nodes, cursors, ...(truncated ? { next: last } : {}), truncated, examined: candidates.length };
   };
 }
