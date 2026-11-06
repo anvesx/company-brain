@@ -40,7 +40,7 @@ describe("rule 12: a signed-in user with no organization sees a page at the auth
     expect(one(env.db, "select count(*) as n from verification")["n"]).toBe(0);
   });
 
-  it("any other 403 from authorize stays as it is (the redirect is only for NO_ORGANIZATION)", async () => {
+  it("a signed-out browser at authorize still goes to sign-in, not to the consent page", async () => {
     const meta = await discover(env.base);
     // A signed-out browser is sent to sign-in, not to consent.
     const res = await authorize(new Browser(env.base), meta, authParams(await clientId(meta), env.config.resource, pkce()));
