@@ -29,7 +29,7 @@ All Google Fonts. Google's button font is Google Sans Medium, which the css2 API
 --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;--s-7:48px;--s-8:64px;--s-9:96px}
 ```
 
-## Contrast, light pages (WCAG 2.2, computed from the hex values)
+## Contrast, light pages (Web Content Accessibility Guidelines (WCAG) 2.2, computed from the hex values)
 
 | Pair | Ratio | Use | Pass |
 |---|---|---|---|
