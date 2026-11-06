@@ -26,7 +26,10 @@ describe("keep-alive limits", () => {
     // requestTimeout (ERR_OUT_OF_RANGE), and assigning it afterwards would only dodge that check, so it is left alone.
     expect(server.headersTimeout).toBe(60_000);
     expect(server.headersTimeout).toBeLessThanOrEqual(server.requestTimeout);
-    expect(() => createServer({ headersTimeout: 625_000, requestTimeout: 300_000 })).toThrow(/ERR_OUT_OF_RANGE|headersTimeout/);
+    // Pinned to the code and the exact bound, not to any message that mentions headersTimeout.
+    expect(() => createServer({ headersTimeout: 625_000, requestTimeout: 300_000 })).toThrow(
+      expect.objectContaining({ code: "ERR_OUT_OF_RANGE", message: expect.stringContaining("must be <= requestTimeout") }),
+    );
   });
 
   it("the local brain app (SQLite) tells a keep-alive client 620 s too, not Node's 5 s default", async () => {
