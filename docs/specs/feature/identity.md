@@ -24,7 +24,17 @@ hand-written password hashing, session store, OAuth endpoint or token format.
 
 ## Public interface
 ```ts
-interface IdentityConfig { baseUrl: string; secret: string; database: Database; resource: string; accessTokenTtlSeconds?: number }
+interface IdentityConfig {
+  baseUrl: string; secret: string; database: Database;
+  resource: string;               // canonical MCP URL: https, or http on localhost/127.0.0.1/[::1] only
+  accessTokenTtlSeconds?: number;
+  serverName?: string;            // name clients file the server under; lowercase letters, digits, hyphens; default "company-brain"
+  trustProxy?: boolean;           // default false: rate limits key on the socket address, not X-Forwarded-For
+  catalog?: { name: string; description: string }[];                        // tiles shown when there are no connections
+  connections?: (tenant: string) => Promise<{ name: string; detail: string }[]>; // the connections list for an organization
+  templates?: Record<InstallClient, InstallTemplate>;                       // install templates; tests inject broken ones
+  clients?: StaticClient[]; sendEmail?: (m: OutgoingEmail) => Promise<void>; now?: () => number;
+}
 /** One better-auth instance plus the Hono routes to mount it. */
 function createIdentity(cfg: IdentityConfig): { auth: Auth; routes: Hono; port: IdentityPort };
 interface Caller { user: string; tenant: string; kind: "session" | "mcp"; scopes: string[] }
@@ -47,8 +57,9 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
 | MCP client | JWT access token | 15 minutes; refresh 30 days, rotating | org_id claim fixed at consent |
 
 1. Sign-up with email and password creates the user and a personal organization named after the
-   user, and makes it active. Password rules: 12 to 128 characters, checked against the
-   top 10,000 breached list bundled with the package; nothing else about shape.
+   user, and makes it active. Password rules: 12 to 128 characters; not on the top 10,000
+   breached list bundled with the package (compared after NFKC and lowercase, so case and
+   full-width forms do not dodge it); and a zxcvbn-ts score of at least 3. No composition rules.
 2. Sign-in sets a cookie session: HttpOnly, Secure outside localhost, SameSite Lax, 7 day
    lifetime, refreshed on use. Five failed sign-ins per email per 15 minutes return 429 with a
    Retry-After header; the counter lives in the same database so it survives restarts.
@@ -60,7 +71,8 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
    the resource metadata URL (RFC 9728). The server metadata document (RFC 8414) lists the
    authorize, token, registration and key set endpoints (cl_meta).
 5. Client registration (cl_reg): dynamic registration is open, rate limited to 20 per hour per
-   address; a native client may use a loopback redirect; a web client must use https. Static
+   socket address (X-Forwarded-For is trusted only when `trustProxy` is set, and then its last
+   hop is used; with no known address all callers share one global limit); a native client may use a loopback redirect; a web client must use https. Static
    clients come from config. Client ID metadata documents are out of scope for this spec and
    listed in ADR 0008 as an open item.
 6. Authorization (cl_aud): PKCE S256 is required, plain is rejected; the resource parameter must
@@ -76,9 +88,10 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
    header, never 403, so clients re-run discovery.
 9. Post-login the connections app shows the connections list for the active organization,
    then the install guide below it. A user with zero connections sees the catalog tiles first.
-10. Install guide (cl_dist): one manifest, name and url, renders a config file per client. Each
+10. Install guide (cl_dist): one manifest, name and url (https, or http only on a loopback host), renders a config file per client. Each
     rendered JSON or TOML is parsed back before it is shown; a parse failure is a 500 with the
-    client named, never a half-rendered snippet. Claude Code renders a `claude mcp add` command
+    client named, never a half-rendered snippet. Shell arguments in the `claude mcp add` command
+    are POSIX single-quoted. Claude Code renders a `claude mcp add` command
     as well as the file. Fields the vendor docs did not confirm carry the line "check current
     docs" in the page, as the card says.
 11. Sign-out revokes the session row. Revoking an MCP client on the account page revokes its
@@ -90,8 +103,11 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
 14. Determinism and purity: the install renderer is pure. Clocks come from better-auth's
     injected time in tests. No Date.now outside the adapter.
 15. Scale: a session lookup is one indexed read; token verification is local (cached key set,
-    refreshed hourly or on an unknown key id). The scale test runs 10,000 verifications in
-    under 1 s and 1,000 sign-ins against SQLite in under 20 s on a laptop, denominator printed.
+    refreshed hourly, or on an unknown key id at most once a minute so forged key ids cannot force fetches). The scale test runs 10,000 verifications in
+    under 1 s and 1,000 sign-ins against SQLite in under 30 s on a laptop, denominator printed.
+    The sign-in budget is hash-bound: better-auth's scrypt verify measures about 70 ms a call and
+    runs on node's libuv pool (4 threads by default), so 1,000 verifies floor at about 17.5 s of
+    pool time before HTTP and SQLite. Raise UV_THREADPOOL_SIZE in production for more throughput.
 
 ## Acceptance tests (written first)
 - unit: sign-up creates user and personal organization; password too short, breached and too
@@ -114,7 +130,8 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
 `features/identity/`: a readme, package.json, stryker.config.json, tsconfig.json,
 tsconfig.build.json. `src/`: index.ts, config.ts, port.ts, errors.ts, a readme. `src/install/`:
 render.ts, templates.ts, a readme. `src/guard/`: session.ts, bearer.ts, limits.ts, a readme.
-Pages live in `apps/connections/src/ui/auth/`: sign-up, sign-in, picker, consent, guide. Tests
+Pages live in `features/identity/src/pages` (sign-up, sign-in, picker, consent, connections with
+the guide, account); wiring them into `apps/connections` is a separate step. Tests
 under each package, at most five files per folder, 80 lines per file.
 
 ## Out of scope
