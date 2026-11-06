@@ -4,7 +4,7 @@ import { readEnv } from "../../../src/serve/startup.js";
 
 // Every env mistake must fail at once with a plain message. A typo that slipped through would make
 // serve() retry forever (DATABASE_URL), fail every request (short secret) or spin setTimeout (NaN).
-const secret = "0123456789abcdef0123456789abcdef"; // exactly 32 characters: the smallest accepted
+const secret = "bin-test-secret-0123456789abcdef"; // exactly 32 characters: the smallest accepted
 const good = { DATABASE_URL: "postgres://u:p@db.example/brain", BRAIN_AUTH_SECRET: secret, BASE_URL: "http://localhost", IDENTITY_SECRET: "id-secret" };
 const read = (over: Record<string, string | undefined>) => () => readEnv({ ...good, ...over });
 

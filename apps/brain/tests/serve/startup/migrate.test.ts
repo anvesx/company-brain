@@ -8,7 +8,7 @@ import { freshDb } from "../boot.js";
 // Real Postgres. The lock connection comes from `pool`; the migration itself runs on the dialect's pool, so a
 // migration that cannot reach its database fails while the lock connection is healthy, and the test can look
 // at what migrateLocked did with that connection afterwards.
-const secret = "0123456789abcdef0123456789abcdef";
+const secret = "bin-test-secret-0123456789abcdef";
 const config = (pool: pg.Pool) => ({
   baseUrl: "http://localhost",
   secret,
