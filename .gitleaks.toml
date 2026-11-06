@@ -3,6 +3,6 @@
 useDefault = true
 
 [allowlist]
-description = "research citations use a field named key; generated model JSON; fixed keys of the integration tests and bench; identity test fixtures (a sign-up password and the e2e cookie secret); brain-mcp leak tests, whose job is to hold fake tokens and prove they never reach a client; brain test secrets by shape (the scanner reads every ref's history, so old literals stay allowlisted after the files moved to low-entropy values)"
+description = "research citations use a field named key; generated model JSON; fixed keys of the integration tests and bench; identity test fixtures (a sign-up password and the e2e cookie secret); brain-mcp leak tests, whose job is to hold fake tokens and prove they never reach a client; brain test secrets by shape, plus the 32-char hex literal the startup tests used before commit 47cff01 (the scanner reads every ref's history, so old literals stay allowlisted after the files moved to low-entropy values)"
 paths = ['''docs/brain/model\.json''', '''docs/brain/research/refs\.jsonl''', '''docs/html/.*''', '''docs/brain/builds/.*''', '''services/brain-mcp/tests/integration/leaks\.test\.ts''', '''services/brain-mcp/tests/unit/errors\.test\.ts''']
-regexes = ['''integration-(bench|test|eval)-key-[0-9a-f]+''', '''violet-anchor-quartz-1987''', '''e2e-secret-[0-9a-f-]+''', '''brain-serve-cursor-test-secret-[0-9a-f]+''', '''bin-test-secret-[0-9a-z]+''', '''brain-mcp-test-secret-[0-9a-f]+''']
+regexes = ['''integration-(bench|test|eval)-key-[0-9a-f]+''', '''violet-anchor-quartz-1987''', '''e2e-secret-[0-9a-f-]+''', '''brain-serve-cursor-test-secret-[0-9a-f]+''', '''bin-test-secret-[0-9a-z]+''', '''brain-mcp-test-secret-[0-9a-f]+''', '''0123456789abcdef0123456789abcdef''']
