@@ -11,10 +11,10 @@ const cfg = () => connectorConfig(replay);
 afterEach(async () => Promise.all([env.close(), replay.close()]));
 
 describe("two processes call refreshAccount on one unleased due row while the provider rotates refresh tokens", () => {
+  // The replay provider parks the first refresh until the other process has been answered (support/process/spawn.ts),
+  // so the two calls overlap by construction, not by timing.
   beforeEach(async () => {
     replay = await startReplay();
-    // The provider takes half a second to answer, so both processes are inside their call together.
-    replay.state.delayMs = 500;
     env = await boot(cfg());
   });
 
@@ -26,7 +26,6 @@ describe("two processes call refreshAccount on one unleased due row while the pr
     expect(replay.state.calls.refresh).toBe(1);
     expect(one(env.db, "select status from account where id = ?", id)["status"]).toBe("active");
     // The winner's new token works: the person can still read it.
-    replay.state.delayMs = 0;
     expect((await env.identity.port.accessToken(ada.userId, "replay", id)).startsWith("at_")).toBe(true);
   }, 60_000);
 });
