@@ -2,6 +2,8 @@ import { passkey } from "@better-auth/passkey";
 import { type AuthContext, type BetterAuthOptions, betterAuth, getCurrentAdapter } from "better-auth";
 import { jwt, organization } from "better-auth/plugins";
 import type { ResolvedConfig } from "../config.js";
+import type { SocialProvider } from "../connectors/catalog.js";
+import { oauthOptions } from "../login/options.js";
 import { hitsPlugin, identityHooks } from "./hooks.js";
 import { mcpPlugin } from "./mcp.js";
 
@@ -15,7 +17,7 @@ export interface Auth {
     listOrganizations: (ctx: { headers: Headers }) => Promise<{ id: string }[]>;
     createOrganization: (ctx: { body: { name: string; slug: string; userId: string } }) => Promise<{ id: string } | null>;
   };
-  $context: Promise<{ adapter: unknown }>;
+  $context: Promise<{ adapter: unknown; socialProviders: SocialProvider[] }>;
   options: BetterAuthOptions;
 }
 
@@ -30,6 +32,7 @@ export const authOptions = (cfg: ResolvedConfig, auth: () => Auth): BetterAuthOp
   const adapter = async (): Promise<AuthContext["adapter"]> =>
     getCurrentAdapter(((await auth().$context) as unknown as AuthContext).adapter) as unknown as AuthContext["adapter"];
 
+  const oauth = oauthOptions(cfg, auth, adapter);
   return {
     baseURL: cfg.baseUrl,
     secret: cfg.secret,
@@ -42,7 +45,10 @@ export const authOptions = (cfg: ResolvedConfig, auth: () => Auth): BetterAuthOp
     // Password hashing is better-auth's own default (scrypt); there is no override.
     emailAndPassword: { enabled: true, minPasswordLength: 1, maxPasswordLength: 4096, autoSignIn: true },
     session: { expiresIn: 7 * DAY },
-    databaseHooks: identityHooks(auth, adapter),
+    databaseHooks: { ...identityHooks(auth, adapter), account: oauth.accountHooks },
+    socialProviders: oauth.socialProviders,
+    account: oauth.account,
+    user: oauth.user,
     plugins: [
       // No `set-auth-jwt` header on session reads: nobody here uses it, and it costs a key-table read per lookup.
       jwt({ disableSettingJwtHeader: true }),
@@ -57,6 +63,7 @@ export const authOptions = (cfg: ResolvedConfig, auth: () => Auth): BetterAuthOp
       // Passkeys (WebAuthn). The relying party id is the host of baseUrl, so a passkey made on this host works only
       // here; the browser refuses the challenge anywhere else. Registration needs a fresh session (the plugin's default).
       passkey({ rpID: new URL(cfg.baseUrl).hostname, rpName: cfg.serverName, origin: new URL(cfg.baseUrl).origin }),
+      ...oauth.plugins,
       hitsPlugin(),
     ],
   };

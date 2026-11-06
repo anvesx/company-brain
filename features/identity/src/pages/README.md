@@ -7,6 +7,7 @@ account pages load `/webauthn.js` and `/passkey.js` as files for passkeys, nothi
 - `serve.ts`: the GET pages `/sign-in`, `/sign-up`, `/picker`, `/consent`, and mounts `signed/`.
 - `actions.ts`: shared helpers: `readForm` (Origin check, 400 for a body that is not a form), `oops` (the error page), `api`, `html`, `redirect`.
 - `forms.ts`: the sign-in and sign-up posts, the signed-in posts (sign-out, picker, consent) and `guardedPost`, which checks Origin and CSRF. Pages send `X-Frame-Options: DENY`.
+- `connectors/`: the connector tiles on `/connections` and the link and unlink posts.
 - `signed/`: pages that need a session: `/connections`, `/account` and its revoke post.
 - `views/`: the HTML for each page.
 - `passkey/`: passkey sign-in and management: the two scripts, the views, the delete post.

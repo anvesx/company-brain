@@ -1,4 +1,5 @@
 import type { BetterAuthOptions } from "better-auth";
+import { type ConnectorConfig, checkConnectors } from "./connectors/catalog.js";
 import { IdentityError } from "./errors.js";
 import { type InstallClient, type InstallTemplate, TEMPLATES } from "./install/templates.js";
 import { httpsOrLoopback, parseUrl } from "./install/url.js";
@@ -17,7 +18,7 @@ export interface StaticClient {
   redirectUris: string[];
 }
 
-export interface IdentityConfig {
+export interface IdentityConfig extends ConnectorConfig {
   /** Public origin of this service, for example https://brain.example.com. */
   baseUrl: string;
   /** At least 32 characters. Signs cookies and encrypts the signing keys. */
@@ -32,7 +33,7 @@ export interface IdentityConfig {
   now?: () => number;
   sendEmail?: (message: OutgoingEmail) => Promise<void>;
   clients?: StaticClient[];
-  /** Connector tiles the connections page shows. Without any, the page says none are available yet. */
+  /** Static tiles shown when there are no connections. Link-able connectors come from `providers`. */
   catalog?: { name: string; description: string }[];
   /** The organization's connections, for the connections page. Without it the list is empty. */
   connections?: (tenant: string) => Promise<{ name: string; detail: string }[]>;
@@ -44,8 +45,8 @@ export interface IdentityConfig {
   templates?: Readonly<Record<InstallClient, InstallTemplate>>;
 }
 
-export type ResolvedConfig = Required<Omit<IdentityConfig, "sendEmail" | "clients" | "catalog" | "connections">> &
-  Pick<IdentityConfig, "sendEmail" | "clients" | "catalog" | "connections">;
+type Optional = "sendEmail" | "clients" | "catalog" | "connections" | "providers" | "sealKey" | "google";
+export type ResolvedConfig = Required<Omit<IdentityConfig, Optional>> & Pick<IdentityConfig, Optional>;
 
 const bad = (field: string, why: string): IdentityError => new IdentityError("BAD_INPUT", why, field);
 
@@ -63,12 +64,14 @@ export const resolveConfig = (cfg: IdentityConfig): ResolvedConfig => {
       if (!httpsOrLoopback(uri)) throw bad(`clients[${i}].redirectUris[${j}]`, "must be https, or http on loopback");
     }
   }
+  checkConnectors(cfg);
   // The only wall-clock read in the package is this default.
   return {
     ...cfg,
     baseUrl: cfg.baseUrl.replace(/\/$/, ""),
     accessTokenTtlSeconds: ttl,
     now: cfg.now ?? Date.now,
+    env: cfg.env ?? process.env,
     serverName,
     trustProxy: cfg.trustProxy ?? false,
     templates: cfg.templates ?? TEMPLATES,
