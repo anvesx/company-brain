@@ -16,7 +16,12 @@ describe("sign-in page", () => {
     expect(html).toContain(input("Email", "email", "email", "username") + input("Password", "password", "password", "current-password"));
     expect(html).toContain('<button type="submit">Sign in</button></form>');
     expect(html).toContain('<p>New here? <a href="/sign-up">Sign up</a></p>');
-    expect(html).not.toContain(ALERT);
+    // Rule 16: the passkey button and its two script files; still no inline script.
+    expect(html).toContain('<button type="button" id="passkey-sign-in" data-query="">Sign in with a passkey</button>');
+    expect(html).toContain('<script src="/webauthn.js" defer></script><script src="/passkey.js" defer></script>');
+    expect(html).not.toMatch(/<script>/);
+    // The passkey error line is a hidden, empty alert; a visible one with text only appears after a refused post.
+    expect(html).not.toContain(`<p ${ALERT}>`);
   });
 
   it("rule 12: the OAuth query rides in the hidden field and the sign-up link, escaped", () => {

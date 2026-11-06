@@ -28,7 +28,7 @@ describe.skipIf(!RUN)("browser: account and organizations", () => {
     );
   });
 
-  it("rule 12: the sign-in page ships no script; sign-out then sign-in works", async () => {
+  it("rule 12: the sign-in page ships no inline script; sign-out then sign-in works", async () => {
     const page = await browser.newPage();
     const email = await signUpThroughPage(page);
     await page.getByRole("button", { name: /sign out/i }).click();
@@ -36,7 +36,7 @@ describe.skipIf(!RUN)("browser: account and organizations", () => {
     expect(await scripts(page)).toBe(0);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(PASSWORD);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.waitForURL(/\/connections/);
   });
 

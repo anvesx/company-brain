@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { createIdentity } from "../../src/index.js";
+import { createIdentity, type IdentityConfig, migrateDatabase } from "../../src/index.js";
 import { openDb, tempDbPath } from "../support/db.js";
 
 const SECRET = "e2e-secret-0123456789abcdef-0123456789";
@@ -11,13 +11,16 @@ const MCP_URL = process.env["E2E_MCP_URL"] ?? "https://brain.example.com/mcp";
 /** A real createIdentity on a fresh SQLite file in a temp folder, served on port 18788. Returns a function that stops it. */
 export const startServer = async (): Promise<() => Promise<void>> => {
   const db = openDb(tempDbPath());
-  const identity = createIdentity({
+  const config: IdentityConfig = {
     baseUrl: BASE,
     secret: SECRET,
     database: db,
     resource: MCP_URL,
     catalog: [{ name: "Notion", description: "Pages and databases" }],
-  });
+  };
+  // Tables before better-auth boots, so its start-up schema check finds them and logs nothing.
+  await migrateDatabase(config);
+  const identity = createIdentity(config);
   await identity.migrate();
   const app = new Hono();
   app.route("/", identity.routes);

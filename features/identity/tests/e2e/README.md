@@ -1,6 +1,6 @@
 # e2e
 
-Playwright in a real Chromium against a real `createIdentity` server (rules 9, 10, 11, 12 and the
+Playwright in a real Chromium against a real `createIdentity` server (rules 9, 10, 11, 12, 16 and the
 browser acceptance list). Skipped unless `PLAYWRIGHT=1`. The `e2e` script starts the server itself
 (`server.ts`, port 18788, a temp SQLite file); files run one after another so each owns the port, so no other process is needed:
 
@@ -18,3 +18,4 @@ PLAYWRIGHT=1 pnpm --filter @anvesx/identity e2e
 - `support.ts`: browser launch, a fresh user per test, screenshots into `shots/`.
 - `auth.test.ts`: sign-up, sign-in, picker, connections list, sign-out.
 - `guide.test.ts`: the install guide below the connections, the copy button, the docs notes.
+- `passkey/`: rule 16 with a virtual authenticator (no Touch ID prompt); its own `shots/`.

@@ -15,3 +15,4 @@ SQLite file in a temp folder and a real HTTP server on a free port.
 | `bearer/`           | 8: key-set cache, cooldown and error messages through the boot clock.                        |
 | `abuse/`            | 2, 6, 8: exact Retry-After, forbidden_origin, port header shape and 401 challenge.           |
 | `posts/`            | 10, 11, 12: Origin and CSRF on form posts, install guide, account page.                      |
+| `passkey/`          | 16: plugin endpoints behind the Origin guard, the two script files, account section, delete. |
