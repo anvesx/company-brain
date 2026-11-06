@@ -66,7 +66,9 @@ for (const f of factories)
 
     it("refuses bad cap, cursor, limit and text with BAD_INPUT", async () => {
       const s = await seeded();
-      for (const extra of [{ cap: 0 }, { cap: 2_000_000 }, { cursor: -1 }, { cursor: 1.5 }, { limit: 0 }, { limit: 1001 }])
+      // A cursor past 2^53 - 1 is no seq we ever handed out; 2^63 overflows Postgres bigint (raw error 22003).
+      const huge = [{ cursor: 2 ** 53 }, { cursor: 2 ** 63 }, { cursor: 9223372036854776000 }];
+      for (const extra of [{ cap: 0 }, { cap: 2_000_000 }, { cursor: -1 }, { cursor: 1.5 }, { limit: 0 }, { limit: 1001 }, ...huge])
         expect(await codeOf(() => s.scanTitles("t1", { text: "re", limit: 5, ...extra }))).toBe("BAD_INPUT");
       expect(await codeOf(() => s.scanTitles("t1", { text: "\u0000", limit: 5 }))).toBe("BAD_INPUT");
     });

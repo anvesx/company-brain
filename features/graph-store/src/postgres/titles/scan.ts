@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { toNode } from "../../nodes.js";
-import { DEFAULT_CAP, type ScanPage, type ScanQuery } from "../../scan/scan.js";
-import { bad, type GraphNode } from "../../schema.js";
+import { type ScanPage, type ScanQuery, scanBounds } from "../../scan/scan.js";
+import type { GraphNode } from "../../schema.js";
 import { likeArg, likeTerm, pgTitleFilter } from "./filter.js";
 
 const CHUNK = 256; // candidates verified per statement, as in SQLite
@@ -13,11 +13,7 @@ const CANDIDATES = `SELECT seq FROM nodes WHERE tenant = $1 AND seq > $2 AND ${l
  */
 export function scanOps(pool: pg.Pool) {
   return async (tenant: string, q: ScanQuery): Promise<ScanPage> => {
-    if (!Number.isInteger(q?.limit) || q.limit < 1 || q.limit > 1000) bad("limit must be a whole number from 1 to 1000");
-    const cap = q.cap ?? DEFAULT_CAP;
-    if (!Number.isInteger(cap) || cap < 1 || cap > 1_000_000) bad("cap must be a whole number from 1 to 1000000");
-    const after = q.cursor ?? 0;
-    if (!Number.isInteger(after) || after < 0) bad("cursor must be a whole number");
+    const { cap, after } = scanBounds(q); // shared with SQLite, so both refuse the same input before any SQL
     const f = pgTitleFilter(tenant, q, [[]]); // $1 is the chunk's seq list; the filter's own values follow
     const candidates = (await pool.query(CANDIDATES, [tenant, after, likeArg(f.needle), cap])).rows.map((r) => Number(r.seq));
     const nodes: GraphNode[] = [];
