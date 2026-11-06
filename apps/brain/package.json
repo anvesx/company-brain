@@ -20,7 +20,11 @@
     "@anvesx/connector-kit": "workspace:*",
     "@anvesx/connectors": "0.1.0",
     "@anvesx/graph-store": "workspace:*",
-    "@anvesx/graph-sync": "workspace:*"
+    "@anvesx/graph-sync": "workspace:*",
+    "@anvesx/graph-view": "workspace:*",
+    "@anvesx/identity": "workspace:*",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.16"
   },
   "license": "MIT",
   "private": true

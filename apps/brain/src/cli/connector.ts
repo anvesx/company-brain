@@ -1,5 +1,6 @@
 import { type Connector, createFolderConnector } from "@anvesx/connector-kit";
 import { createDriveConnector, createGithubConnector } from "@anvesx/connectors";
+import { withLowercaseEmails } from "../gate/email.js";
 
 type Env = Record<string, string | undefined>;
 const need = (kind: string, env: Env, names: string[]): string[] => {
@@ -9,7 +10,9 @@ const need = (kind: string, env: Env, names: string[]): string[] => {
 };
 
 /** The source whose metadata fills the graph: folder, github or drive, configured as in the rag app. */
-export function connectorFromEnv(env: Env): Connector {
+export const connectorFromEnv = (env: Env): Connector => withLowercaseEmails(rawConnector(env));
+
+function rawConnector(env: Env): Connector {
   const kind = env.BRAIN_CONNECTOR;
   if (kind === "folder") return createFolderConnector("folder", need(kind, env, ["BRAIN_FOLDER_ROOT"])[0] as string);
   if (kind === "drive") {

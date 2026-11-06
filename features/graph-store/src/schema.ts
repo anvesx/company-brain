@@ -26,6 +26,10 @@ export interface GraphStore {
   node(tenant: string, id: string, asOf?: number): GraphNode | undefined;
   neighbors(tenant: string, id: string, opts?: { kind?: EdgeKind; dir?: "out" | "in"; asOf?: number }): Edge[];
   reach(tenant: string, from: string, opts: { kinds: EdgeKind[]; depth: number; limit: number; asOf?: number }): GraphNode[];
+  /** Many `node()` reads in a few queries: the nodes among `ids` valid at `asOf`, sorted by id, missing and duplicate ids dropped. At most 100,000 ids, else BAD_INPUT. */
+  nodesOf(tenant: string, ids: string[], asOf?: number): GraphNode[];
+  /** Many `neighbors()` reads in a few queries: edges out of (`dir: "out"`) or into (`"in"`) any id, optionally only `kinds`. Same id limit as `nodesOf`. */
+  edgesOf(tenant: string, ids: string[], opts: { dir: "out" | "in"; kinds?: EdgeKind[]; asOf?: number }): Edge[];
   history(tenant: string, id: string): GraphNode[];
   close(): void;
 }

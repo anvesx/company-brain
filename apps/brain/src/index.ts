@@ -1,5 +1,4 @@
 export { type BrainApp, type BrainDeps, createBrainApp } from "./app.js";
 export { canRead, readableDocuments } from "./gate/access.js";
-export { type Caller, verify } from "./gate/auth.js";
-export { type Recheck, stillReadable } from "./live/recheck.js";
+export { type Caller, type Recheck, stillReadable } from "./live/recheck.js";
 export { type SourceRecheckDeps, sourceRecheck } from "./live/source-recheck.js";

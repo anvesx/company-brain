@@ -7,3 +7,4 @@
 - `reach/`: read-count and limit-enforcement tests for reach.
 - `validation/`: props, input and lifecycle checks.
 - `limits/`: field and props size limits, tombstone ordering, the `withEnv` helper.
+- `batch/`: `nodesOf` and `edgesOf`, the batch reads graph-view needs (frozen contract, human merge).

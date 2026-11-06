@@ -4,8 +4,7 @@ import { reach } from "./edges/reach.js";
 import { nodeOps, tx } from "./nodes.js";
 import { bad, GraphError, type GraphStore, text, time } from "./schema.js";
 
-export type { Edge, EdgeKind, GraphNode, GraphStore, NodeKind } from "./schema.js";
-export { GraphError } from "./schema.js";
+export { type Edge, type EdgeKind, GraphError, type GraphNode, type GraphStore, type NodeKind } from "./schema.js";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS nodes (tenant TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, address TEXT NOT NULL,
@@ -24,8 +23,7 @@ function openDb(path: string): DatabaseSync {
   if (path === ":memory:" && !testing) bad(":memory: is only allowed in tests");
   const db = new DatabaseSync(path);
   db.exec("PRAGMA busy_timeout = 10000");
-  // Switching to WAL while another process does the same fails at once with SQLITE_BUSY: the busy
-  // handler is not consulted. Retry that race a bounded number of times, then give up loudly.
+  // Concurrent switches to WAL fail at once with SQLITE_BUSY (no busy handler): retry a bounded number of times.
   for (let attempt = 0; ; attempt++) {
     try {
       db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
@@ -69,6 +67,8 @@ export function createGraphStore(opts: { path: string }): GraphStore {
     }),
     node: live(nodes.get),
     neighbors: live(edges.neighbors),
+    nodesOf: live(edges.nodesOf),
+    edgesOf: live(edges.edgesOf),
     edgesBySource: live(edges.bySource),
     reach: live((tenant, from, o) => reach(tenant, from, o, edges)),
     history: live(nodes.history),
