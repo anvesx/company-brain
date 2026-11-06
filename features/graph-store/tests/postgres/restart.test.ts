@@ -19,11 +19,13 @@ describe.skipIf(pgFactory.skip !== undefined)("postgres: restart and broken conn
     const blocker = new pg.Client({ connectionString: (await postgresServer()).url, options: `-c search_path=${name}` });
     await blocker.connect();
     await blocker.query("BEGIN; LOCK TABLE nodes IN ACCESS EXCLUSIVE MODE");
-    const pending = s.upsertNode(node("a", { title: "v2" }), 2);
+    // The rejection handler goes on before the kill: the dying backend answers on its own socket, often before
+    // pg_terminate_backend returns, and a rejection with no handler yet is an unhandled rejection (CI flake).
+    const pending = expect(s.upsertNode(node("a", { title: "v2" }), 2)).rejects.toThrow();
     const waiting = "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid()";
     await until(async () => (await blocker.query(waiting)).rowCount! > 0);
     await blocker.query(`SELECT pg_terminate_backend(pid) FROM (${waiting}) w`);
-    await expect(pending).rejects.toThrow();
+    await pending;
     await blocker.query("ROLLBACK");
     await blocker.end();
     expect((await s.history("t1", "a")).map((n) => n.title)).toEqual(["v1"]);
@@ -43,12 +45,12 @@ describe.skipIf(pgFactory.skip !== undefined)("postgres: restart and broken conn
     await blocker.query(
       "INSERT INTO nodes (tenant, id, kind, source, address, title, version, props, valid_from) VALUES ('t1','b','document','s','b','x','1','[]',0)",
     );
-    const pending = s.upsertNode(node("b", { title: "late" }), 2);
+    const pending = expect(s.upsertNode(node("b", { title: "late" }), 2)).rejects.toThrow(); // handler first, see above
     const waiting = "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'INSERT INTO nodes%' AND pid <> pg_backend_pid()";
     // Watch from the pool, not the blocker: a connection inside a transaction sees a frozen pg_stat_activity.
     await until(async () => (await pool.query(waiting)).rowCount! > 0);
     await pool.query(`SELECT pg_terminate_backend(pid) FROM (${waiting}) w`);
-    await expect(pending).rejects.toThrow();
+    await pending;
     await blocker.query("ROLLBACK");
     await blocker.end();
     expect(await s.history("t1", "b")).toEqual([]);
