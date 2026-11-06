@@ -23,7 +23,11 @@ function newest(dir: string): { file: string; mtime: number } {
  * Why the built binary cannot be trusted, or undefined when it can. These tests run dist/bin.js, not src/, so a stale
  * dist would pass or fail for the old code and hide a regression. Nothing here builds: the message says what to run.
  */
-export function staleReason(bin: string, srcDir: string): string | undefined {
+export function staleReason(bin: string, srcDir: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  // Under Stryker the in-place sandbox rewrites every file, dist included, so every mtime records that rewrite, not
+  // the build: on APFS the sources land nanoseconds after dist and this check would refuse a binary that is in fact
+  // current. dist/bin.js never carries a mutant anyway (it is compiled from the pristine src), so the check stands down.
+  if (env["STRYKER_MUTATOR_WORKER"] !== undefined) return undefined;
   let built: number;
   try {
     built = statSync(bin).mtimeMs;
