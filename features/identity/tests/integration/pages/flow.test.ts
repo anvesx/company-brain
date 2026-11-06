@@ -68,11 +68,11 @@ describe("organization picker", () => {
     expect(new URL(String(res.headers.get("location")), env.base).pathname).toBe("/consent");
   });
 
-  it("rule 3: another user's organization is 400 'That organization is not available to you.'", async () => {
+  it("rule 3: another user's organization is 400 and shows the guarded route's reason", async () => {
     const bob = await signUp(env, "Bob");
     const theirs = (await env.identity.port.require(bob.browser.headers())).tenant;
     const res = await ada.browser.call("/picker", { form: { csrf: await csrf(), organizationId: theirs } });
     expect(res.status).toBe(400);
-    expect(await res.text()).toContain('<p role="alert">That organization is not available to you.</p>');
+    expect(await res.text()).toContain('<p role="alert">organizationId: name an organization you belong to</p>');
   });
 });

@@ -21,11 +21,11 @@ ${field("Email", "email", "email", "username", email)}${field("Password", "passw
   );
 
 /** The sign-up page. The server checks the password against the breached list and shows the reason here. */
-export const signUpView = ({ query, error }: AuthForm): string =>
+export const signUpView = ({ query, error, email }: AuthForm): string =>
   page(
     "Sign up",
     `${alert(error)}<form method="post" action="/sign-up">${hidden({ oauth_query: query })}
-${field("Name", "name", "text", "name")}${field("Email", "email", "email", "username")}${field("Password", "password", "password", "new-password")}
+${field("Name", "name", "text", "name")}${field("Email", "email", "email", "username", email)}${field("Password", "password", "password", "new-password")}
 <button type="submit">Sign up</button></form>
 <p>Have an account? <a href="/sign-in${query ? `?${esc(query)}` : ""}">Sign in</a></p>`,
   );

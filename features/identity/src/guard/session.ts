@@ -26,6 +26,19 @@ export const readSession = async (auth: Auth, headers: Headers): Promise<Session
 export const activeTenant = async (adapter: Adapter, view: SessionView): Promise<string | null> =>
   view.organizationId !== null && (await isMember(adapter, view.userId, view.organizationId)) ? view.organizationId : firstOrganization(adapter, view.userId);
 
+/**
+ * The one source of truth for "which organization is this session in". Same answer as activeTenant, and when it
+ * differs from what the session row says, the row is corrected. The consent page, the identity port and the grant
+ * (mcp.ts reads the row) then all agree: the organization shown is the organization the grant binds.
+ */
+export const resolveTenant = async (adapter: Adapter, view: SessionView): Promise<string | null> => {
+  const tenant = await activeTenant(adapter, view);
+  if (tenant !== view.organizationId) {
+    await adapter.update({ model: "session", where: [{ field: "id", value: view.sessionId }], update: { activeOrganizationId: tenant } });
+  }
+  return tenant;
+};
+
 /** A form token bound to one session: an HMAC of the session id under the secret. */
 export const signCsrf = (secret: string, sessionId: string): string => createHmac("sha256", secret).update(`csrf:${sessionId}`).digest("base64url");
 

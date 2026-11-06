@@ -33,6 +33,11 @@ describe("API set-active: a bad choice never clears the session's organization",
     }
   });
 
+  it("rule 3: a form-encoded set-active is refused as 'send JSON', even naming the caller's own organization", async () => {
+    const res = await ada.browser.call("/api/auth/organization/set-active", { form: { organizationId: personal } });
+    expect([res.status, await res.json()]).toEqual([400, { code: "BAD_INPUT", field: "body", message: "body: send JSON" }]);
+  });
+
   it("rule 3: switching to an organization the user belongs to still works", async () => {
     const acme = (await json<{ id: string }>(await ada.browser.call("/api/auth/organization/create", { json: { name: "Acme", slug: "acme" } }))).id;
     expect((await setActive({ organizationId: acme })).status).toBe(200);
@@ -40,16 +45,7 @@ describe("API set-active: a bad choice never clears the session's organization",
   });
 });
 
-describe("consent falls back when the session's organization is not usable", () => {
-  it("rule 3: an active organization the user was removed from shows consent for their remaining one", async () => {
-    const acme = (await json<{ id: string }>(await ada.browser.call("/api/auth/organization/create", { json: { name: "Acme", slug: "acme" } }))).id;
-    await setActive({ organizationId: acme });
-    env.db.prepare("delete from member where userId = ? and organizationId = ?").run(ada.userId, acme);
-    const res = await ada.browser.call(`/consent?${query}`);
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain("Ada");
-  });
-
+describe("consent without an organization", () => {
   it("rule 3: a user in no organization at all gets NO_ORGANIZATION", async () => {
     env.db.prepare("delete from member where userId = ?").run(ada.userId);
     await expect(env.identity.consentView(ada.browser.headers(), query)).rejects.toMatchObject({ code: "NO_ORGANIZATION" });

@@ -37,11 +37,14 @@ export const checkSignUp = async (req: Request): Promise<Response | null> => {
 /**
  * better-auth clears the session's active organization BEFORE it checks the new one, so a refused or empty switch
  * would leave a signed-in user with none. Check first: the body must name an organization the caller belongs to.
- * With no session this returns null and better-auth answers 401 as usual.
+ * With no session this returns null and better-auth answers 401 as usual. Only JSON is read here, so any other
+ * content type is refused up front: a form naming the caller's own organization would otherwise get a misleading
+ * "name an organization you belong to".
  */
 export const checkSetActive = async (req: Request, auth: Auth): Promise<Response | null> => {
   const view = await readSession(auth, req.headers);
   if (!view) return null;
+  if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) return badInput("body", "body: send JSON");
   const id = (await bodyOf(req))?.["organizationId"];
   const adapter = (await auth.$context).adapter as AuthContext["adapter"];
   if (typeof id === "string" && id.trim() !== "" && (await isMember(adapter, view.userId, id))) return null;

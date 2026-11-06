@@ -1,7 +1,7 @@
 import type { AuthContext } from "better-auth";
 import type { Auth } from "../auth/options.js";
 import { IdentityError } from "../errors.js";
-import { activeTenant, readSession } from "../guard/session.js";
+import { readSession, resolveTenant } from "../guard/session.js";
 
 type Adapter = AuthContext["adapter"];
 type ClientRow = { name?: string | null; redirectUris?: unknown; scopes?: unknown };
@@ -26,8 +26,9 @@ const listOf = (value: unknown): string[] => {
 export const consentView = async (auth: Auth, adapter: Adapter, headers: Headers, oauthQuery: string) => {
   const view = await readSession(auth, headers);
   if (!view) throw new IdentityError("UNAUTHENTICATED", "sign in first");
-  // The active organization may be unset or stale; fall back to the oldest membership, as the identity port does.
-  const tenant = await activeTenant(adapter, view);
+  // The session's organization may be unset or stale. resolveTenant falls back to the oldest membership AND writes
+  // that choice to the session row, which is where the grant reads it from, so the page and the grant agree.
+  const tenant = await resolveTenant(adapter, view);
   if (tenant === null) throw new IdentityError("NO_ORGANIZATION", "You do not belong to an organization yet.");
   const params = new URLSearchParams(oauthQuery);
   // Each failure names the query parameter at fault, so the person fixing the link knows which one.

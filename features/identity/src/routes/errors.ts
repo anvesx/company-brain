@@ -40,6 +40,8 @@ export const mapRejection = async (res: Response): Promise<Response> => {
   if (code === "BAD_REQUEST" && body?.message?.startsWith("Invalid JSON")) return badInput("body", "body: send valid JSON");
   if (code === "UNSUPPORTED_MEDIA_TYPE") return badInput("body", "body: send JSON or a form");
   if (code === "INVALID_EMAIL") return badInput("email", "email: must be an email address");
+  // A JSON body that is not an object (null, [], "x") fails the schema as a whole: "[body] Invalid input: expected object".
+  if (code === "VALIDATION_ERROR" && /\[body\] /.test(body?.message ?? "")) return badInput("body", "body: send a JSON object");
   const fields = code === "VALIDATION_ERROR" ? badFields(body?.message ?? "") : [];
   if (fields.length > 0) return badInput(fields[0] ?? "", `${fields.join(", ")}: is missing or the wrong type`);
   if (code in FIELD_FOR) return badInput(FIELD_FOR[code] ?? "", code);

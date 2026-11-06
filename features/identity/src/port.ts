@@ -3,7 +3,7 @@ import type { Auth } from "./auth/options.js";
 import type { ResolvedConfig } from "./config.js";
 import { IdentityError } from "./errors.js";
 import { createBearerVerifier } from "./guard/bearer.js";
-import { activeTenant, readSession, sameToken, signCsrf } from "./guard/session.js";
+import { readSession, resolveTenant, sameToken, signCsrf } from "./guard/session.js";
 
 /** Who is calling: a signed-in browser session or an MCP client holding an access token. */
 export interface Caller {
@@ -26,7 +26,7 @@ export const createPort = (auth: Auth, cfg: ResolvedConfig, adapter: () => Promi
   const fromSession: IdentityPort["fromSession"] = async (headers) => {
     const view = await readSession(auth, headers);
     if (!view) return null;
-    const tenant = await activeTenant(await adapter(), view);
+    const tenant = await resolveTenant(await adapter(), view);
     if (tenant === null) throw new IdentityError("NO_ORGANIZATION", "the session has no active organization");
     return { user: view.userId, tenant, kind: "session", scopes: [] };
   };
