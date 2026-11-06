@@ -2,7 +2,7 @@ import { decodeJwt } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { one } from "../../support/db.js";
 import { type Browser, json, type Person, signUp } from "../../support/http.js";
-import { authorize, authParams, bearer, clientId, consent, discover, LOOPBACK, pkce, token } from "../../support/oauth.js";
+import { authorize, authParams, bearer, clientId, consent, discover, LOOPBACK, oauthQuery, pkce, token } from "../../support/oauth.js";
 import { boot, type Env } from "../../support/server.js";
 
 let env: Env;
@@ -63,6 +63,14 @@ describe("rule 7: the organization shown at consent is the organization the gran
     expect((await ada.browser.call("/api/auth/organization/leave", { json: { organizationId: beta } })).status).toBe(200);
     expect(active()).toBeNull();
     await expectGrantFor(ada.browser, personal);
+  });
+
+  it("a user with no organization who posts Allow directly is refused with NO_ORGANIZATION and gets no code", async () => {
+    const meta = await discover(env.base);
+    const at = String((await authorize(ada.browser, meta, authParams(await clientId(meta), env.config.resource, pkce()))).location);
+    env.db.prepare("delete from member where userId = ?").run(ada.userId);
+    const res = await ada.browser.call("/api/auth/oauth2/consent", { json: { accept: true, oauth_query: oauthQuery(at) } });
+    expect([res.status, await json(res)]).toEqual([403, { code: "NO_ORGANIZATION", message: "You do not belong to an organization yet." }]);
   });
 
   it("a user with no organization at all gets NO_ORGANIZATION on the consent page", async () => {

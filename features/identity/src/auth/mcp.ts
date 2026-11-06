@@ -26,12 +26,16 @@ export const mcpPlugin = (cfg: ResolvedConfig, adapter: () => Promise<AuthContex
     // organization and the token exchange fails later with invalid_grant (checked in customAccessTokenClaims).
     postLogin: {
       page: "/picker",
-      consentReferenceId: async ({ session }) =>
-        (await resolveTenant(await adapter(), {
+      consentReferenceId: async ({ session }) => {
+        const tenant = await resolveTenant(await adapter(), {
           userId: session.userId,
           sessionId: session.id,
           organizationId: (session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null,
-        })) ?? undefined,
+        });
+        // No organization means a token with no org_id, which /mcp would refuse. Refuse at Allow instead.
+        if (tenant === null) throw new APIError("FORBIDDEN", { code: "NO_ORGANIZATION", message: "You do not belong to an organization yet." });
+        return tenant;
+      },
       shouldRedirect: async ({ user, isContinuation }) => !isContinuation && (await countMemberships(await adapter(), user.id)) > 1,
     },
     // org_id comes from the consent reference. A user who has left that organization gets invalid_grant on refresh.
