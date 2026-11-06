@@ -3,6 +3,7 @@ import type { Auth } from "../auth/options.js";
 import type { ResolvedConfig } from "../config.js";
 import type { Limits } from "../guard/limits.js";
 import { checkOrigin } from "../guard/origin.js";
+import { closedDoor, limitGoogle, mountGoogle } from "../login/google.js";
 import { buildPages } from "../pages/serve.js";
 import { mapRejection, toConsentPage, toRedirect } from "./errors.js";
 import { checkRedirect, labelNativeClient } from "./register.js";
@@ -39,6 +40,8 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
       return badRedirect ?? toConsentPage(await mapRejection(await toRedirect(await auth.handler(req))), req.url);
     }
 
+    const closed = await closedDoor(path, req, cfg);
+    if (closed) return closed;
     let email = "";
     if (path === SIGN_UP) {
       const bad = await checkSignUp(req);
@@ -53,6 +56,8 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
       const wait = await limits.wait("signin", email);
       if (wait !== null) return tooMany(wait);
     }
+    const slow = await limitGoogle(path, req, addressOf(c, cfg.trustProxy), limits);
+    if (slow) return slow;
     if (path === REGISTER) {
       const wait = await limits.wait("register", addressOf(c, cfg.trustProxy));
       if (wait !== null) return tooMany(wait);
@@ -65,6 +70,8 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
   });
 
   // The pages call the routes above, so they are mounted last and handed this app to call.
-  app.route("/", buildPages({ auth, cfg, call: (req) => Promise.resolve(app.fetch(req)) }));
+  const deps = { auth, cfg, call: (req: Request, env?: unknown) => Promise.resolve(app.fetch(req, env)) };
+  mountGoogle(app, deps);
+  app.route("/", buildPages(deps));
   return app;
 };

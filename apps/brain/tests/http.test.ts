@@ -1,67 +1,63 @@
-import { createHmac } from "node:crypto";
-import type { AddressInfo } from "node:net";
-import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
-import { createBrainApp } from "../src/app.js";
+import { bootBrain, type Env, seedDocs, signUp, whoIs } from "./identity/boot.js";
 
-const SECRET = "s".repeat(32);
-const NOW = 1_000;
-const token = (user: string, tenant = "t", exp = NOW + 100, key = SECRET) =>
-  `Bearer ${user}:${tenant}:${exp}:${createHmac("sha256", key).update(`${user}:${tenant}:${exp}`).digest("hex")}`;
+let env: Env | undefined;
+afterEach(async () => env?.close());
 
-let close: (() => Promise<void>) | undefined;
-afterEach(async () => close?.());
-
+/** Boots the brain, signs Ann up through identity and gives her one readable document. */
 async function boot() {
-  const store = createGraphStore({ path: ":memory:" });
-  const n = (id: string, kind: "person" | "document") => ({
-    tenant: "t",
-    id,
-    kind,
-    source: "drive",
-    address: `addr-${id}`,
-    title: id,
-    version: "1",
-    props: {},
-  });
-  for (const x of [n("ann", "person"), n("d1", "document"), n("d2", "document")]) store.upsertNode(x, 1);
-  store.addEdge({ tenant: "t", from: "ann", to: "d1", kind: "can-read", source: "drive" }, 1);
-  const app = createBrainApp({ store, secret: SECRET, now: () => NOW, port: 0 });
-  await app.listen();
-  close = app.close;
-  return `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+  env = await bootBrain();
+  const ann = await signUp(env, "Ann");
+  const who = await whoIs(env, ann.browser.cookie());
+  seedDocs(env.store, who.tenant, who.user);
+  const get = (path: string, init: RequestInit = {}) => fetch(`${env?.base}${path}`, { headers: { cookie: ann.browser.cookie() }, ...init });
+  return { get, ann };
 }
-const get = (url: string, auth?: string) => fetch(url, { headers: auth ? { authorization: auth } : {} });
 
 describe("brain http", () => {
-  it("rejects missing, forged, expired and cross-key tokens", async () => {
-    const base = await boot();
-    expect((await get(`${base}/v1/documents`)).status).toBe(401);
-    expect((await get(`${base}/v1/documents`, token("ann", "t", NOW + 100, "x".repeat(32)))).status).toBe(401);
-    expect((await get(`${base}/v1/documents`, token("ann", "t", NOW - 1))).status).toBe(401);
+  it("rejects a missing credential and a forged bearer", async () => {
+    await boot();
+    expect((await fetch(`${env?.base}/v1/documents`)).status).toBe(401);
+    expect((await fetch(`${env?.base}/v1/documents`, { headers: { authorization: `Bearer ann:t:9999999999:${"a".repeat(64)}` } })).status).toBe(401);
   });
   it("lists pointers only, for the caller", async () => {
-    const base = await boot();
-    const body = await (await get(`${base}/v1/documents`, token("ann"))).json();
-    expect(body).toEqual({ documents: [{ id: "d1", source: "drive", address: "addr-d1", title: "d1", version: "1" }] });
+    const { get } = await boot();
+    const body = await (await get("/v1/documents")).json();
+    expect(body).toEqual({ documents: [{ id: "d-1", source: "drive", address: "https://drive.example.com/d-1", title: "title of d-1", version: "1" }] });
   });
   it("returns 404 for a document the caller cannot read, same as a missing one", async () => {
-    const base = await boot();
-    expect((await get(`${base}/v1/documents/d2`, token("ann"))).status).toBe(404);
-    expect((await get(`${base}/v1/documents/nope`, token("ann"))).status).toBe(404);
-    expect((await get(`${base}/v1/documents/d1`, token("ann"))).status).toBe(200);
+    const { get } = await boot();
+    expect((await get("/v1/documents/d-2")).status).toBe(404);
+    expect((await get("/v1/documents/nope")).status).toBe(404);
+    expect((await get("/v1/documents/d-1")).status).toBe(200);
   });
-  it("never leaks another tenant", async () => {
-    const base = await boot();
-    const body = await (await get(`${base}/v1/documents`, token("ann", "other"))).json();
-    expect(body).toEqual({ documents: [] });
+  it("never leaks another tenant: each person sees only their own tenant's document, though both are called d-1", async () => {
+    const { ann } = await boot();
+    const bob = await signUp(env as Env, "Bob");
+    const b = await whoIs(env as Env, bob.browser.cookie());
+    // Same document id in the second tenant, with a different title, so mixing the tenants would show.
+    env?.store.upsertNode(
+      { tenant: b.tenant, id: "d-1", kind: "document", source: "drive", address: "bob-addr", title: "Bob's d-1", version: "1", props: {} },
+      1,
+    );
+    env?.store.upsertNode({ tenant: b.tenant, id: b.user, kind: "person", source: "drive", address: b.user, title: "Bob", version: "1", props: {} }, 1);
+    env?.store.addEdge({ tenant: b.tenant, from: b.user, to: "d-1", kind: "can-read", source: "drive" }, 1);
+    const titles = async (who: typeof ann) => {
+      const res = await fetch(`${env?.base}/v1/documents`, { headers: { cookie: who.browser.cookie() } });
+      return ((await res.json()) as { documents: { title: string }[] }).documents.map((d) => d.title);
+    };
+    expect(await titles(ann)).toEqual(["title of d-1"]);
+    expect(await titles(bob)).toEqual(["Bob's d-1"]);
   });
   it("answers 404 on unknown routes and 405 on writes", async () => {
-    const base = await boot();
-    expect((await get(`${base}/v2/x`, token("ann"))).status).toBe(404);
-    expect((await fetch(`${base}/v1/documents`, { method: "POST", headers: { authorization: token("ann") } })).status).toBe(405);
+    const { get } = await boot();
+    expect((await get("/v2/x")).status).toBe(404);
+    expect((await fetch(`${env?.base}/v1/documents`, { method: "POST" })).status).toBe(401);
   });
-  it("refuses a short secret", () => {
-    expect(() => createBrainApp({ store: createGraphStore({ path: ":memory:" }), secret: "short", now: () => 0 })).toThrow(/32/);
+  it("answers 405 to a signed-in write", async () => {
+    const { get, ann } = await boot();
+    const res = await get("/v1/documents", { method: "POST", headers: { cookie: ann.browser.cookie() } });
+    expect(res.status).toBe(405);
+    expect(await res.json()).toEqual({ error: "read only" });
   });
 });

@@ -25,6 +25,9 @@ interface GraphStore {
   neighbors(tenant: string, id: string, opts?: { kind?: EdgeKind; dir?: "out"|"in"; asOf?: number }): Edge[];
   reach(tenant: string, from: string, opts: { kinds: EdgeKind[]; depth: number; limit: number; asOf?: number }): GraphNode[];
   history(tenant: string, id: string): GraphNode[];
+  // Batch reads (added for graph-view, rule 9). Same answers as node()/neighbors() per id.
+  nodesOf(tenant: string, ids: string[], asOf?: number): GraphNode[];   // sorted by id, missing/duplicate ids dropped
+  edgesOf(tenant: string, ids: string[], opts: { dir: "out"|"in"; kinds?: EdgeKind[]; asOf?: number }): Edge[];
   close(): void;
 }
 createGraphStore(opts: { path: string }): GraphStore;   // ":memory:" not allowed in non-test use
@@ -40,6 +43,7 @@ class GraphError extends Error { code: "BAD_INPUT"|"DEPTH_LIMIT"|"CLOSED" }
 6. props hold metadata only; values over 1 KiB or body-like key (`text`, `body`, `content`, `summary`, `excerpt`, `transcript` and similar, compared without case or punctuation) throw BAD_INPUT.
 7. tombstone closes the node and all its edges.
 8. After close() every call throws CLOSED. WAL and shm files are removed.
+9. `nodesOf` and `edgesOf` answer for many ids in a bounded number of queries, chunked under SQLite's variable limit (built on `src/edges/many.ts`). Empty `ids` gives `[]`; `kinds: []` gives `[]`; a bad `dir`, an unknown kind or a non-string id throws BAD_INPUT. Contract: `tests/unit/batch/{nodes,edges}.test.ts`. Added 2026-11-06 because graph-view must load 10k documents and 50k edges in under 300 ms, which one `neighbors()` call per node cannot reach. Additive; human merge (A15).
 
 ## Acceptance tests (written first)
 - unit: tenant isolation, as-of reads, supersession, no-op upsert, cycle, depth cap, forbidden props, unicode ids.

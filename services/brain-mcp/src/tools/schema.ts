@@ -1,4 +1,4 @@
-import type { GraphNode, GraphStore, NodeKind } from "@anvesx/graph-store";
+import type { AsyncGraphStore, GraphNode, NodeKind } from "@anvesx/graph-store";
 import { z } from "zod";
 
 export const TOOL_NAMES = ["brain.search", "brain.node", "brain.graph", "brain.connectors"] as const;
@@ -7,7 +7,7 @@ const KINDS = ["person", "team", "document", "repo", "channel", "ticket", "proje
 
 /** What every handler gets: the graph, who is asking (from the token, never from arguments) and the linked accounts. */
 export interface Ctx {
-  store: GraphStore;
+  store: AsyncGraphStore;
   caller: { tenant: string; user: string };
   accounts: (user: string) => Promise<Record<string, unknown>[]>;
 }

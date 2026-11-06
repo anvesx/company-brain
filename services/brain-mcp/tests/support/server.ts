@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { toAsync } from "@anvesx/graph-store";
 import { createIdentity, type IdentityConfig, migrateDatabase } from "@anvesx/identity";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -41,7 +42,7 @@ export async function bootBrain(limits?: { sessions: number; body: number }) {
   const accounts = async (user: string) => db.prepare("SELECT * FROM account WHERE userId = ?").all(user) as Record<string, unknown>[];
   app = new Hono();
   app.route("/", identity.routes);
-  mountBrainMcp(app, { store, protect: identity.protect, accounts, ...(limits ? { limits } : {}) });
+  mountBrainMcp(app, { store: toAsync(store), protect: identity.protect, accounts, ...(limits ? { limits } : {}) });
   const close = () =>
     new Promise<void>((done) => {
       if ("closeAllConnections" in server) server.closeAllConnections();

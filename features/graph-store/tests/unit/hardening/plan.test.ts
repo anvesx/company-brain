@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { openDb } from "../../../src/index.js";
 import { titleFilter } from "../../../src/scan/filters.js";
 import { chunkSql, FTS_CANDIDATES } from "../../../src/scan/scan.js";
-import { searchSql } from "../../../src/search.js";
+import { searchSql } from "../../../src/scan/search.js";
 import { tmpDir } from "../../support/helpers.js";
 
 // D5: the edge check must use the edges_in index and the title search the FTS index. A full scan of nodes or

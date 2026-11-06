@@ -4,7 +4,7 @@
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["^build"] },
     "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
-    "integration": { "dependsOn": ["^build"] },
+    "integration": { "dependsOn": ["^build"], "passThroughEnv": ["NODE_AUTH_TOKEN"] },
     "mutation": { "dependsOn": ["test"], "outputs": ["reports/**"] }
   }
 }

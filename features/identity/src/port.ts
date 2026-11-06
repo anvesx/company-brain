@@ -17,12 +17,12 @@ export interface IdentityPort {
   fromSession(headers: Headers): Promise<Caller | null>;
   fromBearer(headers: Headers): Promise<Caller | null>;
   require(headers: Headers): Promise<Caller>;
+  accessToken(user: string, providerId: string, accountId: string): Promise<string>;
 }
 
 /** The three ways to learn the caller. A missing credential is null. A bad credential throws IdentityError. */
-export const createPort = (auth: Auth, cfg: ResolvedConfig, adapter: () => Promise<AuthContext["adapter"]>): IdentityPort => {
+export const createPort = (auth: Auth, cfg: ResolvedConfig, adapter: () => Promise<AuthContext["adapter"]>): Omit<IdentityPort, "accessToken"> => {
   const verify = createBearerVerifier(cfg);
-
   const fromSession: IdentityPort["fromSession"] = async (headers) => {
     const view = await readSession(auth, headers);
     if (!view) return null;

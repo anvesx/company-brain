@@ -2,10 +2,12 @@ import { edgeOps } from "./edges/edges.js";
 import { reach } from "./edges/reach.js";
 import { nodeOps, tx } from "./nodes.js";
 import { scanOps } from "./scan/scan.js";
+import { searchOps } from "./scan/search.js";
 import { GraphError, type GraphStore, text, time } from "./schema.js";
-import { searchOps } from "./search.js";
 import { openDb } from "./sqlite/open.js";
 
+export { type AsyncGraphStore, toAsync } from "./async.js";
+export { createPostgresGraphStore } from "./postgres/store.js";
 export type { ScanPage, ScanQuery } from "./scan/scan.js";
 export type { Edge, EdgeKind, GraphNode, GraphStore, NodeKind } from "./schema.js";
 export { GraphError } from "./schema.js";
@@ -41,6 +43,8 @@ export function createGraphStore(opts: { path: string }): GraphStore {
     }),
     node: live(nodes.get),
     neighbors: live(edges.neighbors),
+    nodesOf: live(edges.nodesOf),
+    edgesOf: live(edges.edgesOf),
     edgesBySource: live(edges.bySource),
     reach: live((tenant, from, o) => reach(tenant, from, o, edges)),
     history: live(nodes.history),

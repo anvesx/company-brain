@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { GraphStore } from "@anvesx/graph-store";
+import type { AsyncGraphStore } from "@anvesx/graph-store";
 import type { Caller } from "@anvesx/identity";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -10,7 +10,7 @@ import { createBrainServer } from "./build.js";
 import { createSessions } from "./sessions.js";
 
 export interface BrainMcpDeps {
-  store: GraphStore;
+  store: AsyncGraphStore;
   /** Identity's guard: answers 401 with the challenge unless the bearer token is valid. */
   protect: Protect;
   accounts: (user: string) => Promise<Record<string, unknown>[]>;

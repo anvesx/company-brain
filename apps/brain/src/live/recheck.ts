@@ -1,5 +1,6 @@
 import type { GraphNode } from "@anvesx/graph-store";
-import type { Caller } from "../gate/auth.js";
+/** Who is asking: the tenant and user identity vouched for. */
+export type Caller = { user: string; tenant: string };
 
 /** Asks the source whether `caller` can still read `doc` right now. Throwing or returning false hides the document. */
 export type Recheck = (doc: GraphNode, caller: Caller) => Promise<boolean>;

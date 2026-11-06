@@ -13,7 +13,12 @@ describe("source-backed recheck", () => {
   it("asks the document's own connector with the asker's own token", async () => {
     const seen: string[] = [];
     const check = sourceRecheck({
-      connectors: { gh: connector("gh", async (a, { token }) => (seen.push(`${a}:${token}`), true)) },
+      connectors: {
+        gh: connector("gh", async (a, { token }) => {
+          seen.push(`${a}:${token}`);
+          return true;
+        }),
+      },
       tokenFor: (c, source) => `${c.user}@${source}`,
     });
     expect(await check(doc("gh"), caller)).toBe(true);

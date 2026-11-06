@@ -5,10 +5,11 @@ type Adapter = AuthContext["adapter"];
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** Sign-in lockout: 5 failures per email per 15 minutes. Registration: 20 per address per hour. */
+/** Sign-in lockout: 5 failures per email per 15 minutes. Registration: 20 per address per hour. Starting Google sign-in: 5 per address per 15 minutes. */
 export const RULES = {
   signin: { max: 5, windowMs: 15 * MINUTE },
   register: { max: 20, windowMs: HOUR },
+  google: { max: 5, windowMs: 15 * MINUTE },
 } as const;
 export type LimitKind = keyof typeof RULES;
 

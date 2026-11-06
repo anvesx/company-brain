@@ -28,6 +28,10 @@ export interface GraphStore {
   node(tenant: string, id: string, asOf?: number): GraphNode | undefined;
   neighbors(tenant: string, id: string, opts?: { kind?: EdgeKind; dir?: "out" | "in"; asOf?: number }): Edge[];
   reach(tenant: string, from: string, opts: { kinds: EdgeKind[]; depth: number; limit: number; asOf?: number }): GraphNode[];
+  /** Many `node()` reads in a few queries: the nodes among `ids` valid at `asOf`, sorted by id, missing and duplicate ids dropped. At most 100,000 ids, else BAD_INPUT. */
+  nodesOf(tenant: string, ids: string[], asOf?: number): GraphNode[];
+  /** Many `neighbors()` reads in a few queries: edges out of (`dir: "out"`) or into (`"in"`) any id, optionally only `kinds`. Same id limit as `nodesOf`. */
+  edgesOf(tenant: string, ids: string[], opts: { dir: "out" | "in"; kinds?: EdgeKind[]; asOf?: number }): Edge[];
   history(tenant: string, id: string): GraphNode[];
   searchTitles(
     tenant: string,
@@ -58,7 +62,10 @@ export class GraphError extends Error {
 export const bad = (message: string): never => {
   throw new GraphError("BAD_INPUT", message);
 };
-export const text = (name: string, v: unknown): string => (typeof v === "string" && v !== "" ? v : bad(`${name} must be a non-empty string`));
+/** True when the string has a NUL (Postgres text cannot hold it) or a lone surrogate (not valid UTF-8). */
+export const unsafe = (v: string): boolean => v.includes("\u0000") || !(v as unknown as { isWellFormed(): boolean }).isWellFormed();
+export const text = (name: string, v: unknown): string =>
+  typeof v === "string" && v !== "" && !unsafe(v) ? v : bad(`${name} must be a non-empty string without NUL or lone surrogates`);
 export const time = (name: string, v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : bad(`${name} must be a finite number`));
 export const oneOf = (name: string, v: unknown, all: readonly string[]): string =>
   typeof v === "string" && all.includes(v) ? v : bad(`${name} is not a known kind`);

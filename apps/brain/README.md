@@ -8,24 +8,61 @@ Slite, Meta and Vectorize all put access control at the retrieval step and keep 
 
 ## API
 
-Read-only, bearer token `user:tenant:exp:hmac` (the same form the rag repo's `mint-token` makes).
+Read-only, behind `@anvesx/identity` (ADR 0008). A caller is a signed-in browser (session cookie) or an MCP client (OAuth access token as `Authorization: Bearer`). Anyone else gets 401 and a `www-authenticate` challenge.
 
-| Route                   | Returns                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `GET /v1/documents`     | pointers the caller can read, directly or through a team                |
-| `GET /v1/documents/:id` | one pointer, or 404 (a hidden document looks the same as a missing one) |
+| Route                                                       | Returns                                                                 |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `GET /v1/documents`                                         | pointers the caller can read, directly or through a team                |
+| `GET /v1/documents/:id`                                     | one pointer, or 404 (a hidden document looks the same as a missing one) |
+| `GET /graph`, `/v1/graph`                                   | the 3D graph page and its JSON (`@anvesx/graph-view`)                   |
+| `/api/auth/*`, `/sign-in`, `/connections`, `/.well-known/*` | identity's own routes, on the same origin                               |
 
 ## Run
 
 ```bash
-BRAIN_GRAPH_PATH=./graph.db BRAIN_AUTH_SECRET=<32+ chars> node dist/bin.js
+BRAIN_GRAPH_PATH=./graph.db BRAIN_AUTH_DB=./auth.db BRAIN_AUTH_SECRET=<32+ chars> \
+  BRAIN_BASE_URL=http://localhost:8787 node dist/bin.js
 ```
+
+| Variable            | Meaning                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BRAIN_GRAPH_PATH`  | SQLite graph file                                                                                                                                                            |
+| `BRAIN_AUTH_DB`     | SQLite file for sign-in data                                                                                                                                                 |
+| `BRAIN_AUTH_SECRET` | 32+ characters; signs cookies and derives the graph-view cursor key. Rotating it ends sessions and outstanding Load more cursors. Share it across instances                  |
+| `BRAIN_BASE_URL`    | public origin: https, or http on localhost; no path, query or fragment. Host case, default port and one trailing `/` are normalised. Default `http://localhost:<BRAIN_PORT>` |
+| `BRAIN_PORT`        | 1 to 65535, default 8787                                                                                                                                                     |
+| `BRAIN_HOST`        | bind address, default `127.0.0.1`                                                                                                                                            |
+
+A bad setting prints one `brain: ...` line and exits 1 before anything is created; an unknown argument exits 2.
+
+Production (Postgres, identity, `/healthz`; the container image runs this):
+
+```bash
+DATABASE_URL=postgres://... BRAIN_AUTH_SECRET=<32+> IDENTITY_SECRET=<32+> BASE_URL=https://brain.example.com node dist/bin.js serve
+```
+
+`PORT` defaults to 8080, `HOST` to `0.0.0.0`. Identity answers under `/api/auth/*` and `/.well-known/*`. See `src/serve/README.md`.
+
+## Try it
+
+```bash
+# 1. sign up; the response sets the session cookie (the Origin header is identity's CSRF check)
+curl -s -c jar -H 'origin: http://localhost:8787' -H 'content-type: application/json' \
+  -d '{"name":"Ann","email":"ann@example.com","password":"<a long unusual password>"}' \
+  http://localhost:8787/api/auth/sign-up/email
+# 2. call the API with the cookie (without it: 401)
+curl -s -b jar http://localhost:8787/v1/documents
+```
+
+Open `http://localhost:8787/graph` in the same browser for the graph. MCP clients use an access token from identity's OAuth flow (see `/connections`) as `Authorization: Bearer <token>`.
+
+## Who a document's ACL names
+
+Connectors write names like a Drive email or a GitHub login into ACLs; identity ids are random. A person matches their identity id, their verified email, every linked account id and the teams of any of those. Details and the open GitHub login mapping are in `src/gate/README.md`.
 
 ## Not built yet
 
-The graph is filled by `services/graph-sync` (in progress). Until it lands the file is empty. No webhooks, no `reach` or `neighbors` routes, no review queue or dream cycle (see `docs/brain/research/exact/README.md`).
-
-`src/auth.ts` repeats about 12 lines of the rag token check. Extract a shared package when a third app needs it.
+No webhooks, no `reach` or `neighbors` routes, no review queue or dream cycle (see `docs/brain/research/exact/README.md`).
 
 ## Filling the graph
 
