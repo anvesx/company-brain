@@ -22,7 +22,7 @@ describe.skipIf(pgFactory.skip !== undefined)("postgres: title queries use the t
     await pool.query(
       `INSERT INTO nodes (tenant, id, kind, source, address, title, version, props, valid_from)
        SELECT CASE WHEN i % 2 = 0 THEN 't1' ELSE 't2' END, 'n' || i, 'document', 'test', 'a' || i,
-         CASE WHEN i % 3000 = 0 THEN 'quokka report ' || i ELSE 'weekly report ' || md5(i::text) END, '1', '{}', 0
+         CASE WHEN i % 3000 = 0 THEN 'quokka report ' || i ELSE 'weekly report ' || md5(i::text) END, '1', '[]', 0
        FROM generate_series(1, $1::int) i`,
       [ROWS],
     );

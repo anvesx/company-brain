@@ -34,8 +34,12 @@ object accepts both shapes. Tests assert the exact success payloads and exact er
 - Results come in insertion order, not id order. If the cap is hit before `limit` results are found, the reply has
   `truncated: true` and `next`, an opaque decimal cursor; pass it back as `cursor` to continue. `next` without
   `truncated` just means more pages exist. No `next` means the scan finished.
-- Candidates from other tenants and from unreadable nodes count toward the cap, so a very common word can
-  return a page with few or no hits and `truncated: true`. Keep paging.
+- Candidates are this tenant's title matches only, but unreadable ones still count toward the cap, so a very
+  common word can return a page with few or no hits and `truncated: true`. Keep paging.
+- Search is a discovery page, not a change feed. On Postgres the cursor is the row's `seq`, taken when an insert
+  starts. A row whose transaction took its `seq` before a reader paged past it, but committed after, never shows
+  on that reader's later pages; a new search from the start finds it. Pinned by graph-store
+  `tests/postgres/titles/cursor.test.ts`.
 - Non-document kinds are checked in JS (`sees`), which costs more per candidate than the SQL probe for documents.
 - Needles under 3 characters cannot use the trigram index; they scan rowid ranges under the same cap.
 - A caller in more than 1,000 teams gets `INVALID_ARGUMENT` from `brain.search` (the store takes at most 1,000 ids in `reachedBy.from`).

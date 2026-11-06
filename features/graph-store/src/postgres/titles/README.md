@@ -13,3 +13,7 @@
 - A needle of 3+ characters that matches few rows: step 1 and the search read the trigram index (Bitmap Index Scan), then only the rows it points at. Cost follows the number of matches, not the tenant's size. `tests/postgres/titles/plan.test.ts` checks the plans with EXPLAIN over 60k rows.
 - A needle under 3 characters has no trigram, and a needle that matches most rows is cheaper to answer by reading the table, so the planner may still scan the whole tenant. `cap` bounds what one scan returns, not what Postgres reads to find it.
 - Building the index on an existing large table holds a write lock while it runs, once, on the first start after upgrade.
+
+## Known limit: the cursor is not a change feed
+
+`seq` is assigned when an INSERT starts, not when it commits. A transaction that took seq 5 but commits after a reader got `next: 7` is never shown on that reader's later pages, because they ask for `seq > 7`. A new scan from the start finds it. `scanTitles` pages are for discovery; do not use them to sync changes. `tests/postgres/titles/cursor.test.ts` pins this.
