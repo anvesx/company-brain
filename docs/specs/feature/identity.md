@@ -96,8 +96,9 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
     docs" in the page, as the card says.
 11. Sign-out revokes the session row. Revoking an MCP client on the account page revokes its
     refresh tokens; its access token dies within 15 minutes.
-12. Every page is server-rendered HTML with no client JavaScript except the copy button. Forms
-    carry a CSRF token bound to the session; the auth API checks Origin on every write.
+12. Every page is server-rendered HTML with no inline client JavaScript. The copy button and the
+    passkey glue (rule 16) are the only scripts, and the latter is served as files, never inline.
+    Forms carry a CSRF token bound to the session; the auth API checks Origin on every write.
 13. Every bad input raises BAD_INPUT naming the field: empty or malformed email, password out of
     range, unknown organization, redirect not matching the registration, missing code_verifier.
 14. Determinism and purity: the install renderer is pure. Clocks come from better-auth's
@@ -108,6 +109,14 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
     The sign-in budget is hash-bound: better-auth's scrypt verify measures about 70 ms a call and
     runs on node's libuv pool (4 threads by default), so 1,000 verifies floor at about 17.5 s of
     pool time before HTTP and SQLite. Raise UV_THREADPOOL_SIZE in production for more throughput.
+16. Passkeys (WebAuthn, `@better-auth/passkey`): a signed-in person adds a named passkey on the
+    account page and deletes it there (CSRF form; a stranger's id is 404). The sign-in page offers
+    "Sign in with a passkey" with no email typed: a discoverable credential signs the challenge and
+    the person lands on /connections, or back in the OAuth authorize flow when one was pending.
+    The relying party id is the host of baseUrl, so a passkey made here works only here. The
+    challenge lives in the verification table for one call; a made-up answer sets no session.
+    Failures show in place on the page; nobody is signed in. The browser library is served from
+    node_modules at /webauthn.js (byte for byte), our glue at /passkey.js.
 
 ## Acceptance tests (written first)
 - unit: sign-up creates user and personal organization; password too short, breached and too
@@ -123,6 +132,10 @@ class IdentityError extends Error { code: "UNAUTHENTICATED" | "NO_ORGANIZATION" 
   verification of a token with any single claim altered fails.
 - browser (Playwright, tests/e2e): sign-up, sign-in, picker, connections list, guide shown, copy
   button writes the clipboard, sign-out; screenshots saved as the artifact.
+- browser, passkeys (tests/e2e/passkey): a CDP virtual authenticator adds a passkey on the account
+  page, signs out, signs in with it, deletes it; a sign-in with no passkey fails in place.
+- integration, passkeys (tests/integration/passkey): options need a session (register) or none
+  (sign-in), rp id, challenge row, made-up answer refused, foreign Origin 403, bundle byte-equal.
 - scale: rule 15 with printed timings and counts.
 - mutation: Stryker score >= 80 on the hand-written files.
 
@@ -135,6 +148,6 @@ the guide, account); wiring them into `apps/connections` is a separate step. Tes
 under each package, at most five files per folder, 80 lines per file.
 
 ## Out of scope
-Passkeys and social sign-in (a later spec on top of the same library). Email delivery: the
+Social sign-in (a later spec on top of the same library). Email delivery: the
 package exposes a `sendEmail` port and tests use a capture; production wiring is the app's.
 Client ID metadata documents. SSO against a customer IdP (openid-client, later).
