@@ -3,6 +3,11 @@ on:
   pull_request:
   push:
     branches: [main]
+# A new push to the same PR (or to main) cancels the run it supersedes. Without this, every push left
+# the earlier 3 h mutation job running to the end: three stale runs were live at once on 2026-11-06.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
 jobs:
@@ -42,7 +47,8 @@ jobs:
           fi
           pnpm exec commitlint --from "$BASE" --to HEAD
   mutation:
-    # Slow (about 14 min); every package must meet its break threshold of 80.
+    # Slow: about 3 h on ubuntu-latest (run 42234086839 took 14:27 to 17:27 UTC). Every package must
+    # meet its break threshold of 80.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
