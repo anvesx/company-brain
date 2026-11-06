@@ -5,7 +5,7 @@ import { createGraphStore } from "@anvesx/graph-store";
 import { createIdentity } from "@anvesx/identity";
 import { startBrain } from "../../../src/serve/start.js";
 
-export const SECRET = "brain-serve-cursor-test-secret-0123456789ab";
+export const SECRET = "brain-serve-cursor-test-secret-".padEnd(44, "0"); // low-entropy on purpose: a literal here trips the secret scanner
 
 /** Asks the OS for a free port, then releases it, so BRAIN_BASE_URL is known before the app binds. */
 const freePort = () =>

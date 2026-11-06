@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 
 export const BIN = fileURLToPath(new URL("../../dist/bin.js", import.meta.url));
-const SECRET = "bin-test-secret-0123456789abcdefghij";
+const SECRET = "bin-test-secret-".padEnd(40, "0"); // low-entropy on purpose: a literal here trips the secret scanner
 
 /** The newest source file under `dir` (path and mtime), found by walking every folder. */
 function newest(dir: string): { file: string; mtime: number } {
