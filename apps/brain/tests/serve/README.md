@@ -4,7 +4,8 @@
 
 Real-server tests for `src/serve/`. They start a throwaway Postgres (the graph-store test helper) and no mocks.
 
-- `boot.ts`: shared helpers (token, env, wait, seed).
+- `boot.ts`: shared helpers (token, env, wait).
+- `session.ts`: `signUp` (real sign-up, cookie, tenant and user) and `seed`; `tools/deploy/tests/image/run.test.ts` reuses them.
 - `health.test.ts`: `databaseUp` is true against Postgres, false when the port is dead, false when the server never answers.
 - `serve.test.ts`: `serve()` answers `/healthz`, serves the graph, mounts identity sign-up, survives a Postgres crash, and answers 503 while the database is unreachable.
 

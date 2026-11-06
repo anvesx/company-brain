@@ -9,9 +9,13 @@ export type Who = { tenant: string; user: string };
 /**
  * Signs a person up on a running `serve` and returns their session cookie and who identity says they are.
  * `serve` keeps its identity private, so a second identity on the same database and secret resolves the session.
+ * `e` defaults to the test env; the image test passes the BASE_URL and IDENTITY_SECRET its container runs with.
  */
-export async function signUp(base: string, dbUrl: string): Promise<{ cookie: string; who: Who }> {
-  const e = env(dbUrl);
+export async function signUp(
+  base: string,
+  dbUrl: string,
+  e: Pick<ReturnType<typeof env>, "BASE_URL" | "IDENTITY_SECRET"> = env(dbUrl),
+): Promise<{ cookie: string; who: Who }> {
   const res = await fetch(`${base}/api/auth/sign-up/email`, {
     method: "POST",
     body: JSON.stringify({ email: `p${Date.now()}${Math.random().toString(16).slice(2)}@brain.test`, password: `${e.IDENTITY_SECRET}Aa1`, name: "P" }),
