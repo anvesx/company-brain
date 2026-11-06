@@ -38,7 +38,7 @@ export async function startReplay(opts: { oidc?: boolean; clientId?: string; cli
     user,
     mode: "ok",
     expiresIn: 3600,
-    delayMs: 0,
+    hold: null,
     calls: { authorize: 0, token: 0, refresh: 0, userinfo: 0 },
     lastAuthorize: null,
     idToken: null,

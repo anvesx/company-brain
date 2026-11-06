@@ -13,8 +13,6 @@ const identity = createIdentity({
   env: e,
 });
 await identity.adapter();
-// Both processes wait for the same wall-clock moment, so their calls overlap.
-await new Promise((wake) => setTimeout(wake, Math.max(0, Number(e.START_AT) - Date.now())));
 try {
   await identity.refreshAccount(e.ACCOUNT_ID);
   console.log("refreshed");

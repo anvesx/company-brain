@@ -13,8 +13,8 @@ export type State = {
   user: ReplayUser;
   mode: Mode;
   expiresIn: number;
-  /** Milliseconds a refresh waits before it answers, so two processes can be caught mid-call. */
-  delayMs: number;
+  /** A refresh waits on this before it answers (null = answer at once), so a test can park one caller mid-call. */
+  hold: Promise<void> | null;
   calls: { authorize: number; token: number; refresh: number; userinfo: number };
   lastAuthorize: URL | null;
   idToken: ((user: ReplayUser, nonce: string | null) => Promise<string>) | null;
@@ -56,7 +56,7 @@ export async function token(s: State, req: IncomingMessage, form: URLSearchParam
 
 async function refresh(s: State, value: string): Promise<Answer> {
   s.calls.refresh += 1;
-  await new Promise((wake) => setTimeout(wake, s.delayMs));
+  if (s.hold) await s.hold;
   if (s.mode === "server_error") return fail(500, "server_error");
   const pair = s.mode === "ok" ? s.grants.rotate(value) : null;
   return pair ? { status: 200, body: tokens(s, pair) } : fail(400, "invalid_grant");
