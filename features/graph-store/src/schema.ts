@@ -48,7 +48,8 @@ export const MAX_DEPTH = 6;
 /** Stand-in for "now": a row is current exactly when it is valid at this time. */
 export const NOW = Number.MAX_VALUE;
 
-type Code = "BAD_INPUT" | "DEPTH_LIMIT" | "CLOSED";
+/** SETUP: the database lacks something the store needs and cannot create it (Postgres: the pg_trgm extension). */
+type Code = "BAD_INPUT" | "DEPTH_LIMIT" | "CLOSED" | "SETUP";
 /** Typed failure of the graph store. Callers branch on `code`, never on the message. */
 export class GraphError extends Error {
   readonly code: Code;

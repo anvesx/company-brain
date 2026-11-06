@@ -6,7 +6,8 @@ import { scanBounds } from "../../validation/query.js";
 import { likeArg, likeTerm, pgTitleFilter } from "./filter.js";
 
 const CHUNK = 256; // candidates verified per statement, as in SQLite
-const CANDIDATES = `SELECT seq FROM nodes WHERE tenant = $1 AND seq > $2 AND ${likeTerm("title", 3)} ORDER BY seq LIMIT $4`;
+/** Step 1: candidate seq values. Exported so a test can EXPLAIN it. */
+export const CANDIDATES = `SELECT seq FROM nodes WHERE tenant = $1 AND seq > $2 AND ${likeTerm("title", 3)} ORDER BY seq LIMIT $4`;
 
 /**
  * `scanTitles` for Postgres, the same two steps as SQLite: candidate `seq` values in order (at most `cap`, any validity),
