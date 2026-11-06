@@ -22,7 +22,8 @@ export function titleFilter(tenant: string, q: TitleFilter) {
   const when = q.asOf === undefined ? NOW : time("asOf", q.asOf);
   // LIKE is case-insensitive for ASCII only, which is the rule we want.
   let where = "n.tenant = ? AND n.valid_from <= ? AND (n.valid_to IS NULL OR ? < n.valid_to) AND n.title LIKE ? ESCAPE '\\'";
-  const args: (string | number)[] = [t, when, when, `%${literal(needle)}%`];
+  const like = `%${literal(needle)}%`;
+  const args: (string | number)[] = [t, when, when, like];
   if (q.kinds !== undefined) {
     if (!Array.isArray(q.kinds)) bad("kinds must be a list");
     const kinds = q.kinds.map((k) => oneOf("kind", k, NODE_KINDS));
@@ -41,5 +42,5 @@ export function titleFilter(tenant: string, q: TitleFilter) {
     args.push(t, oneOf("reachedBy.kind", kind, EDGE_KINDS), ...ids, when, when);
   }
   // The FTS5 phrase for the needle: quoted so operators in the text are plain characters.
-  return { needle, match: `"${needle.replaceAll('"', '""')}"`, where, args };
+  return { tenant: t, needle, like, match: `"${needle.replaceAll('"', '""')}"`, where, args };
 }

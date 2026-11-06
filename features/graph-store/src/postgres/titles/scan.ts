@@ -1,7 +1,8 @@
 import type pg from "pg";
 import { toNode } from "../../nodes.js";
-import { type ScanPage, type ScanQuery, scanBounds } from "../../scan/scan.js";
+import type { ScanPage, ScanQuery } from "../../scan/scan.js";
 import type { GraphNode } from "../../schema.js";
+import { scanBounds } from "../../validation/query.js";
 import { likeArg, likeTerm, pgTitleFilter } from "./filter.js";
 
 const CHUNK = 256; // candidates verified per statement, as in SQLite

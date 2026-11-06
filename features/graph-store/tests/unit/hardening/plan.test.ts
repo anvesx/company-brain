@@ -43,7 +43,10 @@ describe("title query plans", () => {
   it("scanTitles: candidates from the FTS index, verified by rowid lookup, edges_in for the edge rule", () => {
     const f = titleFilter("t1", { text: "report", reachedBy: reader });
     const path = fresh();
-    expect(explain(path, FTS_CANDIDATES, ['"report"', 0, 10])).toMatch(/VIRTUAL TABLE INDEX/);
+    const candidates = explain(path, FTS_CANDIDATES, ['"report"', 0, "t1", "%report%", 10]);
+    expect(candidates).toMatch(/VIRTUAL TABLE INDEX/);
+    expect(candidates).toMatch(/SEARCH n USING INTEGER PRIMARY KEY \(rowid=\?\)/); // tenant and LIKE: one lookup per hit
+    expect(candidates).not.toMatch(/TEMP B-TREE/); // already in rowid order: no sort
     const plan = explain(path, chunkSql(f.where, 256), [...Array.from({ length: 256 }, (_, i) => i + 1), ...f.args]);
     expect(plan).toMatch(/SEARCH n USING INTEGER PRIMARY KEY \(rowid=\?\)/);
     expect(plan).toMatch(/USING (COVERING )?INDEX edges_in/);
