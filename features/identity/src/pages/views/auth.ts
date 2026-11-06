@@ -1,4 +1,5 @@
 import { esc, field, hidden, page } from "../layout.js";
+import { PASSKEY_SCRIPTS, passkeySignIn } from "../passkey/view.js";
 
 export interface AuthForm {
   /** The OAuth query to continue after sign-in, empty for a plain visit. */
@@ -10,14 +11,14 @@ export interface AuthForm {
 
 const alert = (error?: string): string => (error ? `<p role="alert">${esc(error)}</p>` : "");
 
-/** The sign-in page. It has no script: the form posts to the server. */
+/** The sign-in page. The form posts to the server; the passkey button below it is the one script, loaded as files. */
 export const signInView = ({ query, error, email }: AuthForm): string =>
   page(
     "Sign in",
     `${alert(error)}<form method="post" action="/sign-in">${hidden({ oauth_query: query })}
 ${field("Email", "email", "email", "username", email)}${field("Password", "password", "password", "current-password")}
 <button type="submit">Sign in</button></form>
-<p>New here? <a href="/sign-up${query ? `?${esc(query)}` : ""}">Sign up</a></p>`,
+${passkeySignIn(query)}<p>New here? <a href="/sign-up${query ? `?${esc(query)}` : ""}">Sign up</a></p>${PASSKEY_SCRIPTS}`,
   );
 
 /** The sign-up page. The server checks the password against the breached list and shows the reason here. */

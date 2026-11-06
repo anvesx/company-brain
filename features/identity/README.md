@@ -6,8 +6,9 @@ Status: built. Unit, install, integration, property and scale tests pass; the e2
 People sign up, sign in and land in an organization (the tenant). MCP clients sign in with
 OAuth 2.1 (RFC 9728, RFC 8414, dynamic registration, PKCE S256, resource-bound JWTs) against
 the same users and organizations. One identity port gives every app the caller's user and
-tenant from a cookie session or a bearer token. Built on better-auth 1.7.18 with its jwt,
-organization and mcp plugins (ADR 0008). Spec: `docs/specs/feature/identity.md`.
+tenant from a cookie session or a bearer token. Passkeys (WebAuthn) sign people in without a
+password; they are added and removed on the account page. Built on better-auth 1.7.18 with its
+jwt, organization, mcp and passkey plugins (ADR 0008). Spec: `docs/specs/feature/identity.md`.
 
 ## Interface
 

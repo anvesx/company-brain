@@ -8,7 +8,7 @@ label{display:block;margin:1rem 0}input{display:block;width:100%;padding:.5rem;m
 button{padding:.5rem 1rem;cursor:pointer}pre{background:#f5f5f4;padding:1rem;overflow:auto}
 [role=alert]{color:#b91c1c}`;
 
-/** The shared page shell. `script` is only ever the copy button, so every other page ships no JavaScript. */
+/** The shared page shell. `script` is only ever the copy button; passkey pages load their script as files instead. */
 export const page = (title: string, body: string, script = ""): string =>
   `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
