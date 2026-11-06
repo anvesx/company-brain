@@ -49,3 +49,17 @@ export const mapRejection = async (res: Response): Promise<Response> => {
   if (res.status === 401 && code.startsWith("YOU_ARE_NOT_ALLOWED")) return Response.json(body, { status: 403 });
   return res;
 };
+
+/**
+ * A browser at the authorize URL with a session but no organization gets NO_ORGANIZATION from the consent hook as JSON.
+ * Rule 12 says every page a person sees is HTML, so send them to the consent page, which renders that same error.
+ */
+export const toConsentPage = async (res: Response, url: string): Promise<Response> => {
+  if (res.status !== 403) return res;
+  const body = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as { code?: string } | null;
+  if (body?.code !== "NO_ORGANIZATION") return res;
+  return new Response(null, { status: 302, headers: { location: `/consent${new URL(url).search}` } });
+};

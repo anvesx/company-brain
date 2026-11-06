@@ -4,7 +4,7 @@ import type { ResolvedConfig } from "../config.js";
 import type { Limits } from "../guard/limits.js";
 import { checkOrigin } from "../guard/origin.js";
 import { buildPages } from "../pages/serve.js";
-import { mapRejection, toRedirect } from "./errors.js";
+import { mapRejection, toConsentPage, toRedirect } from "./errors.js";
 import { checkRedirect, labelNativeClient } from "./register.js";
 import { addressOf, bodyOf, checkSetActive, checkSignUp, tooMany } from "./validate.js";
 
@@ -33,7 +33,7 @@ export const buildRoutes = (auth: Auth, cfg: ResolvedConfig, limits: Limits): Ho
     if (req.method !== "POST") {
       if (!path.endsWith("/oauth2/authorize")) return mapRejection(await auth.handler(req));
       const badRedirect = await checkRedirect(req, (await auth.$context).adapter as Parameters<typeof checkRedirect>[1]);
-      return badRedirect ?? mapRejection(await toRedirect(await auth.handler(req)));
+      return badRedirect ?? toConsentPage(await mapRejection(await toRedirect(await auth.handler(req))), req.url);
     }
 
     let email = "";
