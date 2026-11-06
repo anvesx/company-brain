@@ -62,8 +62,9 @@ then `docker/build-push-action@v6` with `push: true` and `secrets: npm_token=${{
 |---|---|---|---|---|
 | `gcp` | `vars.GCP_WIF_PROVIDER != ''` (job-level `if`; skipped until the variable is set) | `contents: read`, `id-token: write` | `google-github-actions/auth@v2` with `workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}`, `service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}`; `gcloud auth configure-docker <region>-docker.pkg.dev` | `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/brain/brain:${{ github.sha }}` |
 | `aws` | `needs: aws-gate`, `if: needs.aws-gate.outputs.enabled == 'true'`; `aws-gate` is a one-step job writing `enabled=${{ secrets.AWS_ROLE_ARN != '' }}` to `$GITHUB_OUTPUT` (job-level `if` cannot read `secrets`) | same | `aws-actions/configure-aws-credentials@v4` with `role-to-assume`, then `aws-actions/amazon-ecr-login@v2` | `<registry>/brain:${{ github.sha }}` |
-`ci.yml`: in `verify`, `mutation` and `integration`, add a step `echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"` before
-tests (ubuntu-latest ships Postgres 16 binaries there); under `CI=true` a missing Postgres fails instead of skipping.
+`ci.yml`: in `verify`, `mutation` and `integration`, add a step that puts the newest `/usr/lib/postgresql/*/bin` on
+`$GITHUB_PATH` before tests (ubuntu-latest ships one; the major changes, 16 then 18); under `CI=true` a missing Postgres
+fails instead of skipping.
 
 ## Commands (each builder, from the repo root)
 ```
