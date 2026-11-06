@@ -1,4 +1,4 @@
-import { createGraphStore, type GraphNode } from "@anvesx/graph-store";
+import { createGraphStore, type GraphNode, toAsync } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { canRead, readableDocuments } from "../../src/gate/access.js";
 
@@ -11,27 +11,27 @@ function graph() {
   s.addEdge({ tenant: "t", from: "ann", to: "d1", kind: "can-read", source: "drive" }, 1);
   s.addEdge({ tenant: "t", from: "eng", to: "d2", kind: "can-read", source: "drive" }, 1);
   s.addEdge({ tenant: "t", from: "bob", to: "eng", kind: "member-of", source: "drive" }, 1);
-  return s;
+  return toAsync(s);
 }
 
 describe("access", () => {
-  it("lists documents readable directly or through a team", () => {
+  it("lists documents readable directly or through a team", async () => {
     const s = graph();
-    expect(readableDocuments(s, "t", "ann").map((d) => d.id)).toEqual(["d1"]);
-    expect(readableDocuments(s, "t", "bob").map((d) => d.id)).toEqual(["d2"]);
+    expect((await readableDocuments(s, "t", "ann")).map((d) => d.id)).toEqual(["d1"]);
+    expect((await readableDocuments(s, "t", "bob")).map((d) => d.id)).toEqual(["d2"]);
   });
-  it("denies a stranger and another tenant", () => {
+  it("denies a stranger and another tenant", async () => {
     const s = graph();
-    expect(readableDocuments(s, "t", "zed")).toEqual([]);
-    expect(readableDocuments(s, "other", "ann")).toEqual([]);
-    expect(canRead(s, "t", "ann", "d2")).toBe(false);
+    expect(await readableDocuments(s, "t", "zed")).toEqual([]);
+    expect(await readableDocuments(s, "other", "ann")).toEqual([]);
+    expect(await canRead(s, "t", "ann", "d2")).toBe(false);
   });
-  it("allows a team member on a team document", () => {
-    expect(canRead(graph(), "t", "bob", "d2")).toBe(true);
+  it("allows a team member on a team document", async () => {
+    expect(await canRead(graph(), "t", "bob", "d2")).toBe(true);
   });
-  it("stops reading a document after its edge is removed", () => {
+  it("stops reading a document after its edge is removed", async () => {
     const s = graph();
-    s.removeEdge({ tenant: "t", from: "ann", to: "d1", kind: "can-read", source: "drive" }, 2);
-    expect(canRead(s, "t", "ann", "d1")).toBe(false);
+    await s.removeEdge({ tenant: "t", from: "ann", to: "d1", kind: "can-read", source: "drive" }, 2);
+    expect(await canRead(s, "t", "ann", "d1")).toBe(false);
   });
 });

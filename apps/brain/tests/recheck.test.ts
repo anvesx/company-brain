@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGraphStore } from "@anvesx/graph-store";
+import { createGraphStore, toAsync } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrainApp } from "../src/app.js";
 import type { Recheck } from "../src/live/recheck.js";
@@ -26,7 +26,7 @@ async function boot(recheck?: Recheck) {
     store.upsertNode({ tenant: "t", id, kind, source: "drive", address: `addr-${id}`, title: id, version: "1", props: {} }, 1);
   }
   for (const d of ["d1", "d2"]) store.addEdge({ tenant: "t", from: "ann", to: d, kind: "can-read", source: "drive" }, 1);
-  const app = createBrainApp({ store, secret: SECRET, now: () => 1000, port: 0, ...(recheck ? { recheck } : {}) });
+  const app = createBrainApp({ store: toAsync(store), secret: SECRET, now: () => 1000, port: 0, ...(recheck ? { recheck } : {}) });
   await app.listen();
   cleanup.push(
     () => app.close(),

@@ -1,0 +1,17 @@
+# serve
+
+The production entry (`brain serve`): Postgres, identity and a health check on one port.
+
+- `serve.ts`: `serve(env)` reads `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+ characters), `BRAIN_RETRY_MS` (2000), `IDENTITY_SECRET`, `BASE_URL`, `PORT` (8080) and `HOST` (0.0.0.0). It builds one `pg.Pool` that identity (as a kysely `PostgresDialect`) and the graph store share, listens first, then starts both. An unreachable database is retried (same pool, one `error` listener) while the server answers 503; any other error exits 1 with `brain: <message>`, as does a taken port (`brain: port N in use`).
+- `health.ts`: `GET /healthz` runs `select 1` with a 2 s limit: 200 `{"status":"ok"}` or 503 `{"status":"unavailable"}`. No auth.
+- `mount.ts`: `mount` sends `/healthz` to health, `/api/auth/*` and `/.well-known/*` to identity, everything else to the brain handler.
+- `startup.ts`: start-up helpers. `isTransient` (connection errors and a migration race are retried, everything else is fatal), `listenOn` (a taken port becomes `port N in use`) and `migrateLocked` (identity's migrations under `pg_advisory_xact_lock(7410002)`, so two starting instances take turns).
+
+## Shutdown while still booting
+
+`close()` waits for the boot attempt in flight before it ends the pool, so a SIGTERM that lands during the migration or identity start-up cannot make the pool fail under running queries.
+
+- Why waiting is needed: better-auth 1.7.18 seeds the oauth-provider `resources` table inside plugin `init`, and logs `ERROR ... could not seed resources ... Cannot use a pool after calling end` if the pool is gone. Its options have no switch to skip or defer that seed (`resourceSeedMode` only changes how rows are merged).
+- Why `await identity.auth.$context` is needed: `$context` is the promise of the context init (better-auth 1.7.18, `dist/auth/base.mjs`: `initFn(options).then(...)`). That init awaits every plugin `init` (`dist/context/helpers.mjs`, `runPluginInit`), and the oauth-provider `init` awaits its resource seed (`@better-auth/oauth-provider` `dist/authorize-*.mjs`, `await seedResourcesOnce(...)`). Without the await in `boot` the seed runs on in the background, and `close()` can end the pool under it. It rarely shows in practice because the graph store start-up that follows is slower than the seed; `tests/serve/stop/boot-wait.test.ts` slows `$context` down to prove the await matters.
+- If `close()` lands during the migration, the migration finishes and commits (the next boot sees complete tables), then `boot` stops before building identity.
+- `bin.ts` registers its SIGTERM handler first and loads everything else with dynamic `import()`. On node 26 the handler does not run while an `import()` is in flight: it is deferred until the import finishes. So `bin.ts` lets the event loop turn once (`setImmediate`) before it calls `serve()`: a pending signal then runs the handler, which exits 0 before anything is bound, logged or migrated. Without that turn the server bound, logged `brain listening`, migrated all 17 tables, and only then exited 0: a process told to stop still migrated. A signal before node itself has started cannot be caught by any JavaScript.

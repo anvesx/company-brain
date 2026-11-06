@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createGraphStore } from "@anvesx/graph-store";
+import { createGraphStore, toAsync } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrainApp } from "../../src/app.js";
 import { runSync } from "../../src/cli/sync.js";
@@ -33,7 +33,7 @@ describe("connect, sync, then ask", () => {
     expect(report.removed).toBe(0);
     expect(report.nodes).toBeGreaterThan(0);
 
-    const app = createBrainApp({ store: createGraphStore({ path: dbPath }), secret: SECRET, now: () => 1000, port: 0 });
+    const app = createBrainApp({ store: toAsync(createGraphStore({ path: dbPath })), secret: SECRET, now: () => 1000, port: 0 });
     await app.listen();
     stop = app.close;
     const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;

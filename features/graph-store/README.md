@@ -1,6 +1,6 @@
 # @anvesx/graph-store
 
-Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`). Nodes and typed edges carry a tenant id on every row and one caller-supplied validity axis (`validFrom`/`validTo`): a changed fact closes the old row instead of overwriting it. There is no recorded-at axis, so the store cannot answer what it believed at an earlier time; it is not bi-temporal. No document text, no embeddings (ADR 0004).
+Metadata-only property graph for the brain app, in one SQLite file (`node:sqlite`) or in Postgres (`pg`). Nodes and typed edges carry a tenant id on every row and one caller-supplied validity axis (`validFrom`/`validTo`): a changed fact closes the old row instead of overwriting it. There is no recorded-at axis, so the store cannot answer what it believed at an earlier time; it is not bi-temporal. No document text, no embeddings (ADR 0004).
 
 Spec: `docs/specs/feature/graph-store.md`. Decision: `docs/adr/boundaries/0004-rag-and-brain-are-separate.md`.
 
@@ -18,6 +18,22 @@ g.addEdge({ tenant: "t1", from: "user:ana", to: "doc:1", kind: "can-read", sourc
 g.reach("t1", "user:ana", { kinds: ["can-read", "member-of"], depth: 3, limit: 100 });
 g.close();
 ```
+
+## Use with Postgres (async)
+
+```ts
+import pg from "pg";
+import { createPostgresGraphStore, toAsync, createGraphStore } from "@anvesx/graph-store";
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const g = await createPostgresGraphStore({ pool }); // creates the tables under an advisory lock; rejects if unreachable
+await g.upsertNode(node, Date.now()); // same methods as above, every one returns a Promise
+await g.close(); // stops the store only; you own the pool and call pool.end()
+
+const local = toAsync(createGraphStore({ path: "/var/brain/graph.db" })); // the SQLite store with the same async shape
+```
+
+`AsyncGraphStore` is `GraphStore` with every method returning a Promise. Errors are rejected `GraphError`s (`BAD_INPUT`, `DEPTH_LIMIT`, `CLOSED`), never sync throws. Rows and rules are the same on both dialects. On Postgres, concurrent writers on one id take turns through an advisory transaction lock, `addEdge` is `ON CONFLICT DO NOTHING`, and `reach` runs two queries per level. The caller owns the pool and must attach `pool.on("error")`; a store never adds one, so reopening a store on one pool leaks no listeners.
 
 ## Behaviour
 
@@ -48,7 +64,7 @@ All sizes are UTF-8 bytes. Over a limit, `upsertNode` throws `BAD_INPUT` and sto
 | props value                    | 1024                                  |
 | props total (keys plus values) | 4096                                  |
 
-No field or prop value may contain control characters (newline, tab, NUL, DEL): a multi-line value is body text.
+No field or prop value may contain control characters (newline, tab, NUL, DEL): a multi-line value is body text. A NUL or a lone surrogate in any text input (tenant, id, kind, source, edge fields, read arguments) throws `BAD_INPUT` on both dialects.
 
 ## Concurrency
 

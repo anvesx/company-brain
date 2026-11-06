@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { createGraphStore } from "@anvesx/graph-store";
+import { createGraphStore, toAsync } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrainApp } from "../src/app.js";
 
@@ -26,7 +26,7 @@ async function boot() {
   });
   for (const x of [n("ann", "person"), n("d1", "document"), n("d2", "document")]) store.upsertNode(x, 1);
   store.addEdge({ tenant: "t", from: "ann", to: "d1", kind: "can-read", source: "drive" }, 1);
-  const app = createBrainApp({ store, secret: SECRET, now: () => NOW, port: 0 });
+  const app = createBrainApp({ store: toAsync(store), secret: SECRET, now: () => NOW, port: 0 });
   await app.listen();
   close = app.close;
   return `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -62,6 +62,6 @@ describe("brain http", () => {
     expect((await fetch(`${base}/v1/documents`, { method: "POST", headers: { authorization: token("ann") } })).status).toBe(405);
   });
   it("refuses a short secret", () => {
-    expect(() => createBrainApp({ store: createGraphStore({ path: ":memory:" }), secret: "short", now: () => 0 })).toThrow(/32/);
+    expect(() => createBrainApp({ store: toAsync(createGraphStore({ path: ":memory:" })), secret: "short", now: () => 0 })).toThrow(/32/);
   });
 });

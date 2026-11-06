@@ -21,6 +21,14 @@ Read-only, bearer token `user:tenant:exp:hmac` (the same form the rag repo's `mi
 BRAIN_GRAPH_PATH=./graph.db BRAIN_AUTH_SECRET=<32+ chars> node dist/bin.js
 ```
 
+Production (Postgres, identity, `/healthz`; the container image runs this):
+
+```bash
+DATABASE_URL=postgres://... BRAIN_AUTH_SECRET=<32+> IDENTITY_SECRET=<32+> BASE_URL=https://brain.example.com node dist/bin.js serve
+```
+
+`PORT` defaults to 8080, `HOST` to `0.0.0.0`. Identity answers under `/api/auth/*` and `/.well-known/*`. See `src/serve/README.md`.
+
 ## Not built yet
 
 The graph is filled by `services/graph-sync` (in progress). Until it lands the file is empty. No webhooks, no `reach` or `neighbors` routes, no review queue or dream cycle (see `docs/brain/research/exact/README.md`).
