@@ -17,6 +17,7 @@
     "mutation": "stryker run"
   },
   "dependencies": {
+    "@anvesx/brain-mcp": "workspace:*",
     "@anvesx/connector-kit": "workspace:*",
     "@anvesx/connectors": "0.1.0",
     "@anvesx/core-types": "workspace:*",

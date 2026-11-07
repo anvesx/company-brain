@@ -4,6 +4,7 @@ import { getRequestListener } from "@hono/node-server";
 import { PostgresDialect } from "kysely";
 import pg from "pg";
 import { createBrainApp } from "../app.js";
+import { doorsFromEnv } from "../doors/env.js";
 import { mount, type Parts, tune } from "./mount.js";
 import { type BootDeps, isTransient, listenOn, migrateLocked, readEnv, realDeps } from "./startup.js";
 
@@ -15,14 +16,14 @@ export async function serve(
 ): Promise<{ port: number; pool: pg.Pool; close(): Promise<void> }> {
   const { databaseUrl, cursorKey, recheck, baseUrl, identitySecret, retryMs } = readEnv(env);
   const pool = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 3000 });
-  // The only 'error' listener on the pool (the graph store adds none). A dropped idle client is logged, not thrown.
-  pool.on("error", (e) => log(`postgres pool error: ${e.message}`));
+  pool.on("error", (e) => log(`postgres pool error: ${e.message}`)); // the only 'error' listener (the store adds none): a dropped idle client is logged, not thrown
   const config = {
     baseUrl,
     secret: identitySecret,
     resource: `${baseUrl.replace(/\/$/, "")}/mcp`, // the MCP resource URL identity issues tokens for
     // better-auth needs `type` next to a kysely dialect; without it it guesses the wrong SQL flavour for its own migrations.
     database: { dialect: new PostgresDialect({ pool }), type: "postgres" as const },
+    ...doorsFromEnv(env, identitySecret), // Google login and the connector catalog, from the same env
   };
 
   let parts: Parts | undefined;

@@ -54,6 +54,9 @@ importers:
 
   apps/brain:
     dependencies:
+      '@anvesx/brain-mcp':
+        specifier: workspace:*
+        version: link:../../services/brain-mcp
       '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
