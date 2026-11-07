@@ -10,12 +10,13 @@ Slite, Meta and Vectorize all put access control at the retrieval step and keep 
 
 Read-only, behind `@anvesx/identity` (ADR 0008). A caller is a signed-in browser (session cookie) or an MCP client (OAuth access token as `Authorization: Bearer`). Anyone else gets 401 and a `www-authenticate` challenge.
 
-| Route                                                       | Returns                                                                 |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `GET /v1/documents`                                         | pointers the caller can read, directly or through a team                |
-| `GET /v1/documents/:id`                                     | one pointer, or 404 (a hidden document looks the same as a missing one) |
-| `GET /graph`, `/v1/graph`                                   | the 3D graph page and its JSON (`@anvesx/graph-view`)                   |
-| `/api/auth/*`, `/sign-in`, `/connections`, `/.well-known/*` | identity's own routes, on the same origin                               |
+| Route                                                       | Returns                                                                                             |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET /v1/documents`                                         | pointers the caller can read, directly or through a team                                            |
+| `GET /v1/documents/:id`                                     | one pointer, or 404 (a hidden document looks the same as a missing one)                             |
+| `GET /graph`, `/v1/graph`                                   | the 3D graph page and its JSON (`@anvesx/graph-view`)                                               |
+| `/api/auth/*`, `/sign-in`, `/connections`, `/.well-known/*` | identity's own routes, on the same origin                                                           |
+| `POST /mcp`                                                 | the MCP server (`@anvesx/brain-mcp`): the URL the install guide on `/connections` gives each client |
 
 ## Run
 
@@ -24,14 +25,17 @@ BRAIN_GRAPH_PATH=./graph.db BRAIN_AUTH_DB=./auth.db BRAIN_AUTH_SECRET=<32+ chars
   BRAIN_BASE_URL=http://localhost:8787 node dist/bin.js
 ```
 
-| Variable            | Meaning                                                                                                                                                                      |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BRAIN_GRAPH_PATH`  | SQLite graph file                                                                                                                                                            |
-| `BRAIN_AUTH_DB`     | SQLite file for sign-in data                                                                                                                                                 |
-| `BRAIN_AUTH_SECRET` | 32+ characters; signs cookies and derives the graph-view cursor key. Rotating it ends sessions and outstanding Load more cursors. Share it across instances                  |
-| `BRAIN_BASE_URL`    | public origin: https, or http on localhost; no path, query or fragment. Host case, default port and one trailing `/` are normalised. Default `http://localhost:<BRAIN_PORT>` |
-| `BRAIN_PORT`        | 1 to 65535, default 8787                                                                                                                                                     |
-| `BRAIN_HOST`        | bind address, default `127.0.0.1`                                                                                                                                            |
+| Variable                                   | Meaning                                                                                                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BRAIN_GRAPH_PATH`                         | SQLite graph file                                                                                                                                                                    |
+| `BRAIN_AUTH_DB`                            | SQLite file for sign-in data                                                                                                                                                         |
+| `BRAIN_AUTH_SECRET`                        | 32+ characters; signs cookies and derives the graph-view cursor key. Rotating it ends sessions and outstanding Load more cursors. Share it across instances                          |
+| `BRAIN_BASE_URL`                           | public origin: https, or http on localhost; no path, query or fragment. Host case, default port and one trailing `/` are normalised. Default `http://localhost:<BRAIN_PORT>`         |
+| `BRAIN_PORT`                               | 1 to 65535, default 8787                                                                                                                                                             |
+| `BRAIN_HOST`                               | bind address, default `127.0.0.1`                                                                                                                                                    |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | both or neither. With both, sign-in and sign-up show "Continue with Google" (a Google Cloud OAuth client whose redirect URI is `<BRAIN_BASE_URL>/api/auth/callback/google`)          |
+| `<ID>_CLIENT_ID`, `<ID>_CLIENT_SECRET`     | per connector in `src/doors/catalog.ts` (`GITHUB_`, `GOOGLE_DRIVE_`, `SLACK_`). Until set, the tile on `/connections` is greyed "not configured"                                     |
+| `BRAIN_SEAL_KEY`                           | 64 hex characters; encrypts stored connector tokens. Default: derived from `BRAIN_AUTH_SECRET` (HKDF), so rotating that secret without setting this makes linked accounts unreadable |
 
 A bad setting prints one `brain: ...` line and exits 1 before anything is created; an unknown argument exits 2.
 
@@ -41,7 +45,7 @@ Production (Postgres, identity, `/healthz`; the container image runs this):
 DATABASE_URL=postgres://... BRAIN_AUTH_SECRET=<32+> IDENTITY_SECRET=<32+> BASE_URL=https://brain.example.com node dist/bin.js serve
 ```
 
-`PORT` defaults to 8080, `HOST` to `0.0.0.0`. Identity answers under `/api/auth/*` and `/.well-known/*`. See `src/serve/README.md`.
+`PORT` defaults to 8080, `HOST` to `0.0.0.0`. Identity answers under `/api/auth/*` and `/.well-known/*`. The Google, connector and seal-key variables above apply here too. See `src/serve/README.md`.
 
 ## Try it
 
