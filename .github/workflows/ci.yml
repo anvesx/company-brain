@@ -50,6 +50,8 @@ jobs:
     # Slow: about 3 h on ubuntu-latest (run 42234086839 took 14:27 to 17:27 UTC). Every package must
     # meet its break threshold of 80.
     runs-on: ubuntu-latest
+    # GitHub's default job limit is 360 min; this is explicit so a hung Stryker run fails instead of idling.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -63,7 +65,13 @@ jobs:
       # Puts the newest Postgres the runner ships on PATH (ubuntu-latest moved from 16 to 18 in 2026; the
       # path carries the major). Fails loudly when none is installed, so CI=true never skips the pg tests.
       - run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 | tee -a "$GITHUB_PATH" | grep .
+      # Stryker runs vitest hundreds of times per package, and vitest's github-actions reporter appends a
+      # job summary on every run. Run 42318151867 failed on the summary alone: "supports content up to
+      # 1024k, got 1186k". Hiding GITHUB_ACTIONS from this step keeps that reporter off; Stryker's own
+      # clear-text report still reaches the log and reports/mutation.json.
       - run: pnpm -r mutation
+        env:
+          GITHUB_ACTIONS: ""
   integration:
     runs-on: ubuntu-latest
     steps:
