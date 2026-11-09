@@ -9,6 +9,10 @@ export interface ProviderEntry {
   name: string;
   description: string;
   scopes: string[];
+  /** Who runs the source, shown on the tile as `by ...`. Default: the name. */
+  by?: string;
+  /** Page in the host app that shows what the stored token can read. The tile links to it once linked. */
+  dataPath?: string;
   kind: "built-in" | "generic" | "mcp";
   generic?: { discoveryUrl?: string; authorizationUrl?: string; tokenUrl?: string; userInfoUrl?: string; accessType?: "offline" };
 }

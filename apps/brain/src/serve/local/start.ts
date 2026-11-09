@@ -39,6 +39,7 @@ export async function startBrain(env: Record<string, string | undefined>): Promi
     store: toAsync(createGraphStore({ path: config.graphPath })),
     identity,
     cursorKey: cursorKeyFrom(config.secret),
+    env,
     port: config.port,
     ...(config.host && { host: config.host }),
   });
