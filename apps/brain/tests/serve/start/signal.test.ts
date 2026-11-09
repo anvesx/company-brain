@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startPostgres, type Throwaway } from "../../../../../features/graph-store/tests/support/pg/server.js";
-import { bearer, env, freePort, freshDb, spawnServe, until } from "../boot.js";
+import { env, freePort, freshDb, spawnServe, until } from "../boot.js";
+import { signUp } from "../session.js";
 
 // SIGTERM after the server is listening, on the real process (before that: see ../stop/early.test.ts). Build is a prerequisite, so a missing bin fails loudly (never skips).
 const bin = fileURLToPath(new URL("../../../dist/bin.js", import.meta.url));
@@ -39,8 +40,10 @@ describe("SIGTERM while the server is still migrating or seeding", () => {
         expect(r.code).toBe(0);
 
         const second = spawnServe(bin, e);
-        const headers = { authorization: bearer("u1", "acme") };
-        await until(async () => (await fetch(`http://127.0.0.1:${e.PORT}/v1/documents`, { headers })).status === 200, 30_000);
+        const base = `http://127.0.0.1:${e.PORT}`;
+        await until(async () => (await fetch(`${base}/healthz`)).status === 200, 30_000);
+        const { cookie } = await signUp(base, url);
+        expect((await fetch(`${base}/v1/documents`, { headers: { cookie } })).status).toBe(200);
         second.child.kill("SIGTERM");
         expect((await second.exit).code).toBe(0);
       }, 60_000);

@@ -2,12 +2,14 @@ import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startPostgres, type Throwaway } from "../../../../features/graph-store/tests/support/pg/server.js";
 import { serve } from "../../src/serve/serve.js";
-import { bearer, env, seed, until } from "./boot.js";
+import { env, until } from "./boot.js";
+import { seed, signUp, type Who } from "./session.js";
 
 // The real server (identity + graph + health) on a real Postgres. No mocks. CI=true makes a missing Postgres a failure.
 let db: Throwaway | undefined;
 let running: Awaited<ReturnType<typeof serve>> | undefined;
 let base = "";
+let me: { cookie: string; who: Who } | undefined;
 beforeAll(async () => {
   try {
     db = await startPostgres();
@@ -15,10 +17,11 @@ beforeAll(async () => {
     if (process.env["CI"] === "true") throw e;
     return console.warn(`serve tests skipped: ${(e as Error).message}`);
   }
-  await seed(db);
   running = await serve(env(db.url), () => {});
   base = `http://127.0.0.1:${running.port}`;
   await until(async () => (await fetch(`${base}/v1/documents`)).status === 401, 30_000);
+  me = await signUp(base, db.url);
+  await seed(db.url, me.who);
 }, 90_000);
 afterAll(async () => {
   await running?.close();
@@ -32,11 +35,15 @@ describe("brain serve on Postgres", () => {
     expect([res.status, await res.json()]).toEqual([200, { status: "ok" }]);
   });
 
-  it("serves the graph from Postgres and refuses a request without a token", async (ctx) => {
-    if (!running) return ctx.skip();
-    const ok = await fetch(`${base}/v1/documents`, { headers: { authorization: bearer("u1", "acme") } });
+  it("serves the graph from Postgres and refuses a request without a session", async (ctx) => {
+    if (!running || !me) return ctx.skip();
+    const ok = await fetch(`${base}/v1/documents`, { headers: { cookie: me.cookie } });
     expect((await ok.json()).documents.map((d: { id: string }) => d.id)).toEqual(["d1"]);
     expect((await fetch(`${base}/v1/documents`)).status).toBe(401);
+    // The image test (tools/deploy) runs this same flow against the container; a second person must see nothing of the first.
+    const other = await signUp(base, db?.url ?? "");
+    const theirs = await fetch(`${base}/v1/documents`, { headers: { cookie: other.cookie } });
+    expect((await theirs.json()).documents).toEqual([]);
   });
 
   it("mounts identity: email sign-up works under /api/auth", async (ctx) => {
@@ -51,10 +58,10 @@ describe("brain serve on Postgres", () => {
   });
 
   it("recovers to 200 after a Postgres crash and restart, without restarting the process", async (ctx) => {
-    if (!running || !db) return ctx.skip();
+    if (!running || !db || !me) return ctx.skip();
     db.restart();
     await until(async () => (await fetch(`${base}/healthz`)).status === 200, 30_000);
-    const ok = await fetch(`${base}/v1/documents`, { headers: { authorization: bearer("u1", "acme") } });
+    const ok = await fetch(`${base}/v1/documents`, { headers: { cookie: me.cookie } });
     expect(ok.status).toBe(200);
   });
 

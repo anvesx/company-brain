@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type pg from "pg";
 import { healthHandler } from "./health.js";
 
@@ -20,4 +20,18 @@ export function mount(pool: pg.Pool, parts: () => Parts | undefined): Handler {
     const identity = path.startsWith("/api/auth/") || path.startsWith("/.well-known/");
     (identity ? ready.identity : ready.brain)(req, res);
   };
+}
+
+/**
+ * Keep-alive limit, set above every proxy in front of the process. A server that closes an idle socket before its proxy
+ * does lets the proxy reuse a dead connection (a 502 or ECONNRESET). Node's default is 5 s. Google's external load balancer
+ * keeps backend connections idle for up to 600 s and AWS ALB for 60 s (docs/specs/infra/deploy.md), so keepAliveTimeout is
+ * 620 s. Only this value is raised. headersTimeout (60 s) bounds how long a client may take to send one request's headers,
+ * not how long an idle socket lives, and Node requires it to stay at or under requestTimeout (300 s, Cloud Run's default
+ * request timeout too): raising it to 625 s would widen the slowloris window five-fold, and `createServer` rejects it.
+ */
+export const KEEP_ALIVE_MS = 620_000;
+export function tune<S extends Pick<Server, "keepAliveTimeout">>(server: S): S {
+  server.keepAliveTimeout = KEEP_ALIVE_MS;
+  return server;
 }

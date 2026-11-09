@@ -8,6 +8,7 @@ promise-returning `AsyncGraphStore`.
 - `edges.test.ts`: idempotent add, remove keeps history, neighbors filters, edgesBySource, tombstone.
 - `reach.test.ts`: breadth-first order, cycles, depth and limit caps, ghosts, asOf, a 3000-edge fan-out.
 - `limits.test.ts`: props at and over every cap, unicode titles and ids, NUL and lone surrogates, close.
+- `many/`: `many.test.ts` covers `nodesOf` and `edgesOf`: sorted ids, asOf, tenant, kinds, insertion order, BAD_INPUT, CLOSED.
 
 Owned by the lead (spec `docs/specs/infra/deploy.md`). Builders make these pass; they do not edit them.
 The older sync tests in `../unit` and `../integration` stay as the SQLite-specific suite.

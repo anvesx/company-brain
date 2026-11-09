@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { bad, EDGE_KINDS, type Edge, type EdgeKind, NOW, oneOf, text, time } from "../schema.js";
 import { batchOps } from "./batch.js";
+import { manyOps } from "./many.js";
 
 type Row = Record<string, unknown>;
 const toEdge = (r: Row): Edge => ({
@@ -24,6 +25,7 @@ export function edgeOps(db: DatabaseSync) {
   const closeAll = db.prepare("UPDATE edges SET valid_to = ? WHERE tenant = ? AND (from_id = ? OR to_id = ?) AND valid_to IS NULL");
   return {
     ...batchOps(db),
+    ...manyOps(db),
     add(e: Edge, at: number): void {
       const [t, from, to, kind, source] = check(e);
       ins.run(t, from, to, kind, source, time("at", at));

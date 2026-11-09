@@ -2,6 +2,7 @@ import type pg from "pg";
 import type { AsyncGraphStore } from "../async.js";
 import { GraphError } from "../schema.js";
 import { edgeOps } from "./edges.js";
+import { manyOps } from "./many/many.js";
 import { nodeOps } from "./nodes.js";
 import { reach } from "./reach/reach.js";
 import { migrate } from "./schema.js";
@@ -16,6 +17,7 @@ export async function createPostgresGraphStore(opts: { pool: pg.Pool }): Promise
   await migrate(pool);
   const nodes = nodeOps(pool);
   const edges = edgeOps(pool);
+  const many = manyOps(pool);
   let open = true;
   const live =
     <A extends unknown[], R>(f: (...a: A) => Promise<R>) =>
@@ -30,6 +32,8 @@ export async function createPostgresGraphStore(opts: { pool: pg.Pool }): Promise
     tombstone: live(nodes.tombstone),
     node: live(nodes.get),
     neighbors: live(edges.neighbors),
+    nodesOf: live(many.nodesOf),
+    edgesOf: live(many.edgesOf),
     edgesBySource: live(edges.bySource),
     reach: live((tenant, from, o) => reach(pool, tenant, from, o)),
     history: live(nodes.history),

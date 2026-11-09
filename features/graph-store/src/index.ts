@@ -37,6 +37,8 @@ export function createGraphStore(opts: { path: string }): GraphStore {
     }),
     node: live(nodes.get),
     neighbors: live(edges.neighbors),
+    nodesOf: live(edges.nodesOf),
+    edgesOf: live(edges.edgesOf),
     edgesBySource: live(edges.bySource),
     reach: live((tenant, from, o) => reach(tenant, from, o, edges)),
     history: live(nodes.history),

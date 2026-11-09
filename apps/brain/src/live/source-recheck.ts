@@ -1,6 +1,5 @@
 import type { Connector } from "@anvesx/connector-kit";
-import type { Caller } from "../gate/auth.js";
-import type { Recheck } from "./recheck.js";
+import type { Caller, Recheck } from "./recheck.js";
 
 export interface SourceRecheckDeps {
   /** Connectors keyed by `GraphNode.source`, which is the connector id. */

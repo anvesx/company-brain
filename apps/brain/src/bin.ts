@@ -31,26 +31,20 @@ if (command === "serve") {
   });
   shutdown = async () => (await running).close();
   await running;
+} else if (command !== undefined) {
+  console.error("usage: brain [sync|serve]   (no argument starts the local server)");
+  process.exit(2);
 } else {
-  // The local path: one SQLite file, wrapped by toAsync so the app sees the async store.
-  const { BRAIN_GRAPH_PATH: path, BRAIN_AUTH_SECRET: secret, BRAIN_PORT: port, BRAIN_HOST: host } = process.env;
-  if (!path || !secret) {
-    console.error("brain: BRAIN_GRAPH_PATH and BRAIN_AUTH_SECRET (32+ characters) are required");
+  // The local path: SQLite files and identity on one origin (see serve/start.ts).
+  const { explain, startBrain } = await import("./serve/local/start.js");
+  try {
+    const { app, config } = await startBrain(process.env);
+    console.log(`brain listening on ${config.host ?? "127.0.0.1"}:${config.port}, sign-in at ${config.baseUrl}`);
+    shutdown = () => app.close();
+  } catch (error) {
+    const line = explain(error, Number(process.env.BRAIN_PORT ?? 8787));
+    if (!line) throw error;
+    console.error(`brain: ${line}`);
     process.exit(1);
   }
-  const { createGraphStore, toAsync } = await import("@anvesx/graph-store");
-  const { createBrainApp } = await import("./app.js");
-  const { recheckFromEnv } = await import("./cli/recheck.js");
-  const recheck = recheckFromEnv(process.env);
-  const app = createBrainApp({
-    ...(recheck && { recheck }),
-    store: toAsync(createGraphStore({ path })),
-    secret,
-    now: () => Date.now() / 1000,
-    port: Number(port ?? 8787),
-    ...(host ? { host } : {}),
-  });
-  shutdown = () => app.close();
-  await app.listen();
-  console.log(`brain graph api listening on ${host ?? "127.0.0.1"}:${port ?? 8787}`);
 }

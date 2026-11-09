@@ -2,6 +2,8 @@ import type { Server } from "node:http";
 import { createPostgresGraphStore } from "@anvesx/graph-store";
 import { createIdentity, migrateDatabase } from "@anvesx/identity";
 import type pg from "pg";
+import { recheckFromEnv } from "../cli/recheck.js";
+import { cursorKeyFrom } from "./local/key.js";
 
 /** Error codes that mean "the database is not there yet, or not there right now": worth retrying.
  * 42P07 is "relation already exists": another instance is creating the same table at this moment. */
@@ -65,7 +67,8 @@ export function readEnv(env: NodeJS.ProcessEnv) {
   const identitySecret = need(env, "IDENTITY_SECRET");
   const retryText = env.BRAIN_RETRY_MS ?? "2000";
   if (!/^[1-9][0-9]*$/.test(retryText)) throw new Error("BRAIN_RETRY_MS must be a positive integer"); // NaN would make setTimeout spin every 1 ms
-  return { databaseUrl, secret, baseUrl, identitySecret, retryMs: Number(retryText) };
+  // The cursor key comes from the auth secret; a bad BRAIN_USER_TOKENS_FILE fails here, before a pool exists.
+  return { databaseUrl, cursorKey: cursorKeyFrom(secret), recheck: recheckFromEnv(env), baseUrl, identitySecret, retryMs: Number(retryText) };
 }
 
 /** The two constructors boot runs after the migration. Tests pass slowed-down wrappers around the real ones. */

@@ -36,9 +36,19 @@ The "dialect factory" is the caller's `pg.Pool`: the composition root (`apps/bra
 Error codes stay `BAD_INPUT | DEPTH_LIMIT | CLOSED`.
 
 Brain HTTP: `GET /healthz` (no auth) is `200 {"status":"ok"}` once identity and the graph are built and `select 1` on the
-pool answers within 2 s, else `503 {"status":"unavailable"}` (so a booting server is not "ready"). Identity routes are mounted under `/api/auth/*` and `/.well-known/*`; `/v1/*` is unchanged.
-Env: `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+), `IDENTITY_SECRET` (32+), `BASE_URL`, `PORT` (default 8080), `HOST` (default `0.0.0.0`).
+pool answers within 2 s, else `503 {"status":"unavailable"}` (so a booting server is not "ready"). Identity routes are mounted under `/api/auth/*` and `/.well-known/*`. `/v1/*` no longer takes the old HMAC bearer (ADR 0008):
+it takes an identity session cookie or an MCP OAuth bearer, and answers 401 with a `www-authenticate` challenge otherwise.
+Env: `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+; it now only derives the graph-view cursor key, HKDF `cursorKeyFrom`, and no longer signs API tokens), `IDENTITY_SECRET` (32+; identity's session and token secret), `BASE_URL`, `PORT` (default 8080), `HOST` (default `0.0.0.0`).
 Start-up errors: a short `BRAIN_AUTH_SECRET`, a taken port, or any database error that is not a connection error (wrong password, bad SQL) exits 1 with `brain: <message>`; connection errors retry while `/healthz` answers 503.
+
+Keep-alive: the server sets `keepAliveTimeout` 620 s (`apps/brain/src/serve/mount.ts`, `tune`). Node's
+default of 5 s (plus a 1 s buffer on Node 24+) closes an idle pooled socket that a proxy may be about to reuse, which the proxy
+reports as 502 or `ECONNRESET`. The numbers sit above every proxy idle value we know of: Google's external Application Load
+Balancer holds backend connections idle up to 600 s, AWS ALB defaults to 60 s. Google does not publish the idle value of Cloud
+Run's own front end, so the 600 s figure is the working upper bound; revisit if it ever shows a 502 after a quiet period.
+`requestTimeout` stays at Node's 300 s, equal to Cloud Run's default request timeout (configurable up to 3600 s; raise both together).
+`headersTimeout` stays at Node's 60 s: it bounds how long a client may take to send one request's headers (the slowloris
+window), not idle time, and Node requires it to stay at or under `requestTimeout`, so it is not tied to the keep-alive value.
 
 ## Behaviour
 1. Same rows on both dialects: every row carries `tenant`; nodes and edges are bitemporal (`valid_from`, `valid_to`,

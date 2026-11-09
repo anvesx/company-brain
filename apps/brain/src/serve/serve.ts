@@ -4,7 +4,7 @@ import { getRequestListener } from "@hono/node-server";
 import { PostgresDialect } from "kysely";
 import pg from "pg";
 import { createBrainApp } from "../app.js";
-import { mount, type Parts } from "./mount.js";
+import { mount, type Parts, tune } from "./mount.js";
 import { type BootDeps, isTransient, listenOn, migrateLocked, readEnv, realDeps } from "./startup.js";
 
 /** Start the production server: one Postgres pool shared by identity and the graph, listening on HOST:PORT. */
@@ -13,7 +13,7 @@ export async function serve(
   log: (m: string) => void = console.error,
   deps: BootDeps = realDeps, // the boot-wait test slows these down to catch close() mid-boot
 ): Promise<{ port: number; pool: pg.Pool; close(): Promise<void> }> {
-  const { databaseUrl, secret, baseUrl, identitySecret, retryMs } = readEnv(env);
+  const { databaseUrl, cursorKey, recheck, baseUrl, identitySecret, retryMs } = readEnv(env);
   const pool = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 3000 });
   // The only 'error' listener on the pool (the graph store adds none). A dropped idle client is logged, not thrown.
   pool.on("error", (e) => log(`postgres pool error: ${e.message}`));
@@ -38,7 +38,7 @@ export async function serve(
       // `$context` resolves after every plugin init, incl. the oauth seed: wait so close() never ends the pool under it (see README).
       await identity.auth.$context;
       const store = await deps.createPostgresGraphStore({ pool });
-      const brain = createBrainApp({ store, secret, now: () => Date.now() / 1000 });
+      const brain = createBrainApp({ store, identity, cursorKey, ...(recheck && { recheck }) });
       parts = { brain: brain.handler, identity: getRequestListener(identity.routes.fetch) };
     } catch (e) {
       if (stopped) return; // close() ended the pool under the migration; that error is ours, not a failure
@@ -57,7 +57,7 @@ export async function serve(
     process.exit(1);
   };
 
-  const server = createServer(mount(pool, () => parts));
+  const server = tune(createServer(mount(pool, () => parts)));
   const host = env.HOST ?? "0.0.0.0";
   const port = Number(env.PORT ?? 8080);
   // A failed start must not leave the pool open: end it, then rethrow the original error.

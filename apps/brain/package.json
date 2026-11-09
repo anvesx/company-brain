@@ -22,8 +22,10 @@
     "@anvesx/core-types": "workspace:*",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*",
+    "@anvesx/graph-view": "workspace:*",
     "@anvesx/identity": "workspace:*",
     "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.16",
     "kysely": "0.29.8",
     "pg": "8.23.1"
   },

@@ -1,4 +1,5 @@
 # gate tests
 
-- `auth.test.ts`: `verify` accepts a valid token and names the caller; rejects expiry at exactly now, text around the token, a wrong-length or wrong-case signature and a token for another user or tenant.
 - `access.test.ts`: `canRead` and `readableDocuments` run over a real graph store with `can-read` and `member-of` edges.
+- `edges.test.ts`: a blank linked account id, a mixed-case ACL email and a capitalised stored email.
+- `aliases.test.ts`: a real folder sync whose ACLs name people by email or linked account id; the identity user sees exactly their own, and an unverified email counts for nothing.

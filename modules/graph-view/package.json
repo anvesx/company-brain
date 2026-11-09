@@ -1,0 +1,36 @@
+{
+  "name": "@anvesx/graph-view",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && pnpm run copy:page",
+    "copy:page": "rm -rf dist/page/script && mkdir -p dist/page/script && cp -R src/page/script/. dist/page/script/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "e2e": "PLAYWRIGHT=1 vitest run --config ../../vitest.config.ts --no-file-parallelism tests/e2e",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "3d-force-graph": "1.80.2",
+    "@anvesx/graph-store": "workspace:*",
+    "@anvesx/identity": "workspace:*",
+    "hono": "^4.13.16",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@playwright/test": "^1.64.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "modules/graph-view"
+  },
+  "license": "MIT",
+  "private": true
+}

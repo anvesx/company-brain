@@ -1,24 +1,18 @@
 import { spawn } from "node:child_process";
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { createPostgresGraphStore } from "@anvesx/graph-store";
 import pg from "pg";
 import type { Throwaway } from "../../../../features/graph-store/tests/support/pg/server.js";
 
-/** One shared secret for the brain API tokens of a test run. */
+/** The shared secrets of a test run: BRAIN_AUTH_SECRET (cursor key) and IDENTITY_SECRET (sessions). */
 export const secret = randomBytes(32).toString("hex");
-
-/** A brain API token, `Bearer user:tenant:exp:hmac`, valid for 10 minutes. */
-export const bearer = (user: string, tenant: string): string => {
-  const exp = Math.floor(Date.now() / 1000) + 600;
-  return `Bearer ${user}:${tenant}:${exp}:${createHmac("sha256", secret).update(`${user}:${tenant}:${exp}`).digest("hex")}`;
-};
+const identitySecret = randomBytes(32).toString("hex");
 
 /** The env `serve()` reads. PORT 0 lets the OS pick a free port; BASE_URL is loopback because identity requires it. */
 export const env = (url: string) => ({
   DATABASE_URL: url,
   BRAIN_AUTH_SECRET: secret,
-  IDENTITY_SECRET: randomBytes(32).toString("hex"),
+  IDENTITY_SECRET: identitySecret,
   BASE_URL: "http://localhost",
   PORT: "0",
   HOST: "127.0.0.1",
@@ -29,16 +23,6 @@ export const until = async (ok: () => Promise<boolean>, ms: number): Promise<voi
   for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 200))) if (await ok().catch(() => false)) return;
   throw new Error(`condition not met within ${ms} ms`);
 };
-
-/** Put one readable document (u1 can read d1, tenant acme) into the database, the way sync would. */
-export async function seed(db: Throwaway): Promise<void> {
-  const pool = new pg.Pool({ connectionString: db.url });
-  const store = await createPostgresGraphStore({ pool });
-  await store.upsertNode({ tenant: "acme", id: "d1", kind: "document", source: "drive", address: "d1", title: "Plan", version: "1", props: {} }, 1);
-  await store.addEdge({ tenant: "acme", from: "u1", to: "d1", kind: "can-read", source: "drive" }, 1);
-  await store.close();
-  await pool.end();
-}
 
 /** A new, empty database on the same server, so two boots can race on migrations that have never run. */
 export async function freshDb(db: Throwaway): Promise<string> {
