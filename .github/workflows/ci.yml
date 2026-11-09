@@ -3,11 +3,9 @@ on:
   pull_request:
   push:
     branches: [main]
-# A new push to the same PR (or to main) cancels the run it supersedes. Without this, every push left
-# the earlier 3 h mutation job running to the end: three stale runs were live at once on 2026-11-06.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
 jobs:
@@ -46,12 +44,38 @@ jobs:
             BASE=HEAD~1
           fi
           pnpm exec commitlint --from "$BASE" --to HEAD
-  mutation:
-    # Slow: about 3 h on ubuntu-latest (run 42234086839 took 14:27 to 17:27 UTC). Every package must
-    # meet its break threshold of 80.
+  mutation-plan:
+    # Decides which packages need mutation testing (see scripts/ci/mutation-plan.sh).
     runs-on: ubuntu-latest
-    # GitHub's default job limit is 360 min; this is explicit so a hung Stryker run fails instead of idling.
-    timeout-minutes: 300
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 8.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 26, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+      - id: plan
+        run: |
+          packages="$(scripts/ci/mutation-plan.sh)"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "$packages" | jq -r '.[].name' | sed 's/^/mutate: /'
+  mutation-package:
+    # One job per package so no single job nears the runner time cap.
+    # Every package must meet its own break threshold of 80.
+    needs: mutation-plan
+    if: needs.mutation-plan.outputs.packages != '[]'
+    name: mutation (${{ matrix.package.name }}${{ matrix.package.shards > 1 && format(' {0}/{1}', matrix.package.shard, matrix.package.shards) || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.mutation-plan.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -61,17 +85,47 @@ jobs:
       - run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
-      - run: pnpm turbo run build
       # Puts the newest Postgres the runner ships on PATH (ubuntu-latest moved from 16 to 18 in 2026; the
       # path carries the major). Fails loudly when none is installed, so CI=true never skips the pg tests.
       - run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 | tee -a "$GITHUB_PATH" | grep .
-      # Stryker runs vitest hundreds of times per package, and vitest's github-actions reporter appends a
-      # job summary on every run. Run 42318151867 failed on the summary alone: "supports content up to
-      # 1024k, got 1186k". Hiding GITHUB_ACTIONS from this step keeps that reporter off; Stryker's own
-      # clear-text report still reaches the log and reports/mutation.json.
-      - run: pnpm -r mutation
+      - run: pnpm turbo run build --filter="${PKG}..."
         env:
+          PKG: ${{ matrix.package.name }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ matrix.package.dir }}/reports/stryker-incremental-${{ matrix.package.shard }}.json
+          key: stryker-${{ matrix.package.name }}-${{ matrix.package.shard }}-${{ github.sha }}
+          restore-keys: stryker-${{ matrix.package.name }}-${{ matrix.package.shard }}-
+      - run: |
+          args=(--incremental --incrementalFile "reports/stryker-incremental-${SHARD}.json")
+          if [ "$SHARDS" -gt 1 ]; then
+            args+=(--mutate "$(node scripts/ci/mutation-shard.mjs "$DIR" "$SHARD" "$SHARDS")")
+          fi
+          pnpm --filter "${PKG}" mutation "${args[@]}"
+        env:
+          PKG: ${{ matrix.package.name }}
+          DIR: ${{ matrix.package.dir }}
+          SHARD: ${{ matrix.package.shard }}
+          SHARDS: ${{ matrix.package.shards }}
           GITHUB_ACTIONS: ""
+  mutation:
+    # Single required check: fails unless the plan ran and every package passed.
+    needs: [mutation-plan, mutation-package]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "$PLAN" = success || { echo "plan job: $PLAN"; exit 1; }
+          if [ "$PACKAGES" = "[]" ]; then
+            test "$RESULT" = skipped || { echo "empty plan but result: $RESULT"; exit 1; }
+            echo "no packages affected by this change"
+          else
+            test "$RESULT" = success || { echo "package jobs: $RESULT"; exit 1; }
+          fi
+        env:
+          PLAN: ${{ needs.mutation-plan.result }}
+          PACKAGES: ${{ needs.mutation-plan.outputs.packages }}
+          RESULT: ${{ needs.mutation-package.result }}
   integration:
     runs-on: ubuntu-latest
     steps:
@@ -129,7 +183,7 @@ jobs:
           # From gitleaks_8.28.0_checksums.txt, published with the v8.28.0 release.
           GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
         run: |
-          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          curl -sSfL --retry 5 --retry-delay 5 --retry-all-errors -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
           echo "$GITLEAKS_SHA256  gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --config .gitleaks.toml --redact --verbose

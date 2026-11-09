@@ -27,7 +27,8 @@ describe("rule 5: library files served byte for byte from node_modules", () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/javascript/);
-    expect(body).toEqual(await readFile(forceGraphUmd));
+    // Buffer.equals is a memcmp; expect(buf).toEqual(buf) walks 1.4 MB element by element (seconds under Stryker).
+    expect(body.equals(await readFile(forceGraphUmd)), "body differs from the installed file").toBe(true);
   });
 
   it.each([
@@ -44,7 +45,7 @@ describe("rule 5: library files served byte for byte from node_modules", () => {
     const body = Buffer.from(await res.arrayBuffer());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/javascript/);
-    expect(body).toEqual(await readFile(join(threeRoot, file)));
+    expect(body.equals(await readFile(join(threeRoot, file))), `body differs from the installed ${file}`).toBe(true);
   });
 
   it.each(["package.json", "build/three.cjs", "examples/jsm/controls/OrbitControls.js", "..%2Fpackage.json", "..%2F..%2F..%2Fpackage.json"])(
