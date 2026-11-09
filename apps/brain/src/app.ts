@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { GraphNode, GraphStore } from "@anvesx/graph-store";
+import type { AsyncGraphStore, GraphNode } from "@anvesx/graph-store";
 import { canRead, readableDocuments } from "./gate/access.js";
 import { MIN_SECRET_CHARS, verify } from "./gate/auth.js";
 import { type Recheck, stillReadable } from "./live/recheck.js";
 
 export interface BrainDeps {
-  store: GraphStore;
+  store: AsyncGraphStore;
   secret: string;
   now: () => number;
   port?: number;
@@ -15,6 +15,8 @@ export interface BrainDeps {
 }
 export interface BrainApp {
   server: Server;
+  /** The request handler on its own, so `serve/` can mount it next to other routes on one server. */
+  handler: (req: IncomingMessage, res: ServerResponse) => void;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
@@ -43,13 +45,13 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
     }
     const path = new URL(req.url ?? "/", "http://x").pathname;
     if (path === "/v1/documents") {
-      const docs = await stillReadable(readableDocuments(store, caller.tenant, caller.user), caller, deps.recheck);
+      const docs = await stillReadable(await readableDocuments(store, caller.tenant, caller.user), caller, deps.recheck);
       send(res, 200, { documents: docs.map(pointer) });
       return;
     }
     const id = /^\/v1\/documents\/([^/]+)$/.exec(path)?.[1];
-    const node = id ? store.node(caller.tenant, decodeURIComponent(id)) : undefined;
-    const live = node && canRead(store, caller.tenant, caller.user, node.id) ? await stillReadable([node], caller, deps.recheck) : [];
+    const node = id ? await store.node(caller.tenant, decodeURIComponent(id)) : undefined;
+    const live = node && (await canRead(store, caller.tenant, caller.user, node.id)) ? await stillReadable([node], caller, deps.recheck) : [];
     if (!id || !node || node.kind !== "document" || live.length === 0) {
       send(res, 404, { error: "not found" });
       return;
@@ -65,6 +67,7 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
   });
   return {
     server,
+    handler: handle,
     listen: () => new Promise((ok) => server.listen(deps.port ?? 0, deps.host ?? "127.0.0.1", ok)),
     close: () => new Promise((ok) => server.close(() => ok())),
   };

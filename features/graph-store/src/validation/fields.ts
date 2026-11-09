@@ -1,10 +1,10 @@
-import { bad } from "../schema.js";
+import { bad, unsafe } from "../schema.js";
 
 /** Byte caps (UTF-8) for the fixed node fields. Documented in the package README, "Limits". */
 export const FIELD_MAX_BYTES = { title: 512, address: 2048, version: 256, source: 128 } as const;
 
-// C0 controls and DEL: a multi-line or tabbed value is body text, not metadata.
-export const hasControl = (v: string): boolean => [...v].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+// C0 controls and DEL: a multi-line or tabbed value is body text, not metadata. A lone surrogate counts too.
+export const hasControl = (v: string): boolean => unsafe(v) || [...v].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 
 export function checkField(name: keyof typeof FIELD_MAX_BYTES, v: unknown): string {
   if (typeof v !== "string") return bad("source, address, title, version must be strings");

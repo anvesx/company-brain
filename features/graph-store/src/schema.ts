@@ -50,7 +50,10 @@ export class GraphError extends Error {
 export const bad = (message: string): never => {
   throw new GraphError("BAD_INPUT", message);
 };
-export const text = (name: string, v: unknown): string => (typeof v === "string" && v !== "" ? v : bad(`${name} must be a non-empty string`));
+/** True when the string has a NUL (Postgres text cannot hold it) or a lone surrogate (not valid UTF-8). */
+export const unsafe = (v: string): boolean => v.includes("\u0000") || !(v as unknown as { isWellFormed(): boolean }).isWellFormed();
+export const text = (name: string, v: unknown): string =>
+  typeof v === "string" && v !== "" && !unsafe(v) ? v : bad(`${name} must be a non-empty string without NUL or lone surrogates`);
 export const time = (name: string, v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : bad(`${name} must be a finite number`));
 export const oneOf = (name: string, v: unknown, all: readonly string[]): string =>
   typeof v === "string" && all.includes(v) ? v : bad(`${name} is not a known kind`);
