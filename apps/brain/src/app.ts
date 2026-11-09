@@ -6,6 +6,7 @@ import type { createIdentity } from "@anvesx/identity";
 import { createAdaptorServer, getRequestListener } from "@hono/node-server";
 import { Hono } from "hono";
 import { identityAliases } from "./gate/accounts.js";
+import { mountLinked } from "./linked/route.js";
 import type { Recheck } from "./live/recheck.js";
 import { mountDocuments } from "./routes/documents.js";
 import { tune } from "./serve/mount.js";
@@ -18,6 +19,8 @@ export interface BrainDeps {
   recheck?: Recheck;
   /** 32 bytes that sign graph-view cursors; instances behind one load balancer must share it. */
   cursorKey: Uint8Array;
+  /** Where `<ID>_BASE_URL` is read. */
+  env?: Record<string, string | undefined>;
   port?: number;
   host?: string;
 }
@@ -48,6 +51,7 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
   // caller's linked accounts through better-auth's own adapter, so it works on SQLite and Postgres alike.
   const accounts = async (user: string) =>
     (await identity.adapter()).findMany<Record<string, unknown>>({ model: "account", where: [{ field: "userId", value: user }] });
+  mountLinked(app, { identity, env: deps.env ?? {} });
   mountBrainMcp(app, { store, protect: identity.protect, accounts });
 
   const server = tune(createAdaptorServer({ fetch: app.fetch }) as Server);

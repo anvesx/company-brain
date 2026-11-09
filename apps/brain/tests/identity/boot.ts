@@ -48,7 +48,7 @@ export async function bootBrain(extra: Partial<Omit<BrainDeps, "store">> & { sto
     store.close();
     db.close();
   };
-  return { base, store, identity, close };
+  return { base, store, identity, db, close };
 }
 
 /** The tenant and user identity assigned to a signed-in browser. */
