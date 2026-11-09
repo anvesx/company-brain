@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { bootBrain, type Env, seedDocs, signUp, whoIs } from "./boot.js";
+import { bearer, bootBrain, connect, type Env, seedDocs, signUp, whoIs } from "./boot.js";
 
 let env: Env | undefined;
 afterEach(async () => env?.close());
@@ -19,6 +19,23 @@ describe("brain mounts the graph view", () => {
     const page = (await res.json()) as Page;
     expect(page.nodes.map((n) => n.id).sort()).toEqual(["d-1", who.user].sort());
     expect(page.edges).toEqual([{ from: who.user, to: "d-1", kind: "can-read" }]);
+  });
+
+  // An MCP client carries an OAuth bearer instead of the cookie. The guard behind /v1/graph must map it to the
+  // same person, so the visible set is identical, and a bearer whose signature is wrong must get the 401.
+  it("answers /v1/graph for the bearer identity issued with the same visible set, and 401s a forged one", async () => {
+    env = await bootBrain();
+    const ann = await signUp(env, "Ann");
+    const who = await whoIs(env, ann.browser.cookie());
+    seedDocs(env.store, who.tenant, who.user);
+    const token = (await connect(ann.browser, env.base, `${env.base}/mcp`)).tokens.access_token;
+    const res = await fetch(`${env.base}/v1/graph`, { headers: bearer(token) });
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as Page;
+    expect(page.nodes.map((n) => n.id).sort()).toEqual(["d-1", who.user].sort());
+    const forged = await fetch(`${env.base}/v1/graph`, { headers: bearer(`${token.slice(0, -4)}${token.endsWith("AAAA") ? "BBBB" : "AAAA"}`) });
+    expect(forged.status).toBe(401);
+    expect(forged.headers.get("www-authenticate")).toContain("resource_metadata=");
   });
 
   it("answers /v1/graph with 401 and the challenge header when nobody is signed in", async () => {

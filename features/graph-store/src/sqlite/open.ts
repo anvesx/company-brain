@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { bad, text } from "../schema.js";
+import { TITLES_DDL } from "./titles.js";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS nodes (tenant TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, address TEXT NOT NULL,
@@ -23,8 +24,12 @@ export function openDb(path: string): DatabaseSync {
   // handler is not consulted. Retry that race a bounded number of times, then give up loudly.
   for (let attempt = 0; ; attempt++) {
     try {
-      db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
-      db.exec(DDL);
+      // A 64 MB page cache (the default is 2 MB) keeps the title index and the hot rows in memory across queries.
+      db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -65536;");
+      const indexed = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'node_titles'").get() !== undefined;
+      db.exec(DDL + TITLES_DDL);
+      // A file made before the index existed has titles the index has never seen: read them in once.
+      if (!indexed) db.exec("INSERT INTO node_titles(node_titles) VALUES ('rebuild')");
       return db;
     } catch (e) {
       if (attempt >= 200 || (e as { errcode?: number }).errcode !== 5) {

@@ -1,0 +1,36 @@
+{
+  "name": "@anvesx/brain-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --exclude '**/tests/scale/**' --exclude '**/tests/e2e/**'",
+    "scale": "vitest run --config ../../vitest.config.ts --no-file-parallelism --reporter=verbose tests/scale",
+    "e2e": "BRAIN_E2E=1 vitest run --config ../../vitest.config.ts --no-file-parallelism tests/e2e",
+    "mutation": "stryker run"
+  },
+  "dependencies": {
+    "@anvesx/graph-store": "workspace:*",
+    "@anvesx/identity": "workspace:*",
+    "@hono/mcp": "0.3.5",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "hono": "^4.13.16",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.1.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "services/brain-mcp"
+  },
+  "license": "MIT",
+  "private": true
+}

@@ -28,13 +28,13 @@ export type Env = Awaited<ReturnType<typeof bootBrain>>;
 
 /**
  * The real brain app on one origin: identity's routes, /v1/documents behind identity.protect and the
- * graph view. A temp-file graph store and a temp-file SQLite auth database.
+ * graph view. A temp-file graph store and a temp-file SQLite auth database. `doors` adds identity config (see src/doors).
  */
-export async function bootBrain(extra: Partial<Omit<BrainDeps, "store">> & { store?: GraphStore } = {}) {
+export async function bootBrain(extra: Partial<Omit<BrainDeps, "store">> & { store?: GraphStore } = {}, doors: Partial<IdentityConfig> = {}) {
   const port = await freePort();
   const base = `http://localhost:${port}`;
   const db = openDb(tempDbPath());
-  const config: IdentityConfig = { baseUrl: base, secret: SECRET, database: db, resource: `${base}/mcp` };
+  const config: IdentityConfig = { baseUrl: base, secret: SECRET, database: db, resource: `${base}/mcp`, ...doors }; // `doors`: Google, seal key, catalog
   await migrateDatabase(config);
   const identity = createIdentity(config);
   await identity.migrate();

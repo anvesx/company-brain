@@ -29,6 +29,8 @@ describe("install output", () => {
     expect(TEMPLATES.cursor.entry(URL_)).toEqual({ url: URL_ });
     expect(TEMPLATES["gemini-cli"].entry(URL_)).toEqual({ httpUrl: URL_ });
     expect(TEMPLATES["claude-desktop"].entry(URL_)).toEqual({ command: "npx", args: ["-y", "mcp-remote", URL_] });
+    expect(TEMPLATES.kiro.entry(URL_)).toEqual({ url: URL_ });
+    expect(TEMPLATES.antigravity.entry(URL_)).toEqual({ serverUrl: URL_ });
   });
 
   it("rule 10: each template names its format and file", () => {
@@ -38,6 +40,8 @@ describe("install output", () => {
       ["cursor", "json", "~/.cursor/mcp.json"],
       ["gemini-cli", "json", "~/.gemini/settings.json"],
       ["claude-desktop", "json", "~/Library/Application Support/Claude/claude_desktop_config.json"],
+      ["kiro", "json", ".kiro/settings/mcp.json"],
+      ["antigravity", "json", "~/.gemini/config/mcp_config.json"],
     ]);
   });
 

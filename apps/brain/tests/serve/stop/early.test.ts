@@ -21,9 +21,11 @@ beforeAll(async () => {
 afterAll(() => db?.stop());
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// Node needs a few ms to start and no JavaScript can catch a signal before that. This preload prints a marker the
-// moment node is up; the signal goes out a few ms later, while bin.js is still loading.
-const preload = 'data:text/javascript,console.error("node-up")';
+// No JavaScript can catch a signal before bin.js has registered its handler (its first statements). This preload
+// prints a marker the moment that handler is added (`newListener` fires synchronously inside `process.once`); the
+// signal goes out a few ms later, while bin.js is still loading its modules. A marker printed when node was merely
+// up let the signal land before the handler under a loaded machine (killed by SIGTERM, exit code null, round 3 of 9).
+const preload = 'data:text/javascript,process.on("newListener",(e)=>{if(e==="SIGTERM")console.error("handler-up")})';
 
 describe("SIGTERM while bin.js is still loading its modules", () => {
   // On node 26 the signal handler is deferred until the dynamic import finishes, so bin.js yields one event-loop
@@ -31,14 +33,14 @@ describe("SIGTERM while bin.js is still loading its modules", () => {
   // "brain listening" or migrate.
   for (const delay of [10, 20, 50])
     for (const round of [1, 2, 3])
-      it(`+${delay} ms after node is up (round ${round}): exit 0, never listens, creates no tables`, async (ctx) => {
+      it(`+${delay} ms after the handler is on (round ${round}): exit 0, never listens, creates no tables`, async (ctx) => {
         if (!db) return ctx.skip();
         const url = await freshDb(db);
         const child = spawn("node", ["--import", preload, bin, "serve"], { env: { PATH: process.env["PATH"] ?? "", ...env(url) } });
         let err = "";
         child.stderr.on("data", (d) => (err += d));
         const code = new Promise((ok) => child.on("exit", (c) => ok(c))); // null when the signal killed it
-        while (!err.includes("node-up")) await sleep(1);
+        while (!err.includes("handler-up")) await sleep(1);
         await sleep(delay);
         child.kill("SIGTERM");
         expect(await code).toBe(0);

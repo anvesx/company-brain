@@ -1,3 +1,5 @@
+import type { ScanPage, ScanQuery } from "./scan/scan.js";
+
 export type NodeKind = "person" | "team" | "document" | "repo" | "channel" | "ticket" | "project";
 export type EdgeKind = "authored" | "member-of" | "mentions" | "links-to" | "belongs-to" | "can-read";
 export interface GraphNode {
@@ -31,6 +33,12 @@ export interface GraphStore {
   /** Many `neighbors()` reads in a few queries: edges out of (`dir: "out"`) or into (`"in"`) any id, optionally only `kinds`. Same id limit as `nodesOf`. */
   edgesOf(tenant: string, ids: string[], opts: { dir: "out" | "in"; kinds?: EdgeKind[]; asOf?: number }): Edge[];
   history(tenant: string, id: string): GraphNode[];
+  searchTitles(
+    tenant: string,
+    q: { text: string; kinds?: NodeKind[]; limit: number; after?: string; asOf?: number; reachedBy?: { from: string[]; kind: EdgeKind; only?: NodeKind } },
+  ): GraphNode[];
+  /** Title search in insertion order whose cost is bounded by `cap` candidates, not by the size of the graph. */
+  scanTitles(tenant: string, q: ScanQuery): ScanPage;
   close(): void;
 }
 
@@ -40,7 +48,8 @@ export const MAX_DEPTH = 6;
 /** Stand-in for "now": a row is current exactly when it is valid at this time. */
 export const NOW = Number.MAX_VALUE;
 
-type Code = "BAD_INPUT" | "DEPTH_LIMIT" | "CLOSED";
+/** SETUP: the database lacks something the store needs and cannot create it (Postgres: the pg_trgm extension). */
+type Code = "BAD_INPUT" | "DEPTH_LIMIT" | "CLOSED" | "SETUP";
 /** Typed failure of the graph store. Callers branch on `code`, never on the message. */
 export class GraphError extends Error {
   readonly code: Code;

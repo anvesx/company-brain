@@ -6,6 +6,8 @@ import { manyOps } from "./many/many.js";
 import { nodeOps } from "./nodes.js";
 import { reach } from "./reach/reach.js";
 import { migrate } from "./schema.js";
+import { scanOps } from "./titles/scan.js";
+import { searchOps } from "./titles/search.js";
 
 /**
  * Creates the tables if missing (under an advisory lock) and returns the store. Rejects if the database is
@@ -18,6 +20,8 @@ export async function createPostgresGraphStore(opts: { pool: pg.Pool }): Promise
   const nodes = nodeOps(pool);
   const edges = edgeOps(pool);
   const many = manyOps(pool);
+  const search = searchOps(pool);
+  const scan = scanOps(pool);
   let open = true;
   const live =
     <A extends unknown[], R>(f: (...a: A) => Promise<R>) =>
@@ -37,6 +41,8 @@ export async function createPostgresGraphStore(opts: { pool: pg.Pool }): Promise
     edgesBySource: live(edges.bySource),
     reach: live((tenant, from, o) => reach(pool, tenant, from, o)),
     history: live(nodes.history),
+    searchTitles: live(search),
+    scanTitles: live(scan),
     close: live(async () => {
       open = false;
     }),

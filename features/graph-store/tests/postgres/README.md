@@ -9,4 +9,6 @@ Postgres-only behaviour that SQLite cannot show (spec `docs/specs/infra/deploy.m
 - `restart.test.ts`: a backend killed while blocked before and while blocked on its INSERT (no partial row), a server crash and restart under a live pool,
   and opening a store against an unreachable database.
 
+- `titles/`: the title indexes and the `pg_trgm` setup error (see its README).
+
 Each test runs against a real server from `../support/pg/server.ts`. No mocks.

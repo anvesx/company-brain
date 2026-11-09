@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { mountBrainMcp } from "@anvesx/brain-mcp";
 import { type AsyncGraphStore, GraphError } from "@anvesx/graph-store";
 import { mountGraphView } from "@anvesx/graph-view";
 import type { createIdentity } from "@anvesx/identity";
@@ -43,6 +44,11 @@ export function createBrainApp(deps: BrainDeps): BrainApp {
   const aliases = identityAliases(identity);
   mountDocuments(app, { store, protect: identity.protect, aliases, ...(recheck && { recheck }) });
   mountGraphView(app, { store, port: identity.port, aliases, cursorKey });
+  // The MCP server at /mcp, the URL the install guide on /connections points at. Its `connectors` tool lists the
+  // caller's linked accounts through better-auth's own adapter, so it works on SQLite and Postgres alike.
+  const accounts = async (user: string) =>
+    (await identity.adapter()).findMany<Record<string, unknown>>({ model: "account", where: [{ field: "userId", value: user }] });
+  mountBrainMcp(app, { store, protect: identity.protect, accounts });
 
   const server = tune(createAdaptorServer({ fetch: app.fetch }) as Server);
   return {

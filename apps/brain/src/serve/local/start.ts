@@ -3,6 +3,7 @@ import { createGraphStore, toAsync } from "@anvesx/graph-store";
 import { createIdentity, IdentityError, migrateDatabase } from "@anvesx/identity";
 import { type BrainApp, createBrainApp } from "../../app.js";
 import { recheckFromEnv } from "../../cli/recheck.js";
+import { doorsFromEnv } from "../../doors/env.js";
 import { ConfigError, readServeConfig } from "./config.js";
 import { cursorKeyFrom } from "./key.js";
 
@@ -20,7 +21,15 @@ export const explain = (error: unknown, port: number): string | undefined => {
 /** Opens both databases, starts identity, then listens. The settings are all checked before any of that. */
 export async function startBrain(env: Record<string, string | undefined>): Promise<{ app: BrainApp; config: ReturnType<typeof readServeConfig> }> {
   const config = readServeConfig(env);
-  const identityConfig = { baseUrl: config.baseUrl, secret: config.secret, database: new DatabaseSync(config.authDb), resource: `${config.baseUrl}/mcp` };
+  // Doors (Google login, connector catalog, seal key) are checked before the database file is opened, like every other setting.
+  const doors = doorsFromEnv(env, config.secret);
+  const identityConfig = {
+    baseUrl: config.baseUrl,
+    secret: config.secret,
+    database: new DatabaseSync(config.authDb),
+    resource: `${config.baseUrl}/mcp`,
+    ...doors,
+  };
   await migrateDatabase(identityConfig);
   const identity = createIdentity(identityConfig);
   await identity.migrate();

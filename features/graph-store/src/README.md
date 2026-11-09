@@ -9,6 +9,7 @@ Source for `@anvesx/graph-store`. Public entry is `index.ts`.
 - `nodes.ts`: the write-transaction helper, node upsert with supersession, close, as-of read, history, and the metadata-only props check.
 - `edges/`: edge writes, `neighbors`, the batch reads `nodesOf` / `edgesOf` and the breadth-first traversal.
 - `validation/`: field and props validators.
+- `scan/`: `search.ts` (`searchTitles`, a literal, ASCII-case-insensitive title match paged by id) and `scanTitles`, a capped rowid-ordered scan with a cursor and a JS accept predicate.
 - `index.ts`: `createGraphStore`, the CLOSED guard and the re-exports.
 
 ## Reuse

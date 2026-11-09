@@ -33,7 +33,7 @@ await g.close(); // stops the store only; you own the pool and call pool.end()
 const local = toAsync(createGraphStore({ path: "/var/brain/graph.db" })); // the SQLite store with the same async shape
 ```
 
-`AsyncGraphStore` is `GraphStore` with every method returning a Promise. Errors are rejected `GraphError`s (`BAD_INPUT`, `DEPTH_LIMIT`, `CLOSED`), never sync throws. Rows and rules are the same on both dialects. On Postgres, concurrent writers on one id take turns through an advisory transaction lock, `addEdge` is `ON CONFLICT DO NOTHING`, and `reach` runs two queries per level. The caller owns the pool and must attach `pool.on("error")`; a store never adds one, so reopening a store on one pool leaks no listeners.
+`AsyncGraphStore` is `GraphStore` with every method returning a Promise. Errors are rejected `GraphError`s (`BAD_INPUT`, `DEPTH_LIMIT`, `CLOSED`, and on Postgres `SETUP` when the `pg_trgm` extension is missing and cannot be created), never sync throws. Rows and rules are the same on both dialects. On Postgres, concurrent writers on one id take turns through an advisory transaction lock, `addEdge` is `ON CONFLICT DO NOTHING`, and `reach` runs two queries per level. The caller owns the pool and must attach `pool.on("error")`; a store never adds one, so reopening a store on one pool leaks no listeners.
 
 ## Behaviour
 

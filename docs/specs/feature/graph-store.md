@@ -31,7 +31,7 @@ interface GraphStore {
   close(): void;
 }
 createGraphStore(opts: { path: string }): GraphStore;   // ":memory:" not allowed in non-test use
-class GraphError extends Error { code: "BAD_INPUT"|"DEPTH_LIMIT"|"CLOSED" }
+class GraphError extends Error { code: "BAD_INPUT"|"DEPTH_LIMIT"|"CLOSED"|"SETUP" }
 ```
 
 ## Behaviour
@@ -44,6 +44,7 @@ class GraphError extends Error { code: "BAD_INPUT"|"DEPTH_LIMIT"|"CLOSED" }
 7. tombstone closes the node and all its edges.
 8. After close() every call throws CLOSED. WAL and shm files are removed.
 9. `nodesOf` and `edgesOf` answer for many ids in a bounded number of queries, chunked under SQLite's variable limit (built on `src/edges/many.ts`). Empty `ids` gives `[]`; `kinds: []` gives `[]`; a bad `dir`, an unknown kind or a non-string id throws BAD_INPUT. Contract: `tests/unit/batch/{nodes,edges}.test.ts`. Added 2026-11-06 because graph-view must load 10k documents and 50k edges in under 300 ms, which one `neighbors()` call per node cannot reach. Additive; human merge (A15).
+10. Title cost model on Postgres. The store needs the `pg_trgm` extension and creates it, a GIN `gin_trgm_ops` index on `title COLLATE "C"` and a btree on `(tenant, seq)` inside the advisory-locked migration. If the extension cannot be created (no CREATE on the database, or no contrib package) opening the store rejects with GraphError `SETUP` naming `pg_trgm`; a DBA can run `CREATE EXTENSION pg_trgm` once and the store then opens. With a needle of 3 or more characters that matches few rows, `scanTitles` step 1 and `searchTitles` read the trigram index (Bitmap Index Scan) and then only matching rows, so cost grows with matches, not with tenant size. A needle under 3 characters has no trigram, and a needle that matches most rows makes a scan cheaper, so either may still read the whole tenant; `cap` bounds what a scan returns, not what Postgres reads. Contract: `features/graph-store/tests/postgres/titles/plan.test.ts` (EXPLAIN over 60k rows) and `setup.test.ts`.
 
 ## Acceptance tests (written first)
 - unit: tenant isolation, as-of reads, supersession, no-op upsert, cycle, depth cap, forbidden props, unicode ids.

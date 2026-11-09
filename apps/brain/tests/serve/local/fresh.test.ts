@@ -27,6 +27,12 @@ describe("the binary tests refuse a stale dist", () => {
     expect(staleReason(join(root, "dist/bin.js"), join(root, "src"))).toBeUndefined();
   });
 
+  it("stands down inside a Stryker worker, where every mtime is the sandbox's own rewrite", () => {
+    const root = pkg(1000, 2000);
+    expect(staleReason(join(root, "dist/bin.js"), join(root, "src"), { STRYKER_MUTATOR_WORKER: "0" })).toBeUndefined();
+    expect(staleReason(join(root, "dist/bin.js"), join(root, "src"), {})).toMatch(/older than/);
+  });
+
   it("says the binary is missing when there is no dist/bin.js", () => {
     const root = pkg(3000, 2000);
     expect(staleReason(join(root, "dist/nope.js"), join(root, "src"))).toMatch(/missing/);

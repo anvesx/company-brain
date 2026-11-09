@@ -1,0 +1,3 @@
+# access
+
+What the caller may see. Reads go through `AsyncGraphStore`, so the same code runs on SQLite (via `toAsync`) and Postgres; `par.ts` runs a lookup over many ids a few at a time. `docs.ts` reads in chunks of `CHUNK` (2,000) ids and remembers which documents are readable. `visible.ts` answers "can this user see this node" using the graph itself: the user and their teams, the documents they can read, and the projects, repos, people and teams around those documents. Channels and tickets are never visible. `seesMany` decides a whole list at once with `nodesOf` and `edgesOf`, so cost follows the number of chunks, not the number of neighbours.

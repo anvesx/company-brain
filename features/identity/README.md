@@ -45,7 +45,7 @@ Additions to the spec's Public interface that the tests pin:
    `{ code: "BAD_INPUT", field }`; on the OAuth token endpoint the body also keeps `error`.
 6. `renderInstall` also returns `client`, `format` (`json` or `toml`), `command` (Claude Code
    only, else `null`) and `notes` (`"<field>: check current docs"` per unconfirmed field).
-7. `INSTALL_CLIENTS` lists the five clients; `breachedPasswords` is the bundled list.
+7. `INSTALL_CLIENTS` lists the seven clients (claude-code, codex, cursor, gemini-cli, claude-desktop, kiro, antigravity); `breachedPasswords` is the bundled list.
 8. Page paths: sign-in `/sign-in`, sign-up `/sign-up`, organization picker `/picker`, consent
    `/consent`, connections `/connections`, account `/account` (lists allowed MCP clients, Revoke).
 9. More `IdentityConfig` fields: `serverName` (default `company-brain`, lowercase letters, digits,

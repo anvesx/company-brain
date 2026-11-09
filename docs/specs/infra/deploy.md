@@ -39,6 +39,7 @@ Brain HTTP: `GET /healthz` (no auth) is `200 {"status":"ok"}` once identity and 
 pool answers within 2 s, else `503 {"status":"unavailable"}` (so a booting server is not "ready"). Identity routes are mounted under `/api/auth/*` and `/.well-known/*`. `/v1/*` no longer takes the old HMAC bearer (ADR 0008):
 it takes an identity session cookie or an MCP OAuth bearer, and answers 401 with a `www-authenticate` challenge otherwise.
 Env: `DATABASE_URL`, `BRAIN_AUTH_SECRET` (32+; it now only derives the graph-view cursor key, HKDF `cursorKeyFrom`, and no longer signs API tokens), `IDENTITY_SECRET` (32+; identity's session and token secret), `BASE_URL`, `PORT` (default 8080), `HOST` (default `0.0.0.0`).
+Doors (both entries, `apps/brain/src/doors`): `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` together switch on "Continue with Google"; `<ID>_CLIENT_ID` and `<ID>_CLIENT_SECRET` per catalog connector (`GITHUB_`, `GOOGLE_DRIVE_`, `SLACK_`) turn its tile from "not configured" into a Connect button; `BRAIN_SEAL_KEY` (64 hex) encrypts stored connector tokens and defaults to an HKDF derivation of `BRAIN_AUTH_SECRET`. The MCP server is mounted at `/mcp`.
 Start-up errors: a short `BRAIN_AUTH_SECRET`, a taken port, or any database error that is not a connection error (wrong password, bad SQL) exits 1 with `brain: <message>`; connection errors retry while `/healthz` answers 503.
 
 Keep-alive: the server sets `keepAliveTimeout` 620 s (`apps/brain/src/serve/mount.ts`, `tune`). Node's
