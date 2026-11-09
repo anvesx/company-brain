@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prints the JSON list of packages whose mutation job must run, e.g.
-# [{"name":"@anvesx/core-types","dir":"features/core-types"}].
+# [{"name":"@anvesx/core-types","dir":"features/core-types","shard":0,"shards":1}].
+# Packages listed in mutation-shards.json split their mutated files across N jobs.
 # Pull requests mutate only changed packages and their dependents; pushes to
 # main and any change to shared CI config mutate every package. Thresholds are
 # never touched here: each package keeps its own break score.
@@ -25,4 +26,5 @@ printf '%s\n' "$plan" | sed -n '/^{$/,$p' \
   | jq -c '[.tasks[] | select(.task == "mutation") | {name: .package, dir: .directory}] | unique_by(.name) | sort_by(.name)' \
   | jq -c --argjson has "$(for pj in */*/package.json; do
       jq -c --arg d "$(dirname "$pj")" 'select(.scripts.mutation) | $d' "$pj"
-    done | jq -sc '.')" '[.[] | select(.dir as $d | $has | index($d))]'
+    done | jq -sc '.')" '[.[] | select(.dir as $d | $has | index($d))]' \
+  | jq -c --slurpfile shards scripts/ci/mutation-shards.json '[.[] | . as $p | ($shards[0][$p.name] // 1) as $n | range(0; $n) as $i | $p + {shard: $i, shards: $n}]'

@@ -66,7 +66,7 @@ jobs:
     # Every package must meet its own break threshold of 80.
     needs: mutation-plan
     if: needs.mutation-plan.outputs.packages != '[]'
-    name: mutation (${{ matrix.package.name }})
+    name: mutation (${{ matrix.package.name }}${{ matrix.package.shards > 1 && format(' {0}/{1}', matrix.package.shard, matrix.package.shards) || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -87,12 +87,20 @@ jobs:
           PKG: ${{ matrix.package.name }}
       - uses: actions/cache@v4
         with:
-          path: ${{ matrix.package.dir }}/reports/stryker-incremental.json
-          key: stryker-${{ matrix.package.name }}-${{ github.sha }}
-          restore-keys: stryker-${{ matrix.package.name }}-
-      - run: pnpm --filter "${PKG}" mutation --incremental
+          path: ${{ matrix.package.dir }}/reports/stryker-incremental-${{ matrix.package.shard }}.json
+          key: stryker-${{ matrix.package.name }}-${{ matrix.package.shard }}-${{ github.sha }}
+          restore-keys: stryker-${{ matrix.package.name }}-${{ matrix.package.shard }}-
+      - run: |
+          args=(--incremental --incrementalFile "reports/stryker-incremental-${SHARD}.json")
+          if [ "$SHARDS" -gt 1 ]; then
+            args+=(--mutate "$(node scripts/ci/mutation-shard.mjs "$DIR" "$SHARD" "$SHARDS")")
+          fi
+          pnpm --filter "${PKG}" mutation "${args[@]}"
         env:
           PKG: ${{ matrix.package.name }}
+          DIR: ${{ matrix.package.dir }}
+          SHARD: ${{ matrix.package.shard }}
+          SHARDS: ${{ matrix.package.shards }}
           GITHUB_ACTIONS: ""
   mutation:
     # Single required check: fails unless the plan ran and every package passed.
