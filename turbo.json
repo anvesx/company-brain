@@ -3,7 +3,7 @@
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["^build"] },
-    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"], "passThroughEnv": ["DATABASE_URL"] },
     "integration": { "dependsOn": ["^build"], "passThroughEnv": ["NODE_AUTH_TOKEN"] },
     "mutation": { "dependsOn": ["test"], "outputs": ["reports/**"] }
   }
