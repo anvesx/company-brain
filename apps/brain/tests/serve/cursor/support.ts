@@ -42,7 +42,7 @@ export async function seed(dir: string, base: string, cookie: string, count: num
   database.close();
   if (!who) throw new Error("sign-up left no session");
   const store = createGraphStore({ path: join(dir, "g.db") });
-  const node = (id: string, kind: "person" | "document") => ({
+  const node = (id: string, kind: "person" | "team") => ({
     tenant: who.tenant,
     id,
     kind,
@@ -54,8 +54,9 @@ export async function seed(dir: string, base: string, cookie: string, count: num
   });
   store.upsertNode(node(who.user, "person"), 1);
   for (let i = 1; i <= count; i++) {
-    store.upsertNode(node(`d-${i}`, "document"), 1);
-    store.addEdge({ tenant: who.tenant, from: who.user, to: `d-${i}`, kind: "can-read", source: "drive" }, 1);
+    // Teams, not documents: `brain serve` has no source tokens here, so the gate hides every document (fail closed).
+    store.upsertNode(node(`d-${i}`, "team"), 1);
+    store.addEdge({ tenant: who.tenant, from: who.user, to: `d-${i}`, kind: "member-of", source: "drive" }, 1);
   }
   store.close();
 }

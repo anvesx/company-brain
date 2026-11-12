@@ -78,6 +78,9 @@ importers:
       '@anvesx/identity':
         specifier: workspace:*
         version: link:../../features/identity
+      '@anvesx/visibility':
+        specifier: workspace:*
+        version: link:../../features/visibility
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.16)
@@ -91,6 +94,9 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
     devDependencies:
+      '@anvesx/zone-policy':
+        specifier: workspace:*
+        version: link:../../features/zone-policy
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
@@ -229,6 +235,8 @@ importers:
         specifier: 8.4.2
         version: 8.4.2
 
+  features/visibility: {}
+
   features/zone-policy:
     devDependencies:
       fast-check:
@@ -246,6 +254,9 @@ importers:
       '@anvesx/identity':
         specifier: workspace:*
         version: link:../../features/identity
+      '@anvesx/visibility':
+        specifier: workspace:*
+        version: link:../../features/visibility
       hono:
         specifier: ^4.13.16
         version: 4.13.16
@@ -268,6 +279,9 @@ importers:
       '@anvesx/identity':
         specifier: workspace:*
         version: link:../../features/identity
+      '@anvesx/visibility':
+        specifier: workspace:*
+        version: link:../../features/visibility
       '@hono/mcp':
         specifier: 0.3.5
         version: 0.3.5(@modelcontextprotocol/sdk@1.32.2)(hono-rate-limiter@0.5.4)(hono@4.13.16)(zod@4.6.7)

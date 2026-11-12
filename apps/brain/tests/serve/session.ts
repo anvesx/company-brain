@@ -57,7 +57,7 @@ export async function seed(dbUrl: string, who: Who): Promise<void> {
     address: id,
     title: id,
     version: "1",
-    props: {},
+    props: kind === "document" ? { zone: "company" } : {},
   });
   await store.upsertNode(node(who.user, "person"), 1);
   await store.upsertNode({ ...node("d1", "document"), title: "Plan" }, 1);

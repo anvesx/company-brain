@@ -1,7 +1,7 @@
 import type { GraphStore } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { visibleGraph } from "../../../src/index.js";
-import { edge, edgeKeys, KEY, node, openStore } from "../../support/store.js";
+import { ALLOW, edge, edgeKeys, KEY, LIMITS, node, openStore } from "../../support/store.js";
 import { ALICE_EDGES, ALICE_NODES, seedWorld } from "../../support/world.js";
 
 /**
@@ -21,13 +21,15 @@ function timeline(): GraphStore {
 }
 
 const view = async (store: GraphStore, asOf?: number) =>
-  await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice", ...(asOf === undefined ? {} : { asOf }) });
+  await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice", ...(asOf === undefined ? {} : { asOf }) });
 
 describe("rule 8: asOf draws the graph as it was", () => {
-  it("before the later writes, the view equals the original world", async () => {
+  it("leak 5: an old asOf draws old versions but never old permissions: the lost grant stays lost", async () => {
     const page = await view(timeline(), 1_500);
-    expect(page.nodes.map((n) => n.id)).toEqual(ALICE_NODES);
-    expect(edgeKeys(page.edges)).toEqual(ALICE_EDGES);
+    expect(page.nodes.map((n) => n.id)).toEqual(["alice", "d-alice", "eng", "r-api"]);
+    expect(edgeKeys(page.edges)).toEqual(["alice -authored-> d-alice", "alice -can-read-> d-alice", "alice -member-of-> eng", "d-alice -belongs-to-> r-api"]);
+    expect(ALICE_NODES).toContain("d-shared"); // the original world did show it; the current permissions do not
+    expect(ALICE_EDGES.length).toBeGreaterThan(4);
   });
 
   it("titles come from the row valid at asOf", async () => {
@@ -36,9 +38,9 @@ describe("rule 8: asOf draws the graph as it was", () => {
     expect(await title(2_500)).toBe("Renamed");
   });
 
-  it("between the writes, the new document is in and the old grant still holds", async () => {
+  it("between the writes, the new document is in; the lost grant is still lost (current permissions)", async () => {
     const ids = (await view(timeline(), 2_500)).nodes.map((n) => n.id);
-    expect(ids).toEqual(["alice", "bob", "d-alice", "d-late", "d-shared", "eng", "p-launch", "r-api"]);
+    expect(ids).toEqual(["alice", "d-alice", "d-late", "eng", "r-api"]);
   });
 
   it("without asOf, the view is now: the lost grant takes d-shared, its project and its reader with it", async () => {

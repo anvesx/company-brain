@@ -1,25 +1,26 @@
 import { toAsync } from "@anvesx/graph-store";
 import { afterAll, describe, expect, it } from "vitest";
 import { graph } from "../../../src/tools/read/graph.js";
-import { edge, node, tempStore } from "../../support/graph.js";
+import { as, edge, node, tempStore } from "../../support/graph.js";
 
 // brain.graph over a real store file. Ada acts as u-ada and team-eng; ids are chosen so insertion order is not id order.
 const store = tempStore();
 const T = "org-g";
-const ctx = { store: toAsync(store), caller: { tenant: T, user: "u-ada" }, accounts: async () => [] };
+const ctx = as(toAsync(store), { tenant: T, user: "u-ada" });
 afterAll(() => store.close());
 
 node(store, T, "u-ada", "person", "Ada");
 node(store, T, "team-eng", "team", "Engineering");
 edge(store, T, "u-ada", "member-of", "team-eng");
-node(store, T, "doc-own", "document", "Ada's own");
+node(store, T, "doc-own", "document", "Ada's own", 1000, { zone: "company", owner: "u-ada" });
 edge(store, T, "u-ada", "can-read", "doc-own"); // can-read out of a principal: doc-own
 node(store, T, "doc-plan", "document", "Plan");
 edge(store, T, "team-eng", "can-read", "doc-plan");
 node(store, T, "proj-x", "project", "X");
 edge(store, T, "doc-plan", "belongs-to", "proj-x"); // belongs-to out of a readable doc: proj-x
 node(store, T, "u-rdr", "person", "Reader");
-edge(store, T, "u-rdr", "can-read", "doc-plan"); // can-read into a readable doc: u-rdr
+edge(store, T, "u-rdr", "can-read", "doc-own"); // a reader of a document Ada owns: u-rdr is shown
+edge(store, T, "u-rdr", "can-read", "doc-plan"); // a reader of a document Ada only reads: this edge is hidden (leak 4)
 node(store, T, "chan-x", "channel", "Chat");
 edge(store, T, "team-eng", "can-read", "chan-x"); // walked to, but a channel is never visible
 node(store, T, "doc-hid", "document", "Hidden");
@@ -42,7 +43,7 @@ describe("brain.graph", () => {
       "team-eng>can-read>doc-plan",
       "u-ada>can-read>doc-own",
       "u-ada>member-of>team-eng",
-      "u-rdr>can-read>doc-plan",
+      "u-rdr>can-read>doc-own",
     ]);
   });
 

@@ -10,7 +10,7 @@ const node = (tenant: string, id: string, kind: "person" | "document" | "team") 
   address: id,
   title: id,
   version: "1",
-  props: {},
+  props: kind === "document" ? { zone: "company" } : {},
 });
 
 let env: Env | undefined;

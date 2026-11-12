@@ -1,6 +1,6 @@
 # gate
 
-- `access.ts`: who can read which documents, from `can-read` and `member-of` edges in the graph (`canRead`, `readableDocuments`).
+- Who can read which documents is decided by the shared gate, `@anvesx/visibility/gate` (`openGate`). This app keeps no copy of that rule.
 - `accounts.ts`: `identityAliases`, the other names a source knows a person by. Blank names are dropped and names are de-duplicated.
 - `email.ts`: `withLowercaseEmails` wraps the sync connector, and `lowerEmail` is the alias rule.
 

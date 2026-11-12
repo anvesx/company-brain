@@ -54,13 +54,12 @@ export function seedWorld(store: GraphStore): void {
   );
 }
 
-/** What alice may see, worked out by hand from the picture above. */
-export const ALICE_NODES = ["alice", "bob", "d-alice", "d-shared", "eng", "p-launch", "r-api"];
+/** What alice may see, worked out by hand from the picture above. Company documents hide their other readers (leak 4): bob is absent. */
+export const ALICE_NODES = ["alice", "d-alice", "d-shared", "eng", "p-launch", "r-api"];
 export const ALICE_EDGES = [
   "alice -authored-> d-alice",
   "alice -can-read-> d-alice",
   "alice -member-of-> eng",
-  "bob -can-read-> d-shared",
   "d-alice -belongs-to-> r-api",
   "d-alice -links-to-> d-shared",
   "d-shared -belongs-to-> p-launch",
@@ -68,7 +67,7 @@ export const ALICE_EDGES = [
 ];
 
 /** What bob may see. alice is absent: she reads d-shared only through eng, she has no can-read edge herself. */
-export const BOB_NODES = ["bob", "d-bob", "d-shared", "eng", "p-hidden", "p-launch"];
+export const BOB_NODES = ["bob", "d-bob", "d-shared", "p-hidden", "p-launch"];
 export const BOB_EDGES = [
   "bob -authored-> d-bob",
   "bob -can-read-> d-bob",
@@ -76,5 +75,4 @@ export const BOB_EDGES = [
   "d-bob -belongs-to-> p-hidden",
   "d-shared -belongs-to-> p-launch",
   "d-shared -links-to-> d-bob",
-  "eng -can-read-> d-shared",
 ];

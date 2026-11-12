@@ -7,7 +7,7 @@ const MAX_NEIGHBOURS = 500;
 /** One node and its edges whose other end the caller can also see. Hidden and missing look the same. */
 export async function nodeView(ctx: Ctx, id: string, asOf?: number) {
   const { store, caller } = ctx;
-  const can = await viewer(store, caller, asOf);
+  const can = await viewer(ctx, asOf);
   const n = await store.node(caller.tenant, id, asOf);
   if (n === undefined || !(await can.sees(id))) throw new ToolFailure("NOT_FOUND", `no node ${id}`);
   const neighbours = [];
@@ -15,8 +15,9 @@ export async function nodeView(ctx: Ctx, id: string, asOf?: number) {
   const edges = await store.neighbors(caller.tenant, id, asOf === undefined ? {} : { asOf });
   // The other end of every edge, checked in one batch rather than one store round trip per edge.
   const seen = await can.seesMany(edges.map((e) => ({ id: e.from === id ? e.to : e.from })));
+  const shown = await can.edgesShown(edges);
   for (const [i, e] of edges.entries()) {
-    if (!seen[i]) continue;
+    if (!seen[i] || !shown[i]) continue;
     if (neighbours.length === MAX_NEIGHBOURS) {
       truncated = true;
       break;

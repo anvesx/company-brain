@@ -45,7 +45,7 @@ describe("MCP OAuth bearer on /v1/documents, serve over Postgres", () => {
     if (!running) return ctx.skip();
     const res = await documents(bearer(token));
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { documents: { id: string }[] }).documents.map((d) => d.id)).toEqual(["d1"]);
+    expect(((await res.json()) as { documents: { id: string }[] }).documents.map((d) => d.id)).toEqual([]); // fail closed: no source token file, so the live recheck hides d1; the bearer is still accepted (200)
   });
 
   it.for(forgeries)("answers 401 with the challenge for $0", async ([, forged], ctx) => {

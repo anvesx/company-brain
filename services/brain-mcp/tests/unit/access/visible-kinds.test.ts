@@ -1,7 +1,7 @@
 import { toAsync } from "@anvesx/graph-store";
 import { afterAll, describe, expect, it } from "vitest";
 import { viewer } from "../../../src/access/visible.js";
-import { edge, node, tempStore } from "../../support/graph.js";
+import { as, edge, node, tempStore } from "../../support/graph.js";
 
 // Which node kinds become visible through a readable document, and how seesMany treats kind hints and ghosts.
 const store = tempStore();
@@ -36,33 +36,34 @@ afterAll(() => store.close());
 
 const who = { tenant: ORG, user: "u-kim" };
 const ids = ["repo-a", "proj-a", "repo-x", "proj-x", "team-vis", "u-pat", "team-other", "u-zoe", "doc-ok", "doc-no", "ghost"];
-const want = [true, true, false, false, true, true, false, false, true, false, false];
+// Co-readers (team-vis, u-pat) are hidden: Kim does not own doc-ok (leak 4).
+const want = [true, true, false, false, false, false, false, false, true, false, false];
 
 describe("visibility by kind", () => {
-  it("repos and projects follow their readable document; teams and people follow can-read of one", async () => {
+  it("repos and projects follow their readable document; teams and people stay hidden unless the viewer owns the document", async () => {
     // Fails if "repo", "project", "person" or "team" is mistyped: that kind would never become visible.
-    expect(await (await viewer(view, who)).seesMany(ids.map((id) => ({ id })))).toEqual(want);
+    expect(await (await viewer(as(view, who))).seesMany(ids.map((id) => ({ id })))).toEqual(want);
   });
 
   it("gives the same answers when the caller passes kinds in", async () => {
     const byPrefix: Record<string, string> = { repo: "repo", proj: "project", team: "team", u: "person", doc: "document" };
     const kinds = (id: string) => byPrefix[id.split("-")[0] ?? ""];
     const items = ids.map((id) => ({ id, kind: kinds(id) }));
-    expect(await (await viewer(view, who)).seesMany(items)).toEqual(want);
+    expect(await (await viewer(as(view, who))).seesMany(items)).toEqual(want);
   });
 
   it("trusts a passed kind over the stored one: a node tagged channel stays hidden", async () => {
     // With the hint dropped the store lookup would say "document" and show it.
-    expect(await (await viewer(view, who)).seesMany([{ id: "doc-ok", kind: "channel" }])).toEqual([false]);
+    expect(await (await viewer(as(view, who))).seesMany([{ id: "doc-ok", kind: "channel" }])).toEqual([false]);
   });
 
   it("a node missing from the store is not visible even when the caller names a kind", async () => {
-    expect(await (await viewer(view, who)).sees("ghost")).toBe(false);
-    expect(await (await viewer(view, who)).sees("ghost", "document")).toBe(false);
+    expect(await (await viewer(as(view, who))).sees("ghost")).toBe(false);
+    expect(await (await viewer(as(view, who))).sees("ghost", "document")).toBe(false);
   });
 
   it("a user with no node in the store sees nothing, not even themselves", async () => {
-    expect(await (await viewer(view, { tenant: ORG, user: "u-nobody" })).sees("u-nobody")).toBe(false);
+    expect(await (await viewer(as(view, { tenant: ORG, user: "u-nobody" }))).sees("u-nobody")).toBe(false);
   });
 
   it("ids are opaque: a readable document named 'Stryker was here' does not unlock a channel or an unreadable repo", async () => {
@@ -70,6 +71,6 @@ describe("visibility by kind", () => {
     edge(store, ORG, "team-k", "can-read", "Stryker was here");
     node(store, ORG, "chan-k", "channel", "chatter");
     const items = ["Stryker was here", "chan-k", "repo-x"].map((id) => ({ id }));
-    expect(await (await viewer(view, who)).seesMany(items)).toEqual([true, false, false]);
+    expect(await (await viewer(as(view, who))).seesMany(items)).toEqual([true, false, false]);
   });
 });

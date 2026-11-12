@@ -1,14 +1,14 @@
 import type { GraphStore } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { type GraphViewPage, visibleGraph } from "../../../src/index.js";
-import { chain, edgeKeys, KEY, openStore } from "../../support/store.js";
+import { ALLOW, chain, edgeKeys, KEY, LIMITS, openStore } from "../../support/store.js";
 
 /** Follows `next` until the last page and returns every page. */
 async function allPages(store: GraphStore, limit: number): Promise<GraphViewPage[]> {
-  const pages = [await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u", limit })];
+  const pages = [await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u", limit })];
   let next = pages[0]?.next;
   while (next !== undefined) {
-    const page = await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u", limit, cursor: next });
+    const page = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u", limit, cursor: next });
     pages.push(page);
     next = page.next;
   }
@@ -19,7 +19,7 @@ describe("rule 3: cursor paging on node id", () => {
   it("pages walk the nodes in id order and together equal the single-page answer", async () => {
     const store = openStore();
     chain(store, 24);
-    const whole = await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" });
+    const whole = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u" });
     const pages = await allPages(store, 10);
     expect(pages.map((p) => p.nodes.length)).toEqual([10, 10, 5]);
     expect(pages.flatMap((p) => p.nodes)).toEqual(whole.nodes);
@@ -40,7 +40,9 @@ describe("rule 3: cursor paging on node id", () => {
       }
       all.push(...page.edges);
     }
-    expect(edgeKeys(all)).toEqual(edgeKeys((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" })).edges));
+    expect(edgeKeys(all)).toEqual(
+      edgeKeys((await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u" })).edges),
+    );
     expect(new Set(edgeKeys(all)).size).toBe(all.length);
   });
 
@@ -58,7 +60,7 @@ describe("rule 3: cursor paging on node id", () => {
   it("the last page has no next; a page that ends exactly at the end has none either", async () => {
     const store = openStore();
     chain(store, 9);
-    expect((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u", limit: 10 })).next).toBeUndefined();
+    expect((await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u", limit: 10 })).next).toBeUndefined();
     expect((await allPages(store, 5)).map((p) => p.next === undefined)).toEqual([false, true]);
   });
 });

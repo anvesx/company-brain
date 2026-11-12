@@ -9,7 +9,7 @@ export const MAX_CANDIDATES = 4096;
 const TOP_UP = 1000;
 const ALL: NodeKind[] = ["document", "person", "team", "project", "repo", "channel", "ticket"];
 // Channels and tickets are never visible, so the store skips them. The rest need an edge walk, which is async: done here.
-const NEEDS_CHECK = new Set<string>(["person", "team", "project", "repo"]);
+const NEEDS_CHECK = new Set<string>(["document", "person", "team", "project", "repo"]);
 
 /**
  * Titles that match and that the caller may see, at most `limit`, in the order they were stored.
@@ -23,7 +23,7 @@ const NEEDS_CHECK = new Set<string>(["person", "team", "project", "repo"]);
 export async function search(ctx: Ctx, args: { query: string; kinds?: string[] | undefined; limit: number; cursor?: string | undefined }) {
   if (args.query.trim() === "") throw new ToolFailure("INVALID_ARGUMENT", "query must not be blank");
   const { store, caller } = ctx;
-  const can = await viewer(store, caller, undefined, true);
+  const can = await viewer(ctx);
   const found: GraphNode[] = [];
   let next = args.cursor === undefined ? undefined : Number(args.cursor);
   let budget = MAX_CANDIDATES;
@@ -40,9 +40,8 @@ export async function search(ctx: Ctx, args: { query: string; kinds?: string[] |
     });
     first = false;
     budget -= page.examined;
-    // The store already checked documents; the other kinds are checked here, all of this scan's rows in one batch.
-    const others = await can.seesMany(page.nodes.filter((n) => n.kind !== "document").map((n) => ({ id: n.id, kind: n.kind })));
-    const seen = page.nodes.map((n) => n.kind === "document" || others.shift() === true);
+    // The store only narrows documents to ones a principal can read; the shared gate decides, every row in one batch.
+    const seen = await can.seesMany(page.nodes.map((n) => ({ id: n.id, kind: n.kind })));
     next = page.next;
     for (const [i, n] of page.nodes.entries()) {
       if (!seen[i]) continue;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { visibleGraph } from "../../../src/index.js";
-import { edge, edgeKeys, KEY, node, openStore, write } from "../../support/store.js";
+import { ALLOW, edge, edgeKeys, KEY, LIMITS, node, openStore, write } from "../../support/store.js";
 
 /** alice and bob read doc d1, which belongs to project p1. bob and alice also hold can-read edges to projects. */
 function world() {
@@ -30,13 +30,13 @@ function world() {
 
 describe("rule 1: edges between visible non-documents", () => {
   it("a can-read edge from a visible reader to a visible project is sent", async () => {
-    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" })).edges);
-    expect(keys).toContain("bob -can-read-> p1");
+    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice" })).edges);
+    expect(keys.some((k) => k.startsWith("bob "))).toBe(false); // bob is only a co-reader of a company document (leak 4)
     expect(keys).toContain("alice -can-read-> p1");
   });
 
   it("a can-read edge to an end that is not visible is still absent, and no edge is sent twice", async () => {
-    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, tenant: "t1", user: "alice" })).edges);
+    const keys = edgeKeys((await visibleGraph(world(), { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice" })).edges);
     expect(keys.some((k) => k.includes("p-hidden"))).toBe(false);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -57,7 +57,9 @@ describe("rule 1: aliases of the caller", () => {
 
   it("sees what an alias can read, and what the alias's teams can read, only when the alias is given", async () => {
     const ids = async (aliases?: string[]) =>
-      (await visibleGraph(withAlias(), { cursorKey: KEY, tenant: "t1", user: "alice", ...(aliases && { aliases }) })).nodes.map((n) => n.id);
+      (
+        await visibleGraph(withAlias(), { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice", ...(aliases && { aliases }) })
+      ).nodes.map((n) => n.id);
     expect(await ids()).not.toContain("d2");
     expect(await ids(["ann@x.io"])).toEqual(expect.arrayContaining(["d2", "d3", "eng"]));
     expect(await ids(["someone-else"])).not.toContain("d2");

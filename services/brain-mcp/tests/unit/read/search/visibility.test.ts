@@ -1,19 +1,19 @@
 import { toAsync } from "@anvesx/graph-store";
 import { afterAll, describe, expect, it } from "vitest";
 import { search } from "../../../../src/tools/read/search.js";
-import { edge, node, tempStore } from "../../../support/graph.js";
+import { as, edge, node, tempStore } from "../../../support/graph.js";
 
 // brain.search against a real store file. Ada reads through team-eng; every "zeta" title below matches the query.
 const store = tempStore();
 const T = "org-s";
-const ctx = { store: toAsync(store), caller: { tenant: T, user: "u-ada" }, accounts: async () => [] };
+const ctx = as(toAsync(store), { tenant: T, user: "u-ada" });
 const ids = async (args: Partial<Parameters<typeof search>[1]> = {}) => (await search(ctx, { query: "zeta", limit: 20, ...args })).nodes.map((n) => n.id);
 afterAll(() => store.close());
 
 node(store, T, "u-ada", "person", "Ada");
 node(store, T, "team-eng", "team", "Engineering");
 edge(store, T, "u-ada", "member-of", "team-eng");
-node(store, T, "doc-vis", "document", "zeta visible doc");
+node(store, T, "doc-vis", "document", "zeta visible doc", 1000, { zone: "company", owner: "u-ada" }); // Ada owns it, so its readers show
 edge(store, T, "team-eng", "can-read", "doc-vis");
 node(store, T, "doc-hid", "document", "zeta hidden doc"); // nobody Ada acts for can read it
 // Each kind has one node Ada may see (tied to doc-vis) and one she may not (no edges at all).
@@ -55,5 +55,15 @@ describe("brain.search visibility", () => {
     // Insertion order is doc-vis, ..., so a document ahead of a hidden person must not shift the person's answer.
     const first = await ids({ kinds: ["document", "person"] });
     expect(first.sort()).toEqual(["doc-vis", "person-vis"]);
+  });
+});
+
+describe("brain.search readers (leak 4)", () => {
+  it("never returns a co-reader of a document the caller only reads", async () => {
+    node(store, T, "doc-co", "document", "omega shared doc");
+    edge(store, T, "team-eng", "can-read", "doc-co");
+    node(store, T, "person-co", "person", "omega co-reader");
+    edge(store, T, "person-co", "can-read", "doc-co");
+    expect(await ids({ query: "omega" })).toEqual(["doc-co"]);
   });
 });

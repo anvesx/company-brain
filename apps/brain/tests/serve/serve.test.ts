@@ -38,7 +38,7 @@ describe("brain serve on Postgres", () => {
   it("serves the graph from Postgres and refuses a request without a session", async (ctx) => {
     if (!running || !me) return ctx.skip();
     const ok = await fetch(`${base}/v1/documents`, { headers: { cookie: me.cookie } });
-    expect((await ok.json()).documents.map((d: { id: string }) => d.id)).toEqual(["d1"]);
+    expect((await ok.json()).documents.map((d: { id: string }) => d.id)).toEqual([]); // no BRAIN_USER_TOKENS_FILE: nothing can be rechecked at its source, so the gate hides the document (fail closed)
     expect((await fetch(`${base}/v1/documents`)).status).toBe(401);
     // The image test (tools/deploy) runs this same flow against the container; a second person must see nothing of the first.
     const other = await signUp(base, db?.url ?? "");

@@ -1,19 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { AsyncGraphStore } from "@anvesx/graph-store";
 import type { Caller } from "@anvesx/identity";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bearerOnly, type Protect } from "../access/bearer.js";
+import type { Ctx } from "../tools/schema.js";
 import { createBrainServer } from "./build.js";
 import { createSessions } from "./sessions.js";
 
-export interface BrainMcpDeps {
-  store: AsyncGraphStore;
+export interface BrainMcpDeps extends Omit<Ctx, "caller" | "aliases"> {
   /** Identity's guard: answers 401 with the challenge unless the bearer token is valid. */
   protect: Protect;
-  accounts: (user: string) => Promise<Record<string, unknown>[]>;
+  aliases?: Ctx["aliases"];
   limits?: { sessions: number; body: number };
 }
 
@@ -63,7 +62,7 @@ export function mountBrainMcp(app: Hono, deps: BrainMcpDeps): void {
     if (c.req.method === "POST" && body === undefined) return fail(c, 400, -32700, "parse error");
     if (![body].flat().some(isInitializeRequest)) return fail(c, 400, -32600, "Mcp-Session-Id header is required");
 
-    const server = createBrainServer({ store: deps.store, caller, accounts: deps.accounts });
+    const server = createBrainServer({ ...deps, caller, aliases: deps.aliases ?? (async () => []) });
     const transport: StreamableHTTPTransport = new StreamableHTTPTransport({
       sessionIdGenerator: randomUUID,
       enableJsonResponse: true,

@@ -1,7 +1,7 @@
 import { toAsync } from "@anvesx/graph-store";
 import { afterAll, describe, expect, it } from "vitest";
 import { viewer } from "../../../src/access/visible.js";
-import { edge, node, T0, T1, tempStore } from "../../support/graph.js";
+import { as, edge, node, T0, T1, tempStore } from "../../support/graph.js";
 
 // Who a viewer acts for: the user plus the teams reached by member-of edges that point OUT of the user, as of asOf.
 const store = tempStore();
@@ -20,15 +20,15 @@ afterAll(() => store.close());
 
 describe("viewer principals", () => {
   it("contains only teams reached by member-of edges pointing out of the user", async () => {
-    const v = await viewer(view, { tenant: ORG, user: "u-ann" });
+    const v = await viewer(as(view, { tenant: ORG, user: "u-ann" }));
     // team-in (edge points in) and team-read (can-read edge) must not be principals.
     expect([...v.principals].sort()).toEqual(["team-late", "team-out", "u-ann"]);
   });
 
-  it("ignores memberships created after asOf, and includes them with no asOf", async () => {
-    const early = await viewer(view, { tenant: ORG, user: "u-ann" }, T0 + 100);
-    expect([...early.principals].sort()).toEqual(["team-out", "u-ann"]);
-    const now = await viewer(view, { tenant: ORG, user: "u-ann" });
+  it("uses current memberships even with an old asOf (leak 5), so a later join counts", async () => {
+    const early = await viewer(as(view, { tenant: ORG, user: "u-ann" }), T0 + 100);
+    expect([...early.principals].sort()).toEqual(["team-late", "team-out", "u-ann"]);
+    const now = await viewer(as(view, { tenant: ORG, user: "u-ann" }));
     expect(now.principals.has("team-late")).toBe(true);
   });
 });

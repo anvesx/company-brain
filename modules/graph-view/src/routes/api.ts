@@ -1,5 +1,6 @@
 import { GraphError } from "@anvesx/graph-store";
 import { type Caller, IdentityError, type IdentityPort } from "@anvesx/identity";
+import type { Recheck, RecheckLimits } from "@anvesx/visibility/gate";
 import type { Hono } from "hono";
 import { checkKey, digits } from "../query/limits.js";
 import { type Aliases, visibleGraph } from "../query/page.js";
@@ -13,7 +14,14 @@ const NO_STORE = { "cache-control": "no-store" };
  */
 export function mountApi(
   app: Hono,
-  { store, port, aliases, cursorKey }: { store: ViewStore; port: IdentityPort; aliases?: Aliases; cursorKey: Uint8Array },
+  {
+    store,
+    port,
+    aliases,
+    cursorKey,
+    recheck,
+    recheckLimits,
+  }: { store: ViewStore; port: IdentityPort; aliases?: Aliases; cursorKey: Uint8Array; recheck?: Recheck; recheckLimits?: RecheckLimits },
 ): void {
   checkKey(cursorKey); // fail at mount, not on the first "Load more"
   app.get("/v1/graph", async (c) => {
@@ -30,6 +38,8 @@ export function mountApi(
     try {
       const query = {
         cursorKey,
+        recheck,
+        recheckLimits,
         tenant: caller.tenant,
         user: caller.user,
         aliases: await aliases?.(caller.user),
