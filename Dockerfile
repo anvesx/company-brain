@@ -11,6 +11,7 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.cjs ./
 COPY apps/brain/package.json ./apps/brain/package.json
 COPY apps/connections/package.json ./apps/connections/package.json
+COPY modules/graph-view/package.json ./modules/graph-view/package.json
 COPY features/change-cursor/package.json ./features/change-cursor/package.json
 COPY features/connector-kit/package.json ./features/connector-kit/package.json
 COPY features/core-types/package.json ./features/core-types/package.json
