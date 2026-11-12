@@ -19,7 +19,9 @@ COPY features/identity/package.json ./features/identity/package.json
 COPY features/query-router/package.json ./features/query-router/package.json
 COPY features/source-trust/package.json ./features/source-trust/package.json
 COPY features/zone-policy/package.json ./features/zone-policy/package.json
+COPY services/brain-mcp/package.json ./services/brain-mcp/package.json
 COPY services/graph-sync/package.json ./services/graph-sync/package.json
+COPY services/token-refresh/package.json ./services/token-refresh/package.json
 COPY tools/deploy/package.json ./tools/deploy/package.json
 COPY tools/e2e/package.json ./tools/e2e/package.json
 COPY tools/fake-guard/package.json ./tools/fake-guard/package.json

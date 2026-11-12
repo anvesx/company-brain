@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkFanout } from "../../src/checks/fanout.ts";
+import { checkFanout } from "../../src/checks/folders.ts";
 import { cleanFixtures, fixture } from "../support/fixture.ts";
 
 afterEach(cleanFixtures);

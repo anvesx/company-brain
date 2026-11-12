@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkReadmes } from "../../src/checks/readme.ts";
+import { checkReadmes } from "../../src/checks/folders.ts";
 import { cleanFixtures, fixture } from "../support/fixture.ts";
 
 afterEach(cleanFixtures);
