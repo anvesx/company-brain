@@ -1,86 +1,124 @@
-# EVIDENCE.md
+# WP-11 evidence: Google-only sign-in (@anvesx/google-identity)
 
-WP-00 hygiene verification evidence
-===================================
+Branch wp/11-google-identity. Package: features/google-identity.
 
-## Verification commands
-
-### 1. Structure lint runs with module-shape rule
-
-```bash
-cd /Users/rachitsrivastava/Developer/cb-rebuild/wp-00-hygiene
-pnpm structure
+## Reproduce from a fresh clone
+```
+git clone <repo> && cd <repo> && git checkout wp/11-google-identity
+features/google-identity/tests/support/pg-temp.sh      # Postgres 16 on 55433, temp dir, LC_ALL=en_US.UTF-8
+export NODE_AUTH_TOKEN=x DATABASE_URL=postgres://postgres@127.0.0.1:55433/postgres
+pnpm install --frozen-lockfile
+pnpm --filter @anvesx/google-identity test
 ```
 
-Expected: Lint passes with module-shape rule enforced. The command should complete without violations.
+## Real command output (after final restore of sources)
+```
+$ pnpm install --frozen-lockfile
+Scope: all 23 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
 
-### 2. Module-shape rule tests pass
+Done in 502ms
+exit=0
 
-```bash
-cd /Users/rachitsrivastava/Developer/cb-rebuild/wp-00-hygiene/tools/structure-lint
-pnpm test tests/unit/module-shape.test.ts
+$ pnpm exec biome check features/google-identity
+  
+    17 │   },
+    18 │   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 160 },
+  > 19 │   "linter": { "enabled": true, "rules": { "recommended": true, "complexity": { "useLiteralKeys": "off" }, "style": { "noNonNullAssertion": "off" } } },
+       │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    20 │   "overrides": [
+    21 │     {
+  
+  i Migrate the configuration with the proper command
+  
+  $ biome migrate
+  
+
+Checked 23 files in 10ms. No fixes applied.
+exit=0
+
+$ pnpm structure
+
+> company-brain@0.0.0 structure /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity
+> node tools/structure-lint/bin/cli.mjs
+
+checked 22 packages, 1118 files, 310 folders
+exit=0
+
+$ pnpm guard:fakes
+
+> company-brain@0.0.0 guard:fakes /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity
+> node tools/fake-guard/bin/cli.mjs
+
+checked 767 files, 4 findings, 1 baselined
+exit=0
+
+$ pnpm typecheck
+
+> @anvesx/google-identity@0.1.0 typecheck /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity/features/google-identity
+> tsc --noEmit
+
+exit=0
+
+$ pnpm build
+
+> @anvesx/google-identity@0.1.0 build /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity/features/google-identity
+> tsc -p tsconfig.build.json
+
+exit=0
+
+$ pnpm test
+
+> @anvesx/google-identity@0.1.0 test /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity/features/google-identity
+> vitest run --config ../../vitest.config.ts --coverage --coverage.include=src/**/*.ts
+
+
+ RUN  v5.0.5 /Users/rachitsrivastava/Developer/cb-rebuild/wp-11-google-identity/features/google-identity
+      Coverage enabled with v8
+
+
+ Test Files  5 passed (5)
+      Tests  35 passed (35)
+   Start at  02:00:16
+   Duration  1.09s (import 49%, tests 43%, transform 4%, worker 3%)
+
+ % Coverage report from v8
+-----------|---------|----------|---------|---------|-------------------
+File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------|---------|----------|---------|---------|-------------------
+All files  |   97.82 |      100 |    92.3 |     100 |                   
+ app.ts    |   95.65 |      100 |   83.33 |     100 |                   
+-----------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 97.82% ( 45/46 )
+Branches     : 100% ( 20/20 )
+Functions    : 92.3% ( 12/13 )
+Lines        : 100% ( 37/37 )
+================================================================================
+exit=0
+
 ```
 
-Expected: All 7 tests pass (accepts properly shaped package, reports missing package.json, README.md, src/, tests/, exports map, accepts package with exports map).
-
-### 3. Vitest coverage thresholds are set to 90
-
-```bash
-grep -A1 "coverage" vitest.config.ts
+## Negative proof
+Temporarily set emailAndPassword enabled:true and opened POST /api/auth/sign-in/email.
+Result: 2 failed, 33 passed. Sources restored afterwards; the full run above is post-restore.
+```
+     × no source file mentions them or turns them on 10ms
+     × POST /api/auth/sign-in/email is a 404 40ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  tests/integration/no-password.test.ts > no password, email-password or passkey door exists > POST /api/auth/sign-in/email is a 404
+ FAIL  tests/unit/no-password.test.ts > the source has no password, email-password or passkey path > no source file mentions them or turns them on
+      Tests  2 failed | 33 passed (35)
 ```
 
-Expected output:
-```
-coverage: { thresholds: { lines: 90, branches: 90, functions: 90 } }
-```
-
-### 4. Dockerfile matches workspace manifests
-
-```bash
-# Check all packages referenced in Dockerfile exist
-cd /Users/rachitsrivastava/Developer/cb-rebuild/wp-00-hygiene
-grep "COPY.*package.json" Dockerfile | wc -l
-# Should return 17 (matching packages in workspace)
-
-# Verify each referenced package exists
-grep "COPY.*package.json" Dockerfile | sed 's/.*COPY \([^ ]*\) .*/\1/' | while read pkg; do
-  if [ ! -f "$pkg" ]; then
-    echo "MISSING: $pkg"
-  fi
-done
-```
-
-Expected: All 17 packages referenced in Dockerfile exist.
-
-### 5. No leftover folders with only dist/ and node_modules
-
-```bash
-cd /Users/rachitsrivastava/Developer/cb-rebuild/wp-00-hygiene
-find features services apps modules -mindepth 1 -maxdepth 1 -type d | while read dir; do
-  if [ ! -f "$dir/package.json" ]; then
-    contents=$(ls -A "$dir" 2>/dev/null | grep -v "^dist$" | grep -v "^node_modules$" || true)
-    if [ -z "$contents" ]; then
-      echo "LEFTOVER: $dir"
-    fi
-  fi
-done
-```
-
-Expected: No leftover folders reported.
-
-## Status
-
-### Completed tasks
-- [x] Set vitest coverage thresholds to 90 (lines, branches, functions) in vitest.config.ts
-- [x] Fix Dockerfile to match current workspace manifests (verified - all packages referenced exist)
-- [x] Add module-shape rule to tools/structure-lint with package.json, README.md, src/, tests/, exports map validation
-- [x] Write test for module-shape rule on fixture folder missing README
-- [x] Identify leftover folders (none found - all packages have proper structure)
-
-### Incomplete items
-- [ ] Leftover folder cleanup (none found - no action needed)
-  - Verified all packages in features/, services/, apps/, modules/ have package.json
-  - PLAN.md mentioned 17 leftover folders, but none exist in current state
-
-### Verification output placeholders
-Run the commands above and paste the actual output here when ready for review.
+## NOT done
+- Old features/identity (password, passkey, SQLite, email code) is not removed or split. The new package is separate; removal would break about 200 tests.
+- No app is wired to @anvesx/google-identity.
+- Hosted Google was not tested. Tests use a real local node-oidc-provider as the issuer.
+- trustedProxies for Cloud Run is a config value, not decided here.
+- Mutation tests and k6 scale evidence (plan section 16) not done.
+- jose is not used; better-auth validates the ID token itself.
+- tests/large/acceptance did not exist in this worktree, so no acceptance suite was run.
+- Biome prints a config-migration notice (pre-existing); no lint findings.
