@@ -24,6 +24,13 @@ describe.skipIf(skip)("per-tenant back-pressure", () => {
     expect(await jobs.enqueue("bp", "quiet", {})).toBeTypeOf("string");
   });
 
+  test("the guard is served by a (name, group_id, state) index, not a scan of the whole job table", async () => {
+    const { rows } = await db.pool.query(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'pgboss' AND tablename = 'job' AND indexname = 'job_backlog_guard'",
+    );
+    expect(rows[0].indexdef).toContain("(name, group_id, state)");
+  });
+
   test("depth reports queued jobs and the dead-letter list starts empty", async () => {
     expect(await jobs.deadLetters("bp")).toEqual([]);
     const depth = await jobs.depth("bp");

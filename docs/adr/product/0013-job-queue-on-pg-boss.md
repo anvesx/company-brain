@@ -34,7 +34,12 @@ stops fitting, only that file changes.
 
 ## Consequences
 
-- Delivery is at least once. A handler that finished its side effect and died before the ack runs
-  again, so handlers must be idempotent. "Exactly once" in the checklist means one completion.
-- Idempotency lasts as long as the job row is retained (7 days after completion by default).
+- Two guarantees, not one. Delivery is at least once: a handler that finished its side effect and
+  died before the ack runs again, so handlers must be idempotent. "Exactly once" in the checklist
+  means one completion.
+- Enqueue de-duplication is separate. A repeated key returns null while the first job row is
+  retained: `dedupeWindowSeconds` in the queue policy, default 7 days after completion (pg-boss
+  `deleteAfterSeconds`). Inside the window the repeat never runs; after it, it is new work.
+- The back-pressure guard needs a `(name, group_id, state)` index; pg-boss has none, so the queue
+  creates `job_backlog_guard` at boot when `maxBacklogPerTenant` is set.
 - pg-boss owns its tables in a separate schema (`pgboss`) and runs its own migrations on start.

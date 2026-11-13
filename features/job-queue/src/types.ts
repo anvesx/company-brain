@@ -7,6 +7,12 @@ export type QueuePolicy = {
   expireSeconds?: number;
   /** A worker that stops heartbeating for this long (min 10) is presumed dead and its job is retried. */
   recoverySeconds?: number;
+  /**
+   * How long a finished job's id keeps refusing the same idempotency key (default 7 days). This is
+   * enqueue de-duplication, not delivery: inside the window a repeated key returns null and never
+   * runs again; after it the key is accepted as new work. It is the queue's completed-job retention.
+   */
+  dedupeWindowSeconds?: number;
 };
 
 export type Job<T> = { id: string; tenant: string; data: T; attempt: number };
@@ -29,7 +35,11 @@ export class BackpressureError extends Error {
 export interface JobQueue {
   /** Create the queue and its dead-letter queue. Safe to call on every boot. */
   register(queue: string, policy?: QueuePolicy): Promise<void>;
-  /** Returns the job id, or null when the idempotency key was already used for this tenant. */
+  /**
+   * Returns the job id, or null when the idempotency key was already used for this tenant within the
+   * queue's dedupe window (`dedupeWindowSeconds`). Delivery of an accepted job is separate and
+   * at least once: a handler that dies before its ack runs again, so handlers must be idempotent.
+   */
   enqueue(queue: string, tenant: string, data: object, options?: EnqueueOptions): Promise<string | null>;
   enqueueMany(queue: string, tenant: string, items: Array<{ data: object; key?: string }>): Promise<number>;
   work<T extends object>(queue: string, handler: Handler<T>, options?: WorkOptions): Promise<void>;

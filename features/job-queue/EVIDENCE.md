@@ -1,7 +1,7 @@
 # WP-13 job queue: evidence
 
 Branch `wp/13-job-queue`. Package `@anvesx/job-queue` in `features/job-queue`. Builder: Claude mid-engineer.
-Reviewer: a different vendor, still to write PASS or FAIL below.
+Reviewer: qwen3-coder-next, verdict CHANGES (`todo/REVIEW-qwen.md`); round 1 handled at the end of this file.
 
 ## Licence and registry check (read, not assumed)
 
@@ -117,9 +117,12 @@ JQ-04: `rg -l "from .pg-boss" features services apps` lists only `features/job-q
    killed handler had not recorded completion. A handler that finishes its side effect and dies before the
    ack runs again.
 6. Crash detection is not instant: the minimum heartbeat window is 10 s, plus the monitor interval.
-7. The idempotency window equals job-row retention (7 days after completion by default).
-8. The back-pressure check counts waiting jobs up to the limit and still walks the index past other tenants'
-   rows, so it is not O(1) when one huge shared backlog exists. The fairness test enqueues without that guard.
+7. Enqueue de-duplication lasts `dedupeWindowSeconds` (queue policy, default 7 days after completion). Inside it
+   a repeated key returns null and never runs; after it the key is new work. This is separate from delivery,
+   which is at least once (item 5). Tests: `idempotent.test.ts` (inside the window, and a 1 s window closing).
+8. The back-pressure check was not O(1): pg-boss has no `(name, group_id, state)` index, so the planner scanned
+   the job table. The queue now creates `job_backlog_guard` at boot when `maxBacklogPerTenant` is set. The
+   count is bounded by the limit; see "Review round 1" for the plan before and after.
 9. The cron test waits for a real minute boundary (up to 150 s); it covers registration and one firing, not
    the 24 h and nightly schedules firing.
 10. No multi-node load test across machines. The three-node test runs three in-process queues on one machine.
@@ -135,3 +138,25 @@ pg_ctl -D /tmp/jq-pg-55437 -o "-p 55437 -c max_connections=300" -l /tmp/jq-pg.lo
 export DATABASE_URL=postgres://postgres@127.0.0.1:55437/postgres
 pnpm install && pnpm --filter @anvesx/job-queue test && pnpm structure && pnpm guard:fakes && pnpm deps
 ```
+
+## Review round 1 (qwen3-coder-next, verdict CHANGES; each claim checked against code)
+
+Fixed: JQ-1 (wording, `dedupeWindowSeconds`, test), JQ-2 (comment, index, EXPLAIN). Rejected with reasons:
+
+- JQ-1 "this is at-most-once": wrong. Dedupe at enqueue and redelivery after a crash are different events.
+  ADR and README already stated the 7-day window; they now name both guarantees. Its fix 2 and 3 are
+  covered by the new option. The wording was the only valid part.
+- JQ-2 "fairness test proves the walk": wrong. That test enqueues without the guard.
+- JQ-3: the 15 min and nightly schedules cannot fire inside a test; already item 9 above. Not changed.
+- JQ-4: already stated in "What these are" above (concurrency 16, batch 100; defaults 4 and 10).
+- JQ-5: `retryLimit: 0` "should retry once" is wrong (0 means no retry); the 10 s floor is tested
+  (`recoverySeconds: 2`); negative delays are pg-boss input validation, not ours.
+- JQ-6: a mixed batch (a, a, b) is tested; the filter is a Set pass, O(n), so no O(n^2) risk.
+- JQ-7: 2^64 is wrong; the id keeps 122 bits (birthday about 2^61). Documented in `ids.ts`, no test.
+- JQ-8: `stopOnSignals` has no default signal array; SIGTERM is tested through a real child process.
+- JQ-10: line counts in its table were wrong (boss.ts was 67 lines, not 75). `pnpm structure` is the check.
+
+EXPLAIN (ANALYZE, BUFFERS), 200,001 jobs in `pgboss.job` (40 tenants x 2,500, one 100,000-job whale, one
+single-job tenant), limit 1000. Before the index, the single-job tenant: Parallel Seq Scan, 4,548 buffers,
+11.0 ms. After: Index Only Scan on `job_common_name_group_id_state_idx`, 4 buffers, 0.067 ms. A 2,500-job
+tenant: Seq Scan 300 buffers, 1.8 ms before; Index Only Scan, 5 buffers, 0.167 ms after.

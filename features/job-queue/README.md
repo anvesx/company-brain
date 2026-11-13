@@ -22,7 +22,7 @@ await queue.stop(30_000); // graceful: running handlers finish first
 | --------------------- | ----------------------------------------------------------------------------------------- |
 | Retries with back-off | 5 retries, 2 s doubling up to 300 s (per-queue policy in `src/queue/map.ts`)              |
 | Dead letter           | failed-out jobs land in `<queue>_dlq`; read with `queue.deadLetters(name)`                |
-| Idempotency           | `key` becomes a deterministic job id; a repeat enqueue returns null                       |
+| Idempotency           | `key` becomes a deterministic job id; a repeat enqueue inside the dedupe window is null   |
 | Fairness              | `tenantConcurrency` caps running jobs per tenant across all nodes                         |
 | Back-pressure         | `maxBacklogPerTenant` makes `enqueue` throw `BackpressureError`                           |
 | Crash recovery        | a killed worker stops heartbeating (minimum 10 s) and its job is retried                  |
@@ -31,11 +31,13 @@ await queue.stop(30_000); // graceful: running handlers finish first
 
 ## Limits to know
 
-- Delivery is at least once. A handler that finishes its side effect and dies before the ack runs
-  again, so handlers must be idempotent.
-- The idempotency window is the retention of the job row (7 days after completion by default).
-- The back-pressure count is capped at the limit but still walks the group index past other
-  tenants' waiting rows, so it is not O(1) on a very large shared backlog.
+- Two separate guarantees. Enqueue de-duplication: a repeated `key` returns null and never runs
+  again while the first job row is retained, `dedupeWindowSeconds` (queue policy, default 7 days
+  after completion); after the window the same key is new work. Delivery: an accepted job runs at
+  least once. A handler that finishes its side effect and dies before the ack runs again, so
+  handlers must be idempotent. Neither one is exactly-once.
+- Back-pressure reads at most `maxBacklogPerTenant` index entries, using the
+  `job_backlog_guard (name, group_id, state)` index created at boot when the limit is set.
 
 ## Test
 

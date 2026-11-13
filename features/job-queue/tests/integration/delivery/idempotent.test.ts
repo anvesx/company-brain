@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createJobQueue, type JobQueue } from "../../../src/index.ts";
 import { freshDatabase, skip, type TestDb } from "../support/db.ts";
-import { until } from "../support/wait.ts";
+import { sleep, until } from "../support/wait.ts";
 
 let db: TestDb;
 let jobs: JobQueue;
@@ -32,14 +32,31 @@ describe.skipIf(skip)("idempotency keys", () => {
     expect([...seen].sort()).toEqual(["acme", "globex"]);
   });
 
-  test("a key repeated after the job completed is still refused", async () => {
+  test("a key re-enqueued after completion, inside the dedupe window, returns null and never runs again", async () => {
     await jobs.register("idem-late");
     let runs = 0;
     await jobs.work("idem-late", async () => void runs++);
     await jobs.enqueue("idem-late", "acme", {}, { key: "k" });
     await until(() => runs === 1, 15_000, "first run");
     expect(await jobs.enqueue("idem-late", "acme", {}, { key: "k" })).toBeNull();
+    await sleep(1500);
+    expect(runs).toBe(1);
   });
+
+  test("dedupeWindowSeconds bounds the window: once the completed row is purged the key is accepted again", async () => {
+    await jobs.register("idem-short", { dedupeWindowSeconds: 1 });
+    let runs = 0;
+    await jobs.work("idem-short", async () => void runs++);
+    await jobs.enqueue("idem-short", "acme", {}, { key: "k" });
+    await until(() => runs === 1, 15_000, "first run");
+    let again = await jobs.enqueue("idem-short", "acme", {}, { key: "k" });
+    for (let tries = 0; again === null && tries < 600; tries++) {
+      await sleep(100);
+      again = await jobs.enqueue("idem-short", "acme", {}, { key: "k" });
+    }
+    expect(again).toBeTypeOf("string");
+    await until(() => runs === 2, 15_000, "second run");
+  }, 90_000);
 
   test("enqueueMany drops repeated keys inside one batch and across batches", async () => {
     await jobs.register("idem-many");

@@ -24,6 +24,13 @@ describe("queueOptions", () => {
   });
 });
 
+describe("queueOptions dedupe window", () => {
+  test("maps dedupeWindowSeconds to the queue's completed-job retention, 7 days when unset", () => {
+    expect(queueOptions("q", { dedupeWindowSeconds: 3600 })).toMatchObject({ deleteAfterSeconds: 3600 });
+    expect(queueOptions("q", {})).toMatchObject({ deleteAfterSeconds: 7 * 86_400 });
+  });
+});
+
 describe("toJob", () => {
   test("maps the group to the tenant, and group-less jobs to system", () => {
     expect(toJob({ id: "a", data: {}, retryCount: 3, groupId: "acme" })).toEqual({ id: "a", tenant: "acme", data: {}, attempt: 3 });

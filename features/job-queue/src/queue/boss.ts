@@ -1,5 +1,5 @@
 import { PgBoss } from "pg-boss";
-import { guardBacklog, type Sql } from "../ops/backlog.ts";
+import { ensureBacklogIndex, guardBacklog, type Sql } from "../ops/backlog.ts";
 import type { EnqueueOptions, Handler, JobQueue, QueuePolicy, WorkOptions } from "../types.ts";
 import { dlqName, idempotentId } from "./ids.ts";
 import { queueOptions, type RawDead, toDeadLetter } from "./map.ts";
@@ -9,7 +9,11 @@ export type Options = { connectionString: string; schema?: string; maxBacklogPer
 
 type Item = { data: object; key?: string };
 
-/** The only file that imports the queue library. Everything else sees the JobQueue port. */
+/**
+ * The only file that imports the queue library. Everything else sees the JobQueue port.
+ * Two separate guarantees: enqueue is de-duplicated by key while the job row is retained
+ * (`dedupeWindowSeconds`, null returned); delivery of an accepted job is at least once.
+ */
 export async function createJobQueue(options: Options): Promise<JobQueue> {
   const schema = options.schema ?? "pgboss";
   if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error(`invalid schema name: ${schema}`);
@@ -21,6 +25,7 @@ export async function createJobQueue(options: Options): Promise<JobQueue> {
   });
   boss.on("error", (error) => console.error("job-queue", error));
   await boss.start();
+  if (options.maxBacklogPerTenant !== undefined) await ensureBacklogIndex(boss.getDb() as Sql, schema);
   const guard = async (queue: string, tenant: string) => {
     if (options.maxBacklogPerTenant !== undefined) await guardBacklog(boss.getDb() as Sql, schema, queue, tenant, options.maxBacklogPerTenant);
   };
