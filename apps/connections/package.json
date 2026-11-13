@@ -32,6 +32,8 @@
   "license": "MIT",
   "private": true,
   "devDependencies": {
+    "@types/culori": "4.0.1",
+    "culori": "4.0.2",
     "@types/oidc-provider": "^9.5.0",
     "@types/pg": "8.23.1",
     "oidc-provider": "^9.8.0"

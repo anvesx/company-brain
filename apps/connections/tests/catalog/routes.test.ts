@@ -12,12 +12,12 @@ describe("GET and POST /v1/catalog", () => {
     expect((await s.call("GET", "/v1/catalog")).status).toBe(401);
     const r = await s.call("GET", "/v1/catalog", ann);
     const { providers } = (await r.json()) as { providers: Record<string, unknown>[] };
-    const row = (id: string, name: string, needsRepo: boolean) => ({
-      ...{ id, name, auth: "oauth2", kinds: ["oauth", "pat", "admin-token"], defaultZone: "team" },
+    const row = (id: string, name: string, category: string, needsRepo: boolean) => ({
+      ...{ id, name, category, auth: "oauth2", kinds: ["oauth", "pat", "admin-token"], defaultZone: "team" },
       ...{ custom: false, liveRecheck: true, needsRepo },
     });
     const core = providers.filter((p) => p.id === "github" || p.id === "drive");
-    expect(core).toEqual([row("github", "GitHub", true), row("drive", "Google Drive", false)]);
+    expect(core).toEqual([row("github", "GitHub", "Code", true), row("drive", "Google Drive", "Documents", false)]);
   });
   it("lets only a tenant admin register, and shows the entry to that tenant only", async () => {
     s = await boot();

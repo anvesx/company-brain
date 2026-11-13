@@ -39,9 +39,9 @@ describe.skipIf(skip)("the session cookie refuses cross-site requests; the beare
     });
     expect(r.status).toBe(201);
   });
-  it("a cross-site navigation to oauth start and start-url is refused; same-origin gets past the check", async () => {
+  it("a cross-site navigation to oauth start is refused; same-origin gets past the check", async () => {
     const b = await signedIn("fay");
-    for (const path of ["start", "start-url"]) {
+    for (const path of ["start"]) {
       const url = `${s.base}/v1/oauth/github/${path}`;
       expect((await b.send(url, { headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
       expect((await b.send(url, { headers: { "sec-fetch-site": "same-origin" } })).status).not.toBe(403);

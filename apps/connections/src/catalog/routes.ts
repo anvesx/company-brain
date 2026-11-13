@@ -4,6 +4,7 @@ import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/guard/auth.js";
 import { checkUrl } from "../net/guard.js";
 import { reservedNames } from "../oauth/providers.js";
+import { categoryOf } from "./describe.js";
 import { kindsOf } from "./kinds.js";
 import { parseCustom } from "./parse.js";
 
@@ -11,6 +12,7 @@ import { parseCustom } from "./parse.js";
 export const view = ({ manifest: m, tenant }: Listed) => ({
   id: m.id,
   name: m.name,
+  category: categoryOf(m, tenant !== undefined),
   auth: m.auth.kind,
   kinds: kindsOf(m),
   defaultZone: m.defaultZone,

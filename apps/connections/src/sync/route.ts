@@ -27,14 +27,20 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     }
     const token = accessTokenOf(cur.kind, d.store.credential(cur.tenant, cur.id) ?? "");
     if (token === undefined) return c.json({ error: "account has no usable credential" }, 409);
+    const h = d.store.health;
+    h.begin(cur.id);
     try {
       const r = await runAccountSync(d.sync, cur, token, repo, d.now() * 1000, d.catalog);
-      if ("error" in r) return c.json(r, 400);
+      if ("error" in r) return c.json(r, 400); // a bad or missing repo is the caller's input, not a failure of the connector
       d.store.setLastSync(cur.tenant, cur.id, d.now() * 1000);
+      h.ok(cur.tenant, cur.id);
       return c.json(r);
     } catch (e) {
-      return c.json({ error: "source sync failed", code: (e as { code?: string }).code ?? "UNKNOWN" }, 502);
+      const code = (e as { code?: string }).code ?? "UNKNOWN";
+      h.failed(cur.tenant, cur.id, `source sync failed (${code})`);
+      return c.json({ error: "source sync failed", code }, 502);
     } finally {
+      h.end(cur.id);
       closeStaleEdges(d, cur); // a PATCH or DELETE that landed mid-sync must not be undone by the sync's writes
     }
   });

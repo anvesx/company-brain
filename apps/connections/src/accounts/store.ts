@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { openHealth } from "./health/health.js";
 import { migrate, type Row, SCHEMA, view } from "./rows.js";
 import { open, seal } from "./rules/crypto.js";
 import { registerSecrets } from "./secrets.js";
@@ -23,6 +24,13 @@ export function openStore(path: string, key: Buffer) {
     get: (tenant: string, id: string): Account | undefined => {
       const r = row(tenant, id);
       return r && view(r);
+    },
+    /** The caller's own oauth account for this app and label, so signing in again renews it instead of adding a twin. */
+    findOauth(tenant: string, owner: string, provider: string, label: string): Account | undefined {
+      const r = db
+        .prepare("SELECT * FROM accounts WHERE tenant = ? AND owner = ? AND provider = ? AND label = ? AND kind = 'oauth' ORDER BY seq")
+        .get(tenant, owner, provider, label);
+      return r && view(r as Row);
     },
     listVisible: (c: Caller): Account[] =>
       db
@@ -60,6 +68,7 @@ export function openStore(path: string, key: Buffer) {
       const r = row(tenant, id);
       return r && open(key, id, r.secret as string);
     },
+    health: openHealth(db),
     close: (): void => db.close(),
   };
   registerSecrets(store, db, key); // the cross-tenant read lives in secrets.ts, off this type

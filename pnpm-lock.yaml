@@ -137,12 +137,18 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
     devDependencies:
+      '@types/culori':
+        specifier: 4.0.1
+        version: 4.0.1
       '@types/oidc-provider':
         specifier: ^9.5.0
         version: 9.13.1
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+      culori:
+        specifier: 4.0.2
+        version: 4.0.2
       oidc-provider:
         specifier: ^9.8.0
         version: 9.14.0
