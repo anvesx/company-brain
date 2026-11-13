@@ -16,7 +16,7 @@ import { createPending } from "./state/pending.js";
 export function oauthRoutes(d: Deps): Hono<Env> {
   const r = new Hono<Env>();
   const pending = createPending(d.now);
-  r.get("/:provider/start", requireCaller(d.secret, d.now), (c) => {
+  r.get("/:provider/start", requireCaller(d.secret, d.now, d.session), (c) => {
     const name = c.req.param("provider");
     const caller = c.get("caller");
     const m = manifestFor(d.catalog, name, caller.tenant);

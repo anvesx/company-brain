@@ -1,6 +1,5 @@
 import { googleButton } from "../../login/google.js";
 import { esc, field, hidden, page } from "../layout.js";
-import { PASSKEY_SCRIPTS, passkeySignIn } from "../passkey/view.js";
 
 export interface AuthForm {
   /** The OAuth query to continue after sign-in, empty for a plain visit. */
@@ -31,14 +30,14 @@ const withGoogle = (google?: boolean): string => (google ? `${googleButton()}\n`
 
 const alert = (error?: string): string => (error ? `<p role="alert">${esc(error)}</p>` : "");
 
-/** The sign-in page. The form posts to the server; the passkey button below it is the one script, loaded as files. */
+/** The sign-in page. The form posts to the server. */
 export const signInView = ({ query, error, email, google }: AuthForm): string =>
   page(
     "Sign in",
     `${alert(error)}<form method="post" action="/sign-in">${hidden({ oauth_query: query })}
 ${field("Email", "email", "email", "username", email)}${field("Password", "password", "password", "current-password")}
 <button type="submit">Sign in</button></form>
-${withGoogle(google)}${passkeySignIn(query)}<p>New here? <a href="/sign-up${query ? `?${esc(query)}` : ""}">Sign up</a></p>${PASSKEY_SCRIPTS}`,
+${withGoogle(google)}<p>New here? <a href="/sign-up${query ? `?${esc(query)}` : ""}">Sign up</a></p>`,
   );
 
 /** The sign-up page. The server checks the password against the breached list and shows the reason here. */

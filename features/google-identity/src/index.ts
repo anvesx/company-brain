@@ -4,7 +4,7 @@ import { authOptions, buildAuth } from "./auth.js";
 import { type IdentityInput, parseConfig } from "./config.js";
 
 export { OPEN_ROUTES } from "./app.js";
-export type { IdentityConfig, IdentityInput } from "./config.js";
+export type { IdentityConfig, IdentityInput, SignInPage } from "./config.js";
 
 /** Create the better-auth tables (user, account, session, verification, rateLimit) in Postgres. Run before serving. */
 export const migrateIdentity = async (input: IdentityInput): Promise<void> => {

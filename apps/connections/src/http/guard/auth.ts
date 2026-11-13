@@ -16,10 +16,27 @@ export function verify(header: string | undefined, secret: string, nowSeconds: n
   return Number(exp) > nowSeconds ? { user, tenant } : undefined;
 }
 
+/** The session cookie path: who the cookie is, and the one origin that may use it. */
+export type Session = { caller: (headers: Headers) => Promise<Caller | undefined>; origin: string };
+
+/** Whether a browser request may carry the cookie: never cross-site; state changes also only from the app's own origin. */
+export function cookieAllowed(req: Request, origin: string): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site === "cross-site") return false;
+  if (req.method === "GET" || req.method === "HEAD") return true;
+  const from = req.headers.get("origin");
+  return (site === null || site === "same-origin") && (from === null || from === origin);
+}
+
+/** The bearer first (service callers, unchanged), then the session cookie (people in a browser) when `session` is given. */
 export const requireCaller =
-  (secret: string, now: () => number): MiddlewareHandler<Env> =>
+  (secret: string, now: () => number, session?: Session): MiddlewareHandler<Env> =>
   async (c, next) => {
-    const caller = verify(c.req.header("authorization"), secret, now());
+    let caller = verify(c.req.header("authorization"), secret, now());
+    if (!caller && session) {
+      caller = await session.caller(c.req.raw.headers);
+      if (caller && !cookieAllowed(c.req.raw, session.origin)) return c.json({ error: "cross-site request refused" }, 403);
+    }
     if (!caller) return c.json({ error: "unauthenticated" }, 401);
     c.set("caller", caller);
     await next();

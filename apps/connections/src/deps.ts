@@ -2,6 +2,7 @@ import type { Registry } from "@anvesx/connectors";
 import type { GraphStore } from "@anvesx/graph-store";
 import type { Store } from "./accounts/store.js";
 import type { Caller } from "./accounts/types.js";
+import type { Session } from "./http/guard/auth.js";
 import type { NetPolicy } from "./net/guard.js";
 import type { OAuthProvider } from "./oauth/providers.js";
 
@@ -9,6 +10,8 @@ export type Deps = {
   store: Store;
   /** Secret that signs the `user:tenant:exp:hmac` bearer, shared with the brain app. */
   secret: string;
+  /** Who a browser session cookie belongs to, when Google sign-in is on. The bearer is tried first. */
+  session?: Session;
   /** Current time in epoch seconds. */
   now: () => number;
   /** Whether the caller is an admin of their tenant. */

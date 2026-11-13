@@ -1,9 +1,8 @@
-import { setToken, token, who } from "./api.js";
+import { signedIn, signOut, who } from "./api.js";
 import { mount } from "./dom.js";
 import { detail } from "./views/account/detail.js";
 import { add } from "./views/add.js";
 import { list } from "./views/list.js";
-import { signin } from "./views/signin.js";
 
 const view = document.getElementById("view");
 const params = new URLSearchParams(location.search);
@@ -16,9 +15,8 @@ let flash = params.has("connected")
 if (params.size > 0) history.replaceState(null, "", `/${location.hash}`);
 
 async function render() {
-  const authed = Boolean(token());
-  document.getElementById("nav").hidden = !authed;
-  if (!authed) return signin(view, render);
+  if (!(await signedIn())) return;
+  document.getElementById("nav").hidden = false;
   const { user, tenant } = who();
   document.getElementById("who").textContent = `${user} in ${tenant}`;
   const [name, id] = location.hash.slice(2).split("/");
@@ -30,10 +28,6 @@ async function render() {
   return list(view, shown);
 }
 
-document.getElementById("signout").addEventListener("click", () => {
-  setToken(null);
-  location.hash = "#/";
-  render();
-});
+document.getElementById("signout").addEventListener("click", signOut);
 addEventListener("hashchange", render);
 render();

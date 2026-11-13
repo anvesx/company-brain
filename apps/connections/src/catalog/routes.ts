@@ -22,7 +22,7 @@ export const view = ({ manifest: m, tenant }: Listed) => ({
 /** `GET /catalog` lists what the caller's tenant can connect; `POST /catalog` (tenant admin) adds a custom connector for that tenant only. */
 export function catalogRoutes(d: Deps): Hono<Env> {
   const r = new Hono<Env>();
-  r.use("*", requireCaller(d.secret, d.now));
+  r.use("*", requireCaller(d.secret, d.now, d.session));
   r.get("/", (c) => c.json({ providers: d.catalog.list(c.get("caller").tenant).map(view) }));
   r.post("/", async (c) => {
     const caller = c.get("caller");
