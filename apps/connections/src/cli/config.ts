@@ -1,5 +1,6 @@
 import { parseKey } from "../accounts/rules/crypto.js";
 import type { OAuthProvider } from "../oauth/providers.js";
+import { type LoginEnv, loginFromEnv } from "./login-env.js";
 import { oauthFromEnv } from "./oauth-env.js";
 
 type Env = Record<string, string | undefined>;
@@ -13,6 +14,8 @@ export type Config = {
   port: number;
   oauth: Record<string, OAuthProvider>;
   tokensFile?: string;
+  /** Google sign-in for the page. Absent: no page, only the bearer API. */
+  login?: LoginEnv;
   /** Development only: lets a custom connector on this machine be registered over http. */
   allowLoopback: boolean;
   /** GitHub REST base URL, for GitHub Enterprise or a test server. */
@@ -44,6 +47,8 @@ export function parseConfig(env: Env): Config {
   if (!/^\d{1,5}$/.test(rawPort) || port > 65535) fail("CONNECTIONS_PORT must be an integer from 0 to 65535");
   const oauth = oauthFromEnv(env);
   errors.push(...oauth.errors);
+  const login = loginFromEnv(env);
+  errors.push(...login.errors);
   if (errors.length > 0) throw new Error(errors.join("; "));
   return {
     key,
@@ -53,6 +58,7 @@ export function parseConfig(env: Env): Config {
     admins: new Set(list),
     port,
     oauth: oauth.providers,
+    ...(login.login && { login: login.login }),
     allowLoopback: env.CONNECTIONS_ALLOW_LOOPBACK === "1",
     ...(env.CONNECTIONS_GITHUB_API_URL && { githubApiUrl: env.CONNECTIONS_GITHUB_API_URL }),
     ...(env.CONNECTIONS_TOKENS_FILE && { tokensFile: env.CONNECTIONS_TOKENS_FILE }),

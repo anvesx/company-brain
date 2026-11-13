@@ -9,6 +9,8 @@ export type Deps = {
   store: Store;
   /** Secret that signs the `user:tenant:exp:hmac` bearer, shared with the brain app. */
   secret: string;
+  /** Who a browser session cookie belongs to, when Google sign-in is on. The bearer is tried first. */
+  session?: (headers: Headers) => Promise<Caller | undefined>;
   /** Current time in epoch seconds. */
   now: () => number;
   /** Whether the caller is an admin of their tenant. */

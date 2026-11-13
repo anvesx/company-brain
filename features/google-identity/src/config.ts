@@ -21,8 +21,11 @@ const schema = z
     if (cfg.trustedProxies.length === 0) ctx.addIssue({ code: "custom", path: ["trustedProxies"], message: "production needs trustedProxies" });
   });
 
-export type IdentityInput = z.input<typeof schema> & { pool: Pool };
-export type IdentityConfig = z.output<typeof schema> & { pool: Pool };
+/** A sign-in page the app renders itself (for example with the design system), and the extra style and font sources its policy needs. */
+export type SignInPage = { html: string; styleSrc?: string[]; fontSrc?: string[] };
+
+export type IdentityInput = z.input<typeof schema> & { pool: Pool; page?: SignInPage };
+export type IdentityConfig = z.output<typeof schema> & { pool: Pool; page?: SignInPage };
 
 /** Validate the settings once at start. Throws a ZodError naming every bad field. */
-export const parseConfig = ({ pool, ...rest }: IdentityInput): IdentityConfig => ({ ...schema.parse(rest), pool });
+export const parseConfig = ({ pool, page, ...rest }: IdentityInput): IdentityConfig => ({ ...schema.parse(rest), pool, ...(page && { page }) });

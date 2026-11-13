@@ -1,14 +1,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { getRequestListener } from "@hono/node-server";
-import { createGoogleIdentity, type IdentityInput, migrateIdentity } from "../../src/index.js";
+import { createGoogleIdentity, type IdentityInput, migrateIdentity, type SignInPage } from "../../src/index.js";
 import { database } from "./db.js";
 import { startOidc } from "./oidc/provider.js";
 
 export const CLIENT = { id: "brain-test", secret: "brain-test-secret" };
 const SECRET = "0123456789abcdef0123456789abcdef-test-secret";
 
-type Options = { production?: boolean; trustedProxies?: string[]; publicBase?: string };
+type Options = { production?: boolean; trustedProxies?: string[]; publicBase?: string; page?: SignInPage };
 
 /** The real app on a real port, a real Postgres database and a real OIDC server. `publicBase` is the URL the outside world sees. */
 export async function startApp(options: Options = {}) {
@@ -27,6 +27,7 @@ export async function startApp(options: Options = {}) {
     issuer: oidc.issuer,
     production: options.production ?? false,
     trustedProxies: options.trustedProxies ?? [],
+    ...(options.page && { page: options.page }),
   };
   await migrateIdentity(input);
   const identity = createGoogleIdentity(input);

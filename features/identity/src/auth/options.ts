@@ -1,4 +1,3 @@
-import { passkey } from "@better-auth/passkey";
 import { type AuthContext, type BetterAuthOptions, betterAuth, getCurrentAdapter } from "better-auth";
 import { jwt, organization } from "better-auth/plugins";
 import type { ResolvedConfig } from "../config.js";
@@ -60,9 +59,6 @@ export const authOptions = (cfg: ResolvedConfig, auth: () => Auth): BetterAuthOp
         },
       }),
       mcpPlugin(cfg, adapter),
-      // Passkeys (WebAuthn). The relying party id is the host of baseUrl, so a passkey made on this host works only
-      // here; the browser refuses the challenge anywhere else. Registration needs a fresh session (the plugin's default).
-      passkey({ rpID: new URL(cfg.baseUrl).hostname, rpName: cfg.serverName, origin: new URL(cfg.baseUrl).origin }),
       ...oauth.plugins,
       hitsPlugin(),
     ],

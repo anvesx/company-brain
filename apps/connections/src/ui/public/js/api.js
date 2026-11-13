@@ -1,20 +1,27 @@
-const KEY = "connections.bearer";
+let me = { user: "", tenant: "" };
 
-export const token = () => sessionStorage.getItem(KEY);
-export const setToken = (t) => (t ? sessionStorage.setItem(KEY, t) : sessionStorage.removeItem(KEY));
+/** The signed-in user and tenant, as `/v1/me` reported them. */
+export const who = () => me;
 
-/** The signed-in user and tenant, read from the `user:tenant:exp:hmac` bearer. */
-export const who = () => {
-  const [user, tenant] = (token() ?? "").split(":");
-  return { user, tenant };
-};
+/** Ask who the session cookie belongs to. A browser with no session is sent to the Google sign-in page. */
+export async function signedIn() {
+  const r = await call("GET", "/v1/me");
+  if (r.ok) me = r.data;
+  return r.ok;
+}
 
-/** One call to the API with the bearer. Never throws; read `ok`, `data` and `error`. */
+/** Sign out of the session, then back to the sign-in page. */
+export async function signOut() {
+  await fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => null);
+  location.assign("/sign-in");
+}
+
+/** One call to the API with the session cookie. Never throws; read `ok`, `data` and `error`. A 401 means the session ended, so the browser goes to the sign-in page. */
 export async function call(method, path, body) {
-  const headers = { authorization: `Bearer ${token()}` };
-  if (body) headers["content-type"] = "application/json";
+  const headers = body ? { "content-type": "application/json" } : {};
   try {
     const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) location.assign("/sign-in");
     const data = res.status === 204 ? null : await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, data, error: data?.error ?? `request failed (${res.status})` };
   } catch {

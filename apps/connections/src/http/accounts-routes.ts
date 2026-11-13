@@ -15,7 +15,7 @@ const json = async (req: Request): Promise<unknown> => req.json().catch(() => un
 /** `/accounts` routes. The credential goes in on POST and is never returned. */
 export function accountsRoutes(d: Deps): Hono<Env> {
   const r = new Hono<Env>();
-  r.use("*", requireCaller(d.secret, d.now));
+  r.use("*", requireCaller(d.secret, d.now, d.session));
   r.get("/", (c) => c.json({ accounts: d.store.listVisible(c.get("caller")) }));
   r.post("/", async (c) => {
     const caller = c.get("caller");

@@ -12,6 +12,8 @@ There is no password, email-and-password or passkey input, route, plugin or depe
 - Only four better-auth routes are reachable (`OPEN_ROUTES`); everything else is a 404.
 - A user whose Google email is not verified never gets a user row or a session.
 
-The old `features/identity` package still holds password and passkey code; removing it is not part of this package (see `EVIDENCE.md`).
+The old `features/identity` package still holds email and password code for `apps/brain` and the MCP services. Passkeys are removed from it, and `apps/connections` signs in with this package only.
+
+An app can pass `page` (`{ html, styleSrc, fontSrc }`) to serve its own sign-in page, for example one built with the design system. This package does not depend on the design system (a feature may not); the app renders the page and its policy sources are added to the content security policy.
 
 Tests need Postgres 16: `DATABASE_URL=... pnpm --filter @anvesx/google-identity test` (`tests/support/pg-temp.sh` starts a throwaway one).

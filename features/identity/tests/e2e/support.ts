@@ -14,7 +14,7 @@ export const launch = (): Promise<Browser> => {
 
 export const shot = (page: Page, name: string) => page.screenshot({ path: new URL(`./shots/${name}.png`, import.meta.url).pathname, fullPage: true });
 
-/** Inline scripts on the page. Script files (`/webauthn.js`, `/passkey.js`) are allowed; rule 12 forbids inline code. */
+/** Inline scripts on the page. Rule 12 forbids inline code. */
 export const scripts = (page: Page): Promise<number> => page.locator("script:not([src])").count();
 
 /** Signs up a new person through the sign-up page and returns their email. */

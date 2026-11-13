@@ -16,10 +16,11 @@ export function verify(header: string | undefined, secret: string, nowSeconds: n
   return Number(exp) > nowSeconds ? { user, tenant } : undefined;
 }
 
+/** The bearer first (service callers), then the session cookie (people in a browser) when `session` is given. */
 export const requireCaller =
-  (secret: string, now: () => number): MiddlewareHandler<Env> =>
+  (secret: string, now: () => number, session?: (headers: Headers) => Promise<Caller | undefined>): MiddlewareHandler<Env> =>
   async (c, next) => {
-    const caller = verify(c.req.header("authorization"), secret, now());
+    const caller = verify(c.req.header("authorization"), secret, now()) ?? (await session?.(c.req.raw.headers));
     if (!caller) return c.json({ error: "unauthenticated" }, 401);
     c.set("caller", caller);
     await next();
