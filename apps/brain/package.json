@@ -25,6 +25,7 @@
     "@anvesx/graph-sync": "workspace:*",
     "@anvesx/graph-view": "workspace:*",
     "@anvesx/identity": "workspace:*",
+    "@anvesx/visibility": "workspace:*",
     "@hono/node-server": "^2.1.5",
     "hono": "^4.13.16",
     "kysely": "0.29.8",
@@ -33,6 +34,7 @@
   "license": "MIT",
   "private": true,
   "devDependencies": {
+    "@anvesx/zone-policy": "workspace:*",
     "@types/pg": "8.23.1"
   }
 }

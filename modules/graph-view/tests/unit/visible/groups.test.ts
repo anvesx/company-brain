@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { visibleGraph } from "../../../src/index.js";
-import { KEY, node, openStore, write } from "../../support/store.js";
+import { ALLOW, KEY, LIMITS, node, openStore, write } from "../../support/store.js";
 import { seedWorld } from "../../support/world.js";
 
 describe("rule 2: groups and categories", () => {
   it("documents are grouped by kind and source; every other kind by kind alone", async () => {
     const store = openStore();
     seedWorld(store);
-    const page = await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" });
+    const page = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice" });
     const groups = Object.fromEntries(page.nodes.map((n) => [n.id, n.group]));
     expect(groups).toEqual({
       alice: "person",
-      bob: "person",
       eng: "team",
       "d-shared": "document:gdrive",
       "d-alice": "document:notion",
@@ -23,10 +22,10 @@ describe("rule 2: groups and categories", () => {
   it("categories count visible nodes per group, sorted by group name", async () => {
     const store = openStore();
     seedWorld(store);
-    expect((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "alice" })).categories).toEqual([
+    expect((await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "alice" })).categories).toEqual([
       { group: "document:gdrive", count: 1 },
       { group: "document:notion", count: 1 },
-      { group: "person", count: 2 },
+      { group: "person", count: 1 },
       { group: "project", count: 1 },
       { group: "repo", count: 1 },
       { group: "team", count: 1 },
@@ -42,7 +41,7 @@ describe("rule 2: groups and categories", () => {
       [node("t1", "u", "person", "slack"), ...docs],
       docs.map((d) => ({ tenant: "t1", from: "u", to: d.id, kind: "can-read", source: "t" })),
     );
-    const counts = (await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" })).categories;
+    const counts = (await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u" })).categories;
     expect(counts.filter((c) => c.group.startsWith("document:"))).toEqual([
       { group: "document:gdrive", count: 1 },
       { group: "document:github", count: 1 },
@@ -55,12 +54,19 @@ describe("rule 2: groups and categories", () => {
     write(
       store,
       1,
-      [node("t1", "u", "person", "slack"), node("t1", "v", "person", "github"), node("t1", "d", "document", "gdrive")],
+      [
+        node("t1", "u", "person", "slack"),
+        node("t1", "v", "person", "github"),
+        node("t1", "d", "document", "gdrive", { props: { zone: "personal", owner: "u" } }),
+      ],
       [
         { tenant: "t1", from: "u", to: "d", kind: "can-read", source: "t" },
         { tenant: "t1", from: "v", to: "d", kind: "can-read", source: "t" },
       ],
     );
-    expect((await visibleGraph(store, { cursorKey: KEY, tenant: "t1", user: "u" })).categories).toContainEqual({ group: "person", count: 2 });
+    expect((await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: "t1", user: "u" })).categories).toContainEqual({
+      group: "person",
+      count: 2,
+    });
   });
 });

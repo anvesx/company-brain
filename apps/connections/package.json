@@ -14,18 +14,31 @@
     "mutation": "stryker run"
   },
   "dependencies": {
+    "@anvesx/change-cursor": "workspace:*",
     "@anvesx/connector-kit": "workspace:*",
+    "@anvesx/connector-vault": "workspace:*",
     "@anvesx/connectors": "0.1.0",
+    "@anvesx/design-system": "workspace:*",
+    "@anvesx/google-identity": "workspace:*",
     "@anvesx/graph-store": "workspace:*",
     "@anvesx/graph-sync": "workspace:*",
+    "@anvesx/job-queue": "workspace:*",
     "@hono/node-server": "^2.1.5",
     "arctic": "^3.7.0",
     "hono": "^4.13.16",
-    "ipaddr.js": "2.5.0"
+    "ipaddr.js": "2.5.0",
+    "pg": "8.23.1"
   },
   "bin": {
     "connections": "dist/bin.js"
   },
   "license": "MIT",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/culori": "4.0.1",
+    "culori": "4.0.2",
+    "@types/oidc-provider": "^9.5.0",
+    "@types/pg": "8.23.1",
+    "oidc-provider": "^9.8.0"
+  }
 }

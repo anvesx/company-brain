@@ -2,7 +2,7 @@ import type { GraphStore } from "@anvesx/graph-store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type GraphViewPage, visibleGraph } from "../../src/index.js";
 import { boot, type Env, personWithDoc } from "../support/server.js";
-import { edge, KEY, node, openLongStore, write } from "../support/store.js";
+import { ALLOW, edge, KEY, LIMITS, node, openLongStore, write } from "../support/store.js";
 
 let env: Env;
 let store: GraphStore;
@@ -38,7 +38,7 @@ describe("tenant isolation and query parameters on /v1/graph", () => {
     const first = await page(await k.browser.call("/v1/graph?limit=1"));
     expect(first.nodes).toHaveLength(1);
     const rest = await page(await k.browser.call(`/v1/graph?limit=1&cursor=${encodeURIComponent(String(first.next))}`));
-    const whole = await visibleGraph(store, { cursorKey: KEY, tenant: k.tenant, user: k.user });
+    const whole = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: k.tenant, user: k.user });
     expect([...first.nodes, ...rest.nodes]).toEqual(whole.nodes);
   });
 

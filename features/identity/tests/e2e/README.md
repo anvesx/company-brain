@@ -18,4 +18,3 @@ PLAYWRIGHT=1 pnpm --filter @anvesx/identity e2e
 - `support.ts`: browser launch, a fresh user per test, screenshots into `shots/`.
 - `auth.test.ts`: sign-up, sign-in, picker, connections list, sign-out.
 - `guide.test.ts`: the install guide below the connections, the copy button, the docs notes.
-- `passkey/`: rule 16 with a virtual authenticator (no Touch ID prompt); its own `shots/`.

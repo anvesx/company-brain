@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { createGraphStore, type EdgeKind, type GraphStore, type NodeKind } from "@anvesx/graph-store";
+import { type AsyncGraphStore, createGraphStore, type EdgeKind, type GraphStore, type NodeKind } from "@anvesx/graph-store";
 import { afterAll } from "vitest";
 
 /** Every temp folder a test made. Registering here is what gets it deleted when the file's tests end. */
@@ -26,8 +26,10 @@ export const tempStore = (): GraphStore => createGraphStore({ path: join(track(m
 export const T0 = 1_000;
 export const T1 = 2_000;
 
-export const node = (store: GraphStore, tenant: string, id: string, kind: NodeKind, title: string, at = T0) =>
-  store.upsertNode({ tenant, id, kind, source: kind === "document" ? "drive" : "directory", address: `x://${id}`, title, version: "1", props: {} }, at);
+const zoned = (kind: NodeKind): Props => (kind === "document" ? { zone: "company" } : {});
+type Props = Record<string, string>;
+export const node = (store: GraphStore, tenant: string, id: string, kind: NodeKind, title: string, at = T0, props: Props = zoned(kind)) =>
+  store.upsertNode({ tenant, id, kind, source: kind === "document" ? "drive" : "directory", address: `x://${id}`, title, version: "1", props }, at);
 
 export const edge = (store: GraphStore, tenant: string, from: string, kind: EdgeKind, to: string, at = T0) =>
   store.addEdge({ tenant, from, to, kind, source: "directory" }, at);
@@ -64,3 +66,13 @@ export function seedOrg(store: GraphStore, tenant: string, ada: string, bob: str
   }
   return { visible: ["doc-plan", "proj-atlas", "team-eng", ada], hidden: ["doc-secret", "chan-general"] };
 }
+
+/** What a tool or the viewer needs to act for one person: the shared gate's live check says yes, as a source that still grants access would. */
+export const as = (store: AsyncGraphStore, caller: { tenant: string; user: string }) => ({
+  store,
+  caller,
+  accounts: async () => [],
+  aliases: async () => [] as string[],
+  recheck: async () => true,
+  recheckLimits: { perCheckMs: 5_000, totalMs: 60_000, top: 100_000 },
+});

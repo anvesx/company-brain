@@ -13,6 +13,8 @@ import { cursorKeyFrom } from "../../src/serve/local/key.js";
 export { Browser, signUp } from "../../../../features/identity/tests/support/http.js";
 export { bearer, connect } from "../../../../features/identity/tests/support/oauth.js";
 
+export { promote, seedDocs } from "./seed/seed.js";
+
 const SECRET = "brain-identity-test-secret-0123456789ab";
 
 /** Asks the OS for a free port, then releases it, so identity knows its base URL before the app binds. */
@@ -41,14 +43,22 @@ export async function bootBrain(extra: Partial<Omit<BrainDeps, "store">> & { sto
   const { store: given, ...rest } = extra;
   // Tests write through the sync store; the app reads through the async wrapper of the same file, unless a test hands it another.
   const store: GraphStore = createGraphStore({ path: join(mkdtempSync(join(tmpdir(), "brain-")), "graph.sqlite") });
-  const app = createBrainApp({ store: toAsync(given ?? store), identity, cursorKey: cursorKeyFrom(SECRET), port, host: "127.0.0.1", ...rest });
+  const app = createBrainApp({
+    store: toAsync(given ?? store),
+    identity,
+    cursorKey: cursorKeyFrom(SECRET),
+    port,
+    host: "127.0.0.1",
+    recheck: async () => true,
+    ...rest,
+  });
   await app.listen();
   const close = async () => {
     await app.close();
     store.close();
     db.close();
   };
-  return { base, store, identity, close };
+  return { base, store, identity, db, close };
 }
 
 /** The tenant and user identity assigned to a signed-in browser. */
@@ -56,20 +66,4 @@ export async function whoIs(env: Env, cookie: string): Promise<{ tenant: string;
   const caller = await env.identity.port.fromSession(new Headers({ cookie }));
   if (!caller) throw new Error("the browser has no live session");
   return { tenant: caller.tenant, user: caller.user };
-}
-
-/** Gives `user` one readable document "d-1" and leaves "d-2" in the same tenant that nobody gave them. */
-export function seedDocs(store: GraphStore, tenant: string, user: string) {
-  const n = (id: string, kind: "person" | "document") => ({
-    tenant,
-    id,
-    kind,
-    source: "drive",
-    address: `https://drive.example.com/${id}`,
-    title: `title of ${id}`,
-    version: "1",
-    props: {},
-  });
-  for (const x of [n(user, "person"), n("d-1", "document"), n("d-2", "document")]) store.upsertNode(x, 1);
-  store.addEdge({ tenant, from: user, to: "d-1", kind: "can-read", source: "drive" }, 1);
 }

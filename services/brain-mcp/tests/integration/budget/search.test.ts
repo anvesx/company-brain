@@ -7,8 +7,15 @@ import { counted, seed } from "./count.js";
 const T = "org-search";
 // Every title holds "alpha" except the callers' own, so a caller never finds themselves.
 const put = (s: AsyncGraphStore, id: string, kind: NodeKind, title = `alpha ${id}`) =>
-  s.upsertNode({ tenant: T, id, kind, source: "test", address: `x://${id}`, title, version: "1", props: {} }, 1);
-const ctxFor = (store: AsyncGraphStore, user: string) => ({ store, caller: { tenant: T, user }, accounts: async () => [] });
+  s.upsertNode({ tenant: T, id, kind, source: "test", address: `x://${id}`, title, version: "1", props: kind === "document" ? { zone: "company" } : {} }, 1);
+const ctxFor = (store: AsyncGraphStore, user: string) => ({
+  store,
+  caller: { tenant: T, user },
+  accounts: async () => [],
+  aliases: async () => [],
+  recheck: async () => true,
+  recheckLimits: { perCheckMs: 5_000, totalMs: 60_000, top: 100_000 },
+});
 type Page = { nodes: { id: string }[]; next?: string; truncated?: boolean };
 
 /** Every page of one search, in order, stopping after `max` pages. */

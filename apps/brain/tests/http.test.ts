@@ -37,7 +37,7 @@ describe("brain http", () => {
     const b = await whoIs(env as Env, bob.browser.cookie());
     // Same document id in the second tenant, with a different title, so mixing the tenants would show.
     env?.store.upsertNode(
-      { tenant: b.tenant, id: "d-1", kind: "document", source: "drive", address: "bob-addr", title: "Bob's d-1", version: "1", props: {} },
+      { tenant: b.tenant, id: "d-1", kind: "document", source: "drive", address: "bob-addr", title: "Bob's d-1", version: "1", props: { zone: "company" } },
       1,
     );
     env?.store.upsertNode({ tenant: b.tenant, id: b.user, kind: "person", source: "drive", address: b.user, title: "Bob", version: "1", props: {} }, 1);

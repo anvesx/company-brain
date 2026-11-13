@@ -1,6 +1,7 @@
 import { hkdfSync } from "node:crypto";
 import { type IdentityConfig, parseSealKey } from "@anvesx/identity";
 import { ConfigError } from "../serve/local/checks.js";
+import { withBase } from "./base.js";
 import { CATALOG } from "./catalog.js";
 
 type Env = Record<string, string | undefined>;
@@ -31,7 +32,7 @@ export function doorsFromEnv(env: Env, secret: string): Doors {
   }
   return {
     sealKey,
-    providers: [...CATALOG],
+    providers: CATALOG.map((entry) => withBase(entry, env)),
     // The same entries drive the read-only catalog list (what exists) and the link-able tiles (what is configured).
     catalog: CATALOG.map(({ name, description }) => ({ name, description })),
     env,

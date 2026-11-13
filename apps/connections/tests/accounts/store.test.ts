@@ -10,11 +10,10 @@ beforeEach(() => {
 afterEach(() => t.done());
 
 describe("account store", () => {
-  it("creates an active account and never exposes the credential", () => {
+  it("creates an active account that carries no credential", () => {
     const a = store.create(input);
     expect(a).toMatchObject({ owner: "ann", provider: "github", label: "work", kind: "pat", access: "private", dataZone: "private", status: "active" });
-    expect(JSON.stringify(a)).not.toContain("ghp_one");
-    expect(store.credential("t1", a.id)).toBe("ghp_one");
+    expect(Object.keys(a)).not.toContain("secret");
   });
   it("allows several accounts per owner and provider", () => {
     store.create(input);
@@ -43,12 +42,19 @@ describe("account store", () => {
     expect(store.get("t1", a.id)?.label).toBe("new");
     expect(store.update("t1", "nope", { label: "x" })).toBeUndefined();
   });
-  it("removes the account and its credential", () => {
+  it("removes the account", () => {
     const a = store.create(input);
     expect(store.remove("t1", a.id)).toBe(true);
     expect(store.get("t1", a.id)).toBeUndefined();
-    expect(store.credential("t1", a.id)).toBeUndefined();
     expect(store.remove("t1", a.id)).toBe(false);
+  });
+  it("lists the active accounts, optionally only the github ones of one repo", () => {
+    const a = store.create({ ...input, repo: "a/b" });
+    store.create({ ...input, label: "other", repo: "a/c" });
+    const gone = store.create({ ...input, label: "gone", repo: "a/b" });
+    store.setStatus("t1", gone.id, "needs-auth");
+    expect(store.active()).toHaveLength(2);
+    expect(store.active("a/b")).toEqual([{ tenant: "t1", id: a.id, provider: "github" }]);
   });
   it("marks needs-auth instead of deleting", () => {
     const a = store.create(input);

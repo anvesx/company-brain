@@ -1,7 +1,7 @@
 import { toAsync } from "@anvesx/graph-store";
 import { afterAll, describe, expect, it } from "vitest";
 import { viewer } from "../../../src/access/visible.js";
-import { edge, node, T0, T1, tempStore } from "../../support/graph.js";
+import { as, edge, node, T0, T1, tempStore } from "../../support/graph.js";
 
 // docReader behind viewer(): both read paths (bulk and per-chunk) must agree, honour asOf, and only count documents.
 const store = tempStore();
@@ -25,21 +25,20 @@ afterAll(() => store.close());
 const who = { tenant: ORG, user: "u-dee" };
 
 describe.each([false, true])("readable documents (bulk=%s)", (bulk) => {
-  const see = async (ids: string[], asOf?: number) => (await viewer(view, who, asOf, bulk)).seesMany(ids.map((id) => ({ id })));
+  const see = async (ids: string[], asOf?: number) => (await viewer(as(view, who), asOf)).seesMany(ids.map((id) => ({ id })));
 
   it("sees readable documents and not a readable channel, nor a project hanging only on that channel", async () => {
     // A can-read target counts only when it is a document: the kind filter keeps the channel (and so proj-c) out.
     expect(await see(["doc-old", "doc-new", "chan-d", "proj-c"])).toEqual([true, true, false, false]);
   });
 
-  it("with asOf, a can-read edge created later is not seen; without it, it is", async () => {
+  it("with asOf, a document that did not exist yet is not drawn; without it, it is", async () => {
     expect(await see(["doc-old", "doc-new"], T0 + 100)).toEqual([true, false]);
     expect(await see(["doc-new"])).toEqual([true]);
   });
 
-  it("with asOf, a document that already existed but became readable later is not seen", async () => {
-    // The node exists at asOf, so only the can-read edge read can hide it: that read must carry asOf.
-    expect(await see(["doc-edge"], T0 + 100)).toEqual([false]);
+  it("with asOf, a document that became readable later is seen, as today's permissions say", async () => {
+    expect(await see(["doc-edge"], T0 + 100)).toEqual([true]);
     expect(await see(["doc-edge"])).toEqual([true]);
   });
 });

@@ -8,6 +8,15 @@ const never = () => new Promise<boolean>(() => {});
 const limits = { perCheckMs: 20, totalMs: 200, top: 2 };
 
 describe("live recheck limits", () => {
+  it("hides everything when no live checker exists", async () => {
+    expect(await stillReadable([doc("a")], caller)).toEqual([]);
+  });
+  it("hides everything when a checker throws before returning a promise", async () => {
+    const throws = () => {
+      throw new Error("source unavailable");
+    };
+    expect(await stillReadable([doc("a")], caller, throws)).toEqual([]);
+  });
   it("hides a document whose check hangs and keeps the ones that answered", async () => {
     const check = (d: GraphNode) => (d.id === "slow" ? never() : Promise.resolve(true));
     const out = await stillReadable([doc("ok"), doc("slow")], caller, check, limits);

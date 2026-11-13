@@ -39,7 +39,7 @@ export async function serve(
       // `$context` resolves after every plugin init, incl. the oauth seed: wait so close() never ends the pool under it (see README).
       await identity.auth.$context;
       const store = await deps.createPostgresGraphStore({ pool });
-      const brain = createBrainApp({ store, identity, cursorKey, ...(recheck && { recheck }) });
+      const brain = createBrainApp({ store, identity, cursorKey, env, ...(recheck && { recheck }) });
       parts = { brain: brain.handler, identity: getRequestListener(identity.routes.fetch) };
     } catch (e) {
       if (stopped) return; // close() ended the pool under the migration; that error is ours, not a failure

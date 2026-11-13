@@ -9,16 +9,14 @@ async function visibleIds(ctx: Ctx, can: Viewer): Promise<string[]> {
   const { store, caller } = ctx;
   const t = caller.tenant;
   const found = new Set(can.principals);
-  const reads = await inChunks([...can.principals], (p) => store.neighbors(t, p, { kind: "can-read", dir: "out" }));
-  for (const read of reads.flat()) {
-    found.add(read.to);
-    const [belongs, readers] = await Promise.all([
-      store.neighbors(t, read.to, { kind: "belongs-to", dir: "out" }),
-      store.neighbors(t, read.to, { kind: "can-read", dir: "in" }),
-    ]);
-    for (const e of belongs) found.add(e.to);
-    for (const e of readers) found.add(e.from);
-  }
+  // Only documents the shared gate approves are walked further, so a hidden document costs no neighbour reads.
+  const approved = await can.approve();
+  await inChunks([...approved.keys()], async (doc) => {
+    found.add(doc);
+    for (const e of await store.neighbors(t, doc, { kind: "belongs-to", dir: "out" })) found.add(e.to);
+    for (const reader of approved.get(doc)?.readers ?? []) found.add(reader); // owner or admin only
+    return [];
+  });
   const all = [...found];
   const seen = await can.seesMany(all.map((id) => ({ id }))); // one batch, chunked inside the viewer
   return all.filter((_, i) => seen[i]).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -27,14 +25,15 @@ async function visibleIds(ctx: Ctx, can: Viewer): Promise<string[]> {
 /** One page of the visible graph, in id order. `cursor` is the last id of the previous page. */
 export async function graph(ctx: Ctx, args: { cursor?: string | undefined; limit: number }) {
   const { store, caller } = ctx;
-  const can = await viewer(store, caller, undefined, true);
+  const can = await viewer(ctx);
   const ids = (await visibleIds(ctx, can)).filter((id) => args.cursor === undefined || id > args.cursor);
   const page = ids.slice(0, args.limit);
   const nodes = (await store.nodesOf(caller.tenant, page)).map(publicNode);
   const out = await inChunks(page, async (id) => {
     const edges = await store.neighbors(caller.tenant, id, { dir: "out" });
     const seen = await can.seesMany(edges.map((e) => ({ id: e.to })));
-    return edges.filter((_, i) => seen[i]).map((e) => ({ from: e.from, to: e.to, kind: e.kind, source: e.source }));
+    const shown = await can.edgesShown(edges);
+    return edges.filter((_, i) => seen[i] && shown[i]).map((e) => ({ from: e.from, to: e.to, kind: e.kind, source: e.source }));
   });
   const categories: Record<string, number> = {};
   for (const n of nodes) categories[n.group] = (categories[n.group] ?? 0) + 1;

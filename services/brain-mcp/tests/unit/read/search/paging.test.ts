@@ -6,7 +6,14 @@ import { edge, node, tempStore } from "../../../support/graph.js";
 // Paging, truncation and budget of brain.search. Stored order: 2 hidden people, then 5 readable documents.
 const store = tempStore();
 const T = "org-p";
-const ctx = { store: toAsync(store), caller: { tenant: T, user: "u-ada" }, accounts: async () => [] };
+const ctx = {
+  store: toAsync(store),
+  caller: { tenant: T, user: "u-ada" },
+  accounts: async () => [],
+  aliases: async () => [],
+  recheck: async () => true,
+  recheckLimits: { perCheckMs: 5_000, totalMs: 60_000, top: 100_000 },
+};
 const run = (limit: number, cursor?: string) => search(ctx, { query: "zeta", limit, ...(cursor === undefined ? {} : { cursor }) });
 afterAll(() => store.close());
 

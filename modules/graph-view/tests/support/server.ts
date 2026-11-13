@@ -9,7 +9,7 @@ import { openDb, tempDbPath } from "../../../../features/identity/tests/support/
 import { signUp } from "../../../../features/identity/tests/support/http.js";
 import { mountGraphView } from "../../src/index.js";
 import { tuned } from "./net/tuned.js";
-import { edge, KEY, node, write } from "./store.js";
+import { ALLOW, edge, KEY, LIMITS, node, write } from "./store.js";
 
 export { Browser, signUp } from "../../../../features/identity/tests/support/http.js";
 export { bearer, connect } from "../../../../features/identity/tests/support/oauth.js";
@@ -36,7 +36,7 @@ export async function boot(store: GraphStore, aliases?: (user: string) => Promis
   await identity.migrate();
   app = new Hono();
   app.route("/", identity.routes);
-  mountGraphView(app, { store, port: identity.port, cursorKey, ...(aliases && { aliases }) });
+  mountGraphView(app, { store, port: identity.port, cursorKey, recheck: ALLOW, recheckLimits: LIMITS, ...(aliases && { aliases }) });
   const close = () =>
     new Promise<void>((done) => {
       if ("closeAllConnections" in server) server.closeAllConnections();
@@ -51,7 +51,7 @@ export async function boot(store: GraphStore, aliases?: (user: string) => Promis
 /** A second graph-view server for the same store and identity (the cookie works on both), with its own cursor key. */
 export async function another(env: Env, store: GraphStore, cursorKey: Uint8Array) {
   const app = new Hono();
-  mountGraphView(app, { store, port: env.identity.port, cursorKey });
+  mountGraphView(app, { store, port: env.identity.port, cursorKey, recheck: ALLOW, recheckLimits: LIMITS });
   const server = tuned(serve({ port: 0, fetch: app.fetch }));
   await new Promise((done) => server.once("listening", done));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;

@@ -15,7 +15,7 @@ export const checkRootFiles = (root: string, packages: readonly string[]): Viola
     return count > 5 ? [{ file: displayPath(root, packageDir), rule: "root-files", message: `${count} root files exceeds 5` }] : [];
   });
 
-/** Each package needs README.md, src/ and tests/ side by side. Folder READMEs are checked in checks/readme.ts. */
+/** Each package needs README.md, src/ and tests/ side by side. Folder READMEs are checked in checks/folders.ts. */
 export const checkLayout = (root: string, packages: readonly string[]): Violation[] =>
   packages.flatMap((packageDir) => {
     const violations: Violation[] = [];

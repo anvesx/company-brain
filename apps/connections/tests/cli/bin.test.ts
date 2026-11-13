@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { dataEnv } from "../pg/db.js";
 
 const pkg = join(import.meta.dirname, "..", "..");
 const out = join(pkg, "node_modules", ".cache", `bin-test-${process.pid}-${Date.now()}`);
@@ -13,7 +14,7 @@ beforeAll(() => {
 afterAll(() => rmSync(out, { recursive: true, force: true }));
 const good = (dir: string) => ({
   PATH: process.env.PATH ?? "",
-  CONNECTIONS_KEY: "ab".repeat(32),
+  ...dataEnv(),
   CONNECTIONS_AUTH_SECRET: "s".repeat(32),
   CONNECTIONS_DB_PATH: join(dir, "c.db"),
   CONNECTIONS_GRAPH_PATH: join(dir, "g.db"),
@@ -24,7 +25,7 @@ describe("dist/bin.js", () => {
   it("exits 1 and names every bad setting when the config is bad", () => {
     const r = spawnSync("node", [bin], { env: { PATH: process.env.PATH ?? "" }, encoding: "utf8" });
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/CONNECTIONS_KEY.*CONNECTIONS_AUTH_SECRET.*CONNECTIONS_DB_PATH.*CONNECTIONS_GRAPH_PATH/);
+    expect(r.stderr).toMatch(/CONNECTIONS_AUTH_SECRET.*CONNECTIONS_DB_PATH.*CONNECTIONS_GRAPH_PATH.*CONNECTIONS_DATABASE_URL/);
   });
   it("starts, answers 401 without a token, and exits 0 on SIGTERM", async () => {
     const dir = mkdtempSync(join(tmpdir(), "conn-bin-run-"));

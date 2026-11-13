@@ -1,4 +1,5 @@
 import { IdentityError, type IdentityPort } from "@anvesx/identity";
+import type { Recheck, RecheckLimits } from "@anvesx/visibility/gate";
 import type { Hono } from "hono";
 import { pageScript } from "../page/script.js";
 import { STYLE } from "../page/style.js";
@@ -26,7 +27,10 @@ const CACHED = { "cache-control": "public, max-age=3600" };
  * Adds the graph view to a Hono app: the page, its script, the JSON route and the library files.
  * Anything else under these paths is the app's own 404.
  */
-export function mountGraphView(app: Hono, deps: { store: ViewStore; port: IdentityPort; aliases?: Aliases; cursorKey: Uint8Array }): void {
+export function mountGraphView(
+  app: Hono,
+  deps: { store: ViewStore; port: IdentityPort; aliases?: Aliases; cursorKey: Uint8Array; recheck?: Recheck; recheckLimits?: RecheckLimits },
+): void {
   const script = pageScript();
   mountAssets(app);
   mountApi(app, deps);

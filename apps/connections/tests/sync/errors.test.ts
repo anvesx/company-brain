@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { NewAccount } from "../../src/accounts/types.js";
 import { oauthProvider } from "../../src/oauth/providers.js";
-import { ann, pat, root } from "../http/fixture.js";
+import { ann, root, seed } from "../http/fixture.js";
 import { startReplay } from "../oauth/replay-provider.js";
 import { bootSync } from "./fixture.js";
 
@@ -12,37 +11,28 @@ afterEach(async () => {
   h = undefined;
 });
 const cur = () => h as NonNullable<typeof h>;
-const mk = (extra: object = {}) =>
-  cur().s.store.create({
-    tenant: "t1",
-    owner: "root",
-    provider: "github",
-    label: "x",
-    kind: "pat",
-    access: "private",
-    dataZone: "company",
-    secret: "ghp_secret",
-    ...extra,
-  } as never);
+const mk = (extra: Partial<NewAccount> = {}, token?: Parameters<typeof seed>[2]) => seed(cur().s, extra, token);
 const sync = (id: string, who = root, b: unknown = { repo: "acme/handbook" }) => cur().s.call("POST", `/v1/accounts/${id}/sync`, who, b);
 const body = async (r: Response) => ({ status: r.status, json: await r.json() });
 
 describe("sync error bodies", () => {
   it("says what is wrong in each refusal", async () => {
     h = await bootSync();
-    const a = mk();
+    const a = await mk();
     expect(await body(await sync("nope"))).toEqual({ status: 404, json: { error: "not found" } });
-    const shared = mk({ access: "company" });
+    const shared = await mk({ access: "company" });
     expect(await body(await sync(shared.id, ann))).toEqual({ status: 403, json: { error: "only the owner can sync this account" } });
     expect(await body(await sync(a.id, root, {}))).toEqual({ status: 400, json: { error: "body must be {repo: owner/repo} for a github account" } });
     for (const repo of ["x acme/handbook", "acme/handbook/extra", "acme/ handbook"]) expect((await sync(a.id, root, { repo })).status).toBe(400);
-    const other = mk({ provider: "notion" });
+    const other = await mk({ provider: "notion" });
     expect(await body(await sync(other.id))).toEqual({ status: 400, json: { error: "no connector for provider notion" } });
-    const bad = mk({ kind: "oauth", secret: "not json" });
-    expect(await body(await sync(bad.id))).toEqual({ status: 409, json: { error: "account has no usable credential" } });
+    const bare = await mk();
+    await cur().s.vault.remove("t1", bare.id);
+    expect(await body(await sync(bare.id))).toEqual({ status: 409, json: { error: "account needs re-authorisation" } });
+    expect(cur().s.store.get("t1", bare.id)?.status).toBe("needs-auth");
     h.s.store.setStatus("t1", a.id, "needs-auth");
     expect(await body(await sync(a.id))).toEqual({ status: 409, json: { error: "account needs re-authorisation" } });
-    expect(await body(await sync(mk({ provider: "github" }).id, root, { repo: "acme/missing" }))).toMatchObject({
+    expect(await body(await sync((await mk()).id, root, { repo: "acme/missing" }))).toMatchObject({
       status: 502,
       json: { error: "source sync failed" },
     });
@@ -50,29 +40,30 @@ describe("sync error bodies", () => {
   });
   it("501 body says sync is not configured", async () => {
     h = await bootSync({ sync: undefined as never });
-    expect(await body(await sync(mk().id))).toEqual({ status: 501, json: { error: "sync is not configured" } });
+    expect(await body(await sync((await mk()).id))).toEqual({ status: 501, json: { error: "sync is not configured" } });
   });
 });
 
 describe("sync clock and oauth refresh", () => {
   it("stamps edges at the request clock in milliseconds", async () => {
     h = await bootSync();
-    const id = mk().id;
+    const id = (await mk()).id;
     await sync(id);
     const ms = 1_800_000_000_000;
     expect(cur().graph.neighbors("t1", `github:${id}/README.md`, { kind: "can-read", dir: "in", asOf: ms - 1 })).toEqual([]);
     expect(cur().graph.neighbors("t1", `github:${id}/README.md`, { kind: "can-read", dir: "in", asOf: ms }).length).toBeGreaterThan(0);
   });
-  it("refreshes only oauth accounts that have a refresh token, and rewrites the token file after", async () => {
+  it("refreshes an oauth token that is due, and leaves a token with no refresh grant alone", async () => {
     const idp = await startReplay({ id: "cid", secret: "csecret" }, { refresh: true });
     const github = oauthProvider("github", { clientId: "cid", clientSecret: "csecret", redirectURI: "http://app.test/cb", tokenURL: `${idp.url}/token` });
-    const file = join((await import("node:os")).tmpdir(), `tok-sync-${process.pid}.json`);
-    h = await bootSync({ oauth: { github }, tokensFile: file });
-    await sync(mk({ kind: "oauth", secret: JSON.stringify({ accessToken: "old", refreshToken: "rt_x" }) }).id);
+    h = await bootSync({ oauth: { github } });
+    const due = new Date(1_800_000_000_000 - 1000);
+    const a = await mk({ kind: "oauth" }, { accessToken: "old", refreshToken: "rt_x", expiresAt: due });
+    await sync(a.id);
     expect(idp.tokenCalls).toBe(1);
-    expect(readFileSync(file, "utf8")).toContain("at_refreshed_1");
-    await sync(mk(pat).id);
-    await sync(mk({ kind: "oauth", secret: JSON.stringify({ accessToken: "plain" }) }).id);
+    expect((await cur().s.vault.get("t1", a.id))?.token.accessToken).toBe("at_refreshed_1");
+    await sync((await mk()).id);
+    await sync((await mk({ kind: "oauth" }, { accessToken: "plain", expiresAt: due })).id);
     expect(idp.tokenCalls).toBe(1);
     await idp.close();
   });

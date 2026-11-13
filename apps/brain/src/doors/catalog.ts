@@ -8,12 +8,22 @@ import type { ProviderEntry } from "@anvesx/identity";
  * each source needs to read what the brain indexes.
  */
 export const CATALOG: readonly ProviderEntry[] = [
-  { id: "github", name: "GitHub", description: "Repositories, issues and pull requests you can read.", scopes: ["read:user", "repo"], kind: "built-in" },
+  {
+    id: "github",
+    name: "GitHub",
+    description: "Repositories, issues and pull requests you can read.",
+    scopes: ["read:user", "repo"],
+    by: "GitHub",
+    dataPath: "/connections/data/github",
+    kind: "built-in",
+  },
   {
     id: "google-drive",
     name: "Google Drive",
     description: "Documents and folders shared with you.",
     scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+    by: "Google",
+    dataPath: "/connections/data/google-drive",
     kind: "generic",
     generic: { discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration", accessType: "offline" },
   },
@@ -22,6 +32,8 @@ export const CATALOG: readonly ProviderEntry[] = [
     name: "Slack",
     description: "Channels and messages in your workspace.",
     scopes: ["channels:history", "channels:read", "users:read"],
+    by: "Slack",
+    dataPath: "/connections/data/slack",
     kind: "generic",
     generic: {
       authorizationUrl: "https://slack.com/oauth/v2/authorize",

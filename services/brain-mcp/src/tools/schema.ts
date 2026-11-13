@@ -1,4 +1,5 @@
 import type { AsyncGraphStore, GraphNode, NodeKind } from "@anvesx/graph-store";
+import type { Recheck, RecheckLimits } from "@anvesx/visibility/gate";
 import { z } from "zod";
 
 export const TOOL_NAMES = ["brain.search", "brain.node", "brain.graph", "brain.connectors"] as const;
@@ -10,6 +11,12 @@ export interface Ctx {
   store: AsyncGraphStore;
   caller: { tenant: string; user: string };
   accounts: (user: string) => Promise<Record<string, unknown>[]>;
+  /** Other names sources know the caller by; an ACL may name them instead of the user id. */
+  aliases: (user: string) => Promise<string[]>;
+  /** The live source check; without one no document is shown (fail closed). */
+  recheck?: Recheck | undefined;
+  /** Bounds on the live check (most documents, longest wait). Absent means the gate's defaults. */
+  recheckLimits?: RecheckLimits | undefined;
 }
 
 /** Tool arguments. A wrong type or an oversize value fails here, before any handler runs. */

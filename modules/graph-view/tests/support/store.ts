@@ -6,7 +6,9 @@ import { afterEach } from "vitest";
 
 /** The cursor key every suite signs with: 32 bytes, as mountGraphView and visibleGraph require. */
 export const KEY = new Uint8Array(32).fill(7);
-
+/** The live check answers yes, as a source that still grants access; the gate hides every document without one. Tests check all documents (production: 10). */
+export const LIMITS = { perCheckMs: 5_000, totalMs: 60_000, top: 100_000 };
+export const ALLOW = async () => true;
 // Every store a test opens is a real SQLite file in its own temp folder. No in-memory database:
 // the graph view must work against the same file format the brain ships with.
 const open: { store: GraphStore; dir: string }[] = [];
@@ -53,7 +55,7 @@ export const node = (tenant: string, id: string, kind: NodeKind, source: string,
   address: `https://private.example.com/${id}`,
   title: `Title of ${id}`,
   version: `v-${id}`,
-  props: { secret: `prop-of-${id}` },
+  props: kind === "document" ? { secret: `prop-of-${id}`, zone: "company" } : { secret: `prop-of-${id}` },
   ...over,
 });
 

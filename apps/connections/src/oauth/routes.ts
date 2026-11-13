@@ -1,13 +1,12 @@
 import { hasLiveRecheck } from "@anvesx/connectors";
-import { generateCodeVerifier, generateState } from "arctic";
+import { generateCodeVerifier, generateState, type OAuth2Tokens } from "arctic";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { checkZones } from "../accounts/rules/widen.js";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/guard/auth.js";
 import { parseStart } from "../http/guard/validate.js";
-import { rewriteTokens } from "../tokens/rewrite.js";
-import { authorizeURL, credentialOf, exchange } from "./flow.js";
+import { authorizeURL, exchange, saveAccount } from "./flow.js";
 import { appOf, manifestFor, providerFor } from "./providers.js";
 import { BIND_TTL, bindCookie, bindingHolds, bindValue, isSecure } from "./state/binding.js";
 import { createPending } from "./state/pending.js";
@@ -16,7 +15,7 @@ import { createPending } from "./state/pending.js";
 export function oauthRoutes(d: Deps): Hono<Env> {
   const r = new Hono<Env>();
   const pending = createPending(d.now);
-  r.get("/:provider/start", requireCaller(d.secret, d.now), (c) => {
+  r.get("/:provider/start", requireCaller(d.secret, d.now, d.session), (c) => {
     const name = c.req.param("provider");
     const caller = c.get("caller");
     const m = manifestFor(d.catalog, name, caller.tenant);
@@ -54,22 +53,19 @@ export function oauthRoutes(d: Deps): Hono<Env> {
       liveRecheck: hasLiveRecheck(m),
     });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
+    let tokens: OAuth2Tokens;
     try {
-      const secret = credentialOf(await exchange(p, code, pend.verifier));
-      const a = d.store.create({
-        tenant: pend.caller.tenant,
-        owner: pend.caller.user,
-        provider: p.source,
-        label: pend.label,
-        kind: "oauth",
-        access: pend.access,
-        dataZone: pend.dataZone,
-        secret,
-      });
-      rewriteTokens(d);
-      return c.json(a, 201);
+      tokens = await exchange(p, code, pend.verifier);
     } catch {
       return c.json({ error: "token exchange failed" }, 502);
+    }
+    try {
+      const saved = await saveAccount(d, pend, p, tokens);
+      await d.jobs?.requestSync(saved.account.tenant, saved.account.id, "connect");
+      return c.json(saved.account, saved.created ? 201 : 200);
+    } catch (e) {
+      console.error("oauth callback: could not store the account", e); // the provider answered; our own store failed, which is not a token problem
+      return c.json({ error: "could not store the account" }, 500);
     }
   });
   return r;

@@ -1,7 +1,4 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeTokenFile } from "../../../src/tokens/write-token-file.js";
 import { ann, root } from "../../http/fixture.js";
 import { type Harness, harness, redirect } from "../harness.js";
 
@@ -32,21 +29,17 @@ describe("github oauth against the replay provider", () => {
     expect((await h.s.call("DELETE", `/v1/accounts/${id}`, ann)).status).toBe(204);
     expect(await (await h.s.call("GET", "/v1/accounts", ann)).json()).toEqual({ accounts: [] });
   });
-  it("feeds the token file with the access token the provider issued", async () => {
+  it("seals the access token the provider issued in the vault, not in the account row", async () => {
     const f = await h.signIn(ann, "github");
-    await f.callback();
-    const file = join(h.s.dir, "tokens.json");
-    writeTokenFile(h.s.store, file);
-    const token = (JSON.parse(readFileSync(file, "utf8")) as Record<string, { github: string }>)["t1:ann"]?.github;
-    expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
+    const { id } = (await (await f.callback()).json()) as { id: string };
+    expect((await h.s.vault.get("t1", id))?.token.accessToken).toBe(`at_${f.back.searchParams.get("code")}`);
+    expect(JSON.stringify(h.s.store.get("t1", id))).not.toContain("at_");
   });
-  it("writes the token file when the callback creates the account", async () => {
-    const file = join(h.s.dir, "cb-tokens.json");
-    const w = await harness({}, undefined, { tokensFile: file });
-    const f = await w.signIn(ann, "github");
-    await f.callback();
-    const token = (JSON.parse(readFileSync(file, "utf8")) as Record<string, { github: string }>)["t1:ann"]?.github;
-    expect(token).toBe(`at_${f.back.searchParams.get("code")}`);
+  it("queues a sync of the new account right after the callback", async () => {
+    const asked: string[] = [];
+    const w = await harness({}, undefined, { jobs: { requestSync: async (_t, id, why) => !!asked.push(`${why}:${id}`) } });
+    const { id } = (await (await (await w.signIn(ann, "github")).callback()).json()) as { id: string };
+    expect(asked).toEqual([`connect:${id}`]);
     await w.close();
   });
   it("refuses a company zone for a non-admin at start, and allows it for an admin", async () => {

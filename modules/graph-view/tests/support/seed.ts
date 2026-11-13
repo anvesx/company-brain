@@ -16,8 +16,8 @@ const range = (n: number, prefix: string): string[] => Array.from({ length: n },
 /**
  * The integration-sized graph: 10,000 documents u0 can read and exactly 50,000 edges. The visible set
  * is known by construction, not computed by a second copy of the rule:
- *   visible   u0, team0, team1, d0..d9999, p0..p49, person0..person199
- *   invisible team2..team4, x0..x1999 (unreadable docs), p50..p59, o0..o49 (outsiders)
+ *   visible   u0, team0, team1, d0..d9999, p0..p49
+ *   invisible person0..person199 (co-readers, leak 4), team2..team4, x0..x1999 (unreadable docs), p50..p59, o0..o49 (outsiders)
  * Every person{i} can read d{i}, so all 200 are visible. Invisible rows link into visible ones,
  * so a view that forgets the both-ends rule leaks edges and the count below catches it.
  */
@@ -56,8 +56,8 @@ export function seedScale(store: GraphStore, at: number) {
   while (edges.length < 50_000) add(`d${pick(10_000)}`, `d${pick(10_000)}`, "links-to");
   for (const n of nodes) store.upsertNode(n, at);
   for (const e of edges) store.addEdge(e, at);
-  const visible = [USER, "team0", "team1", ...docs, ...range(50, "p"), ...range(200, "person")].sort();
+  const visible = [USER, "team0", "team1", ...docs, ...range(50, "p")].sort(); // the 200 co-readers are hidden: company documents never show their other readers (leak 4)
   // Edges with both ends visible: member-of 2, can-read 10,000 + 10,000, belongs-to 10,000, d-to-d links-to the rest.
-  const visibleEdges = edges.filter((e) => !/^(x|o|team[234]$|p5\d$)/.test(e.from) && !/^(x|o|team[234]$|p5\d$)/.test(e.to)).length;
+  const visibleEdges = edges.filter((e) => !/^(x|o|person|team[234]$|p5\d$)/.test(e.from) && !/^(x|o|person|team[234]$|p5\d$)/.test(e.to)).length;
   return { nodes: nodes.length, edges: edges.length, visible, visibleEdges };
 }

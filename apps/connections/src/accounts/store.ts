@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { openHealth } from "./health/health.js";
 import { migrate, type Row, SCHEMA, view } from "./rows.js";
-import { open, seal } from "./rules/crypto.js";
-import { registerSecrets } from "./secrets.js";
 import type { Account, Caller, NewAccount, Patch, Status } from "./types.js";
 
-export function openStore(path: string, key: Buffer) {
+/** Account rows on `node:sqlite`. Credentials are not here: they live in the token vault (`tokens/`). */
+export function openStore(path: string) {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
   migrate(db);
@@ -15,14 +15,21 @@ export function openStore(path: string, key: Buffer) {
     create(a: NewAccount): Account {
       const id = randomUUID();
       const seq = (db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM accounts").get() as { n: number }).n;
-      const sql = "INSERT INTO accounts (id,tenant,owner,provider,label,kind,access,data_zone,status,secret,seq,repo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
-      const cols = [id, a.tenant, a.owner, a.provider, a.label, a.kind, a.access, a.dataZone, "active", seal(key, id, a.secret), seq, a.repo ?? null];
+      const sql = "INSERT INTO accounts (id,tenant,owner,provider,label,kind,access,data_zone,status,seq,repo) VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+      const cols = [id, a.tenant, a.owner, a.provider, a.label, a.kind, a.access, a.dataZone, "active", seq, a.repo ?? null];
       db.prepare(sql).run(...cols);
       return view(row(a.tenant, id) as Row);
     },
     get: (tenant: string, id: string): Account | undefined => {
       const r = row(tenant, id);
       return r && view(r);
+    },
+    /** The caller's own oauth account for this app and label, so signing in again renews it instead of adding a twin. */
+    findOauth(tenant: string, owner: string, provider: string, label: string): Account | undefined {
+      const r = db
+        .prepare("SELECT * FROM accounts WHERE tenant = ? AND owner = ? AND provider = ? AND label = ? AND kind = 'oauth' ORDER BY seq")
+        .get(tenant, owner, provider, label);
+      return r && view(r as Row);
     },
     listVisible: (c: Caller): Account[] =>
       db
@@ -53,16 +60,15 @@ export function openStore(path: string, key: Buffer) {
       void db.prepare("UPDATE accounts SET last_sync_at = ? WHERE id = ? AND tenant = ?").run(ms, id, tenant),
     setStatus: (tenant: string, id: string, s: Status): void =>
       void db.prepare("UPDATE accounts SET status = ? WHERE id = ? AND tenant = ?").run(s, id, tenant),
-    setCredential: (tenant: string, id: string, secret: string): void =>
-      void db.prepare("UPDATE accounts SET secret = ? WHERE id = ? AND tenant = ?").run(seal(key, id, secret), id, tenant),
     remove: (tenant: string, id: string): boolean => Number(db.prepare("DELETE FROM accounts WHERE id = ? AND tenant = ?").run(id, tenant).changes) > 0,
-    credential(tenant: string, id: string): string | undefined {
-      const r = row(tenant, id);
-      return r && open(key, id, r.secret as string);
-    },
+    /** Active accounts of every tenant, ids only (never a credential), for the background jobs; `repo` narrows to the accounts that name it. */
+    active: (repo?: string): { tenant: string; id: string; provider: string }[] =>
+      db
+        .prepare("SELECT tenant, id, provider FROM accounts WHERE status = 'active' AND (? IS NULL OR (provider = 'github' AND repo = ?)) ORDER BY seq")
+        .all(repo ?? null, repo ?? null) as { tenant: string; id: string; provider: string }[],
+    health: openHealth(db),
     close: (): void => db.close(),
   };
-  registerSecrets(store, db, key); // the cross-tenant read lives in secrets.ts, off this type
   return store;
 }
 export type Store = ReturnType<typeof openStore>;

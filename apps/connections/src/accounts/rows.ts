@@ -5,14 +5,24 @@ export type Row = Record<string, SQLInputValue>;
 
 export const SCHEMA = `CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY, tenant TEXT NOT NULL, owner TEXT NOT NULL, provider TEXT NOT NULL, label TEXT NOT NULL,
-  kind TEXT NOT NULL, access TEXT NOT NULL, data_zone TEXT NOT NULL, status TEXT NOT NULL, secret TEXT NOT NULL,
-  seq INTEGER NOT NULL, repo TEXT, last_sync_at INTEGER)`;
+  kind TEXT NOT NULL, access TEXT NOT NULL, data_zone TEXT NOT NULL, status TEXT NOT NULL,
+  seq INTEGER NOT NULL, repo TEXT, last_sync_at INTEGER, fail_count INTEGER NOT NULL DEFAULT 0, last_error TEXT, last_run_at INTEGER)`;
 
-/** Databases made before a column existed get it on open. */
+/**
+ * Databases made before a column existed get it on open. A database from before the token vault still has a sealed `secret`
+ * column: it is dropped and its accounts are set to needs-auth, since the vault never saw those credentials.
+ */
 export const migrate = (db: DatabaseSync): void => {
   const have = (db.prepare("PRAGMA table_info(accounts)").all() as { name: string }[]).map((c) => c.name);
   if (!have.includes("repo")) db.exec("ALTER TABLE accounts ADD COLUMN repo TEXT");
   if (!have.includes("last_sync_at")) db.exec("ALTER TABLE accounts ADD COLUMN last_sync_at INTEGER");
+  if (!have.includes("fail_count")) db.exec("ALTER TABLE accounts ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0");
+  if (!have.includes("last_error")) db.exec("ALTER TABLE accounts ADD COLUMN last_error TEXT");
+  if (!have.includes("last_run_at")) db.exec("ALTER TABLE accounts ADD COLUMN last_run_at INTEGER");
+  if (have.includes("secret")) {
+    db.exec("UPDATE accounts SET status = 'needs-auth'");
+    db.exec("ALTER TABLE accounts DROP COLUMN secret");
+  }
 };
 
 export const view = (r: Row): Account => ({

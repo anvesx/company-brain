@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSync } from "../../src/cli/sync.js";
-import { bootBrain, type Env, signUp, whoIs } from "../identity/boot.js";
+import { bootBrain, type Env, promote, signUp, whoIs } from "../identity/boot.js";
 
 const put = (root: string, rel: string, users: string[], groups: string[] = []) => {
   const f = join(root, rel);
@@ -33,6 +33,7 @@ describe("connect, sync, then ask", () => {
     put(root, "plan.md", [user]);
     put(root, "eng/design.md", ["bo"]);
     const report = await runSync({ BRAIN_CONNECTOR: "folder", BRAIN_FOLDER_ROOT: root, BRAIN_TENANT: tenant, BRAIN_GRAPH_PATH: dbPath }, () => 1000);
+    promote(store, tenant, ["folder/plan.md", "folder/eng/design.md"]);
     expect(report.removed).toBe(0);
     expect(report.nodes).toBeGreaterThan(0);
 
@@ -42,7 +43,10 @@ describe("connect, sync, then ask", () => {
     expect(text).not.toContain("SECRET BODY TEXT");
     // Zed is in another tenant with a document of his own: he sees that and nothing from Ana's folder.
     const z = await whoIs(env, zed.browser.cookie());
-    store.upsertNode({ tenant: z.tenant, id: "zed-only", kind: "document", source: "drive", address: "z", title: "z", version: "1", props: {} }, 1);
+    store.upsertNode(
+      { tenant: z.tenant, id: "zed-only", kind: "document", source: "drive", address: "z", title: "z", version: "1", props: { zone: "company" } },
+      1,
+    );
     store.upsertNode({ tenant: z.tenant, id: z.user, kind: "person", source: "drive", address: z.user, title: "Zed", version: "1", props: {} }, 1);
     store.addEdge({ tenant: z.tenant, from: z.user, to: "zed-only", kind: "can-read", source: "drive" }, 1);
     expect(JSON.parse(await ask(zed)).documents.map((d: { id: string }) => d.id)).toEqual(["zed-only"]);

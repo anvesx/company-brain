@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSync } from "../../src/cli/sync.js";
-import { bootBrain, type Env, signUp, whoIs } from "../identity/boot.js";
+import { bootBrain, type Env, promote, signUp, whoIs } from "../identity/boot.js";
 
 let env: Env | undefined;
 afterEach(async () => {
@@ -17,7 +17,8 @@ type Db = { update(q: object): Promise<unknown>; create(q: object): Promise<unkn
 async function boot(acls: Record<string, string[]>) {
   const dir = mkdtempSync(join(tmpdir(), "brain-edge-"));
   const graph = join(dir, "graph.db");
-  env = await bootBrain({ store: createGraphStore({ path: graph }) });
+  const store = createGraphStore({ path: graph });
+  env = await bootBrain({ store });
   const ann = await signUp(env, "Ann");
   const { tenant, user } = await whoIs(env, ann.browser.cookie());
   for (const [rel, users] of Object.entries(acls)) {
@@ -27,6 +28,11 @@ async function boot(acls: Record<string, string[]>) {
     writeFileSync(`${f}.acl.json`, JSON.stringify({ allowUsers: users, allowGroups: [], version: 1 }));
   }
   await runSync({ BRAIN_CONNECTOR: "folder", BRAIN_FOLDER_ROOT: join(dir, "src"), BRAIN_TENANT: tenant, BRAIN_GRAPH_PATH: graph }, () => 1000);
+  promote(
+    store,
+    tenant,
+    Object.keys(acls).map((rel) => `folder/${rel}`),
+  );
   const db = (await env.identity.auth.$context).adapter as unknown as Db;
   await db.update({ model: "user", where: [{ field: "id", value: user }], update: { emailVerified: true } });
   const get = (path: string) => fetch(`${env?.base}/v1/documents${path}`, { headers: { cookie: ann.browser.cookie() } });

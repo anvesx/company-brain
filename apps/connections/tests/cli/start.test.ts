@@ -1,9 +1,10 @@
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { start } from "../../src/cli/start.js";
 import { mint, NOW } from "../http/fixture.js";
+import { dataEnv } from "../pg/db.js";
 
 const dirs: string[] = [];
 const stops: (() => Promise<void>)[] = [];
@@ -17,13 +18,12 @@ const env = () => {
   return {
     dir,
     env: {
-      CONNECTIONS_KEY: "ab".repeat(32),
+      ...dataEnv(),
       CONNECTIONS_AUTH_SECRET: "s".repeat(32),
       CONNECTIONS_DB_PATH: join(dir, "c.db"),
       CONNECTIONS_GRAPH_PATH: join(dir, "g.db"),
       CONNECTIONS_ADMINS: "t1:root",
       CONNECTIONS_PORT: "0",
-      CONNECTIONS_TOKENS_FILE: join(dir, "tokens.json"),
     },
   };
 };
@@ -43,11 +43,10 @@ describe("start", () => {
     expect((await call(mint("root", "t1"), "company")).status).toBe(201);
     expect((await call(mint("ann", "t1"), "company")).status).toBe(403);
     expect(existsSync(e.env.CONNECTIONS_DB_PATH) && existsSync(e.env.CONNECTIONS_GRAPH_PATH)).toBe(true);
-    expect(statSync(e.env.CONNECTIONS_TOKENS_FILE).mode & 0o777).toBe(0o600);
   });
   it("refuses bad config before opening anything", async () => {
     const e = env();
-    await expect(start({ ...e.env, CONNECTIONS_KEY: "short" }, () => NOW)).rejects.toThrow(/CONNECTIONS_KEY/);
+    await expect(start({ ...e.env, CONNECTOR_VAULT_KEYS: "short" }, () => NOW)).rejects.toThrow(/CONNECTOR_VAULT_KEYS/);
     expect(existsSync(e.env.CONNECTIONS_DB_PATH)).toBe(false);
   });
   it("fails when the database path cannot be opened, and leaves no half-started server", async () => {

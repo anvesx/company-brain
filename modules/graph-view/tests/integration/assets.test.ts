@@ -15,7 +15,7 @@ beforeAll(async () => {
 afterAll(async () => [await env?.close(), drop?.()]);
 
 // The installed packages on disk. The routes must serve these files unchanged, the way identity
-// serves @simplewebauthn/browser at /webauthn.js (features/identity/src/pages/passkey/assets.ts).
+// serves @simplewebauthn/browser at /webauthn.js (removed from features/identity with passkeys).
 const resolve = createRequire(import.meta.url).resolve;
 const forceGraphUmd = join(dirname(resolve("3d-force-graph")), "3d-force-graph.min.js");
 const threeRoot = join(dirname(resolve("three")), "..");

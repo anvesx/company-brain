@@ -1,4 +1,5 @@
 import type { Edge, EdgeKind, NodeKind } from "@anvesx/graph-store";
+import type { Recheck, RecheckLimits } from "@anvesx/visibility/gate";
 import { categoriesOf, groupOf } from "./groups.js";
 import { checkAsOf, checkKey, decodeCursor, encodeCursor, pageSize } from "./limits.js";
 import { type ViewStore, visibleSet } from "./visible.js";
@@ -11,6 +12,10 @@ export interface GraphViewQuery {
   user: string;
   aliases?: string[] | undefined;
   asOf?: number | undefined;
+  /** The live source check; without one no document is shown (fail closed). */
+  recheck?: Recheck | undefined;
+  /** Bounds on the live check (most documents, longest wait); absent means the gate's defaults. */
+  recheckLimits?: RecheckLimits | undefined;
   limit?: number | undefined;
   cursor?: string | undefined;
   /** 32 secret bytes that sign cursors; share one key across instances so any of them accepts any cursor. */
