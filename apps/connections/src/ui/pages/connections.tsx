@@ -9,8 +9,10 @@ import { Connected } from "./parts.js";
 type Props = { email: string; rows: Row[]; groups: Group[]; now: number; note?: Note | undefined };
 
 /** The home screen: connected accounts first, then everything the catalog offers. */
-export const ConnectionsPage = ({ email, rows, groups, now, note }: Props) => {
-  const first = groups.find((g) => g.entries.some((e) => !e.reason))?.title;
+export const ConnectionsPage = ({ email, rows, groups: all, now, note }: Props) => {
+  const off = all.flatMap((g) => g.entries.filter((e) => e.reason));
+  const groups = all.map((g) => ({ ...g, entries: g.entries.filter((e) => !e.reason) })).filter((g) => g.entries.length > 0);
+  const first = groups.find((g) => g.entries.length > 0)?.title;
   return (
     <Shell title="Connections" email={email} note={note}>
       <Eyebrow>Connections</Eyebrow>
@@ -34,18 +36,28 @@ export const ConnectionsPage = ({ email, rows, groups, now, note }: Props) => {
             {g.entries.map((e) => (
               <li>
                 <span class="name">{e.name}</span>
-                {e.reason ? (
-                  <span class="why">Not available. {e.reason}</span>
-                ) : (
-                  <a class="btn btn-2 go" href={`/connect/${encodeURIComponent(e.id)}`} aria-label={`Add ${e.name}`}>
-                    Add
-                  </a>
-                )}
+                <a class="btn btn-2 go" href={`/connect/${encodeURIComponent(e.id)}`} aria-label={`Add ${e.name}`}>
+                  Add
+                </a>
               </li>
             ))}
           </ul>
         </section>
       ))}
+      {off.length > 0 && (
+        <section class="na">
+          <Heading level={2}>Not available on this server</Heading>
+          {[...new Set(off.map((e) => e.reason))].map((why) => (
+            <p>
+              {off
+                .filter((e) => e.reason === why)
+                .map((e) => e.name)
+                .join(", ")}
+              : {why}
+            </p>
+          ))}
+        </section>
+      )}
     </Shell>
   );
 };

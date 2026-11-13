@@ -46,7 +46,7 @@ export function uiRoutes(d: Deps, api: Hono, login: Login): Hono<PageEnv> {
     if (!row) return go(c, "/", "error", "not-found");
     const needsRepo = d.catalog.get(row.account.provider, row.account.tenant)?.needsRepo === true;
     c.header("content-security-policy", policy(entryFor(d, row.account.provider, caller.tenant)?.origin)); // Reconnect is a form that hops to the provider
-    return c.html(AccountPage({ email: caller.user, row, now: d.now() * 1000, needsRepo, note: noteOf(q) }));
+    return c.html(AccountPage({ email: caller.user, row, now: d.now() * 1000, needsRepo, confirming: q.confirm === "1", note: noteOf(q) }));
   });
   r.post("/accounts/:id/sync", async (c) => {
     const id = c.req.param("id");

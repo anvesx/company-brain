@@ -18,6 +18,13 @@ describe.skipIf(skip)("who may see and change the pages", () => {
     }
     expect((await fetch(`${s.base}/ui/app.css`)).headers.get("content-type")).toContain("text/css");
   });
+  it("serves a sign-in page in the app's own frame, with the ground and no input but the button", async () => {
+    const html = await (await fetch(`${s.base}/sign-in`)).text();
+    expect(html).toContain('class="signin"');
+    expect(html).toContain('href="/ui/app.css"');
+    expect(html).toContain("Continue with Google");
+    expect(html).not.toMatch(/<input/);
+  });
   it("refuses a cross-site or foreign-origin post, and keeps the account", async () => {
     const b = await s.signedIn("cy");
     for (const h of [{ "sec-fetch-site": "cross-site" }, { origin: "http://evil.test" }]) {

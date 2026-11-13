@@ -7,14 +7,19 @@ export const signInPage = (): SignInPage => ({
   html: (notice) =>
     `<!doctype html>${(
       (
-        <Document title="Sign in">
-          <Main>
-            <Heading>Company Brain</Heading>
-            {notice && <p role="alert">{notice}</p>}
-            <form method="post" action="/sign-in/google">
-              <ProviderButton />
-            </form>
-          </Main>
+        <Document title="Sign in - Company Brain" head={<link rel="stylesheet" href="/ui/app.css" />}>
+          <div class="signin">
+            <Main>
+              <div class="card">
+                <Heading>Company Brain</Heading>
+                <p class="lede">Sign in to connect your apps.</p>
+                {notice && <p role="alert">{notice}</p>}
+                <form method="post" action="/sign-in/google">
+                  <ProviderButton />
+                </form>
+              </div>
+            </Main>
+          </div>
         </Document>
       )
     ).toString()}`,

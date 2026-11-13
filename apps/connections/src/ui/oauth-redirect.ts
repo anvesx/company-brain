@@ -6,6 +6,7 @@ const codeOf = (status: number, error = ""): string => {
   if (error.startsWith("provider refused")) return "denied";
   if (error === "token exchange failed") return "exchange";
   if (status === 403) return "zones";
+  if (status === 500) return "store";
   return status === 400 ? "state" : "failed";
 };
 

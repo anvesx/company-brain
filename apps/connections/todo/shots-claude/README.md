@@ -1,3 +1,3 @@
 # Screenshots (claude lane)
 
-Real browser run against local OIDC and real Postgres, after the verifier fixes. Files: 1280 grouped directory with a connected row, 1280 consent page, 1280 healthy account, 375 connections list.
+Real browser, local OIDC and real Postgres, after the second verify. Files: dark sign-in card, dark needs-reconnect account (Reconnect button, no repository hint), 375 dark connections (rail on one row, "Ask SOON" spaced), 1280 light directory. The first three are dark scheme emulation (body rgb(0, 0, 0)).

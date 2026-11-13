@@ -21,9 +21,9 @@ describe.skipIf(skip)("add, connect, sync, disconnect in a browser", () => {
     expect(home).toContain("ann@example.com");
     expect(home).toContain("No app is connected yet.");
     expect(home).toContain('href="/connect/github"');
-    expect(home).toContain("Not available");
+    expect(home).toContain("Not available on this server");
+    expect(home).toContain("Slack, Google Drive, Gmail: No OAuth client is set up for it on this server.");
     expect(home).toMatch(/<h2[^>]*>Code <span class="count">1<\/span>/);
-    expect(home).toMatch(/<h2[^>]*>Documents/);
     expect(home).toContain('class="btn btn-2 go"');
 
     const connect = await b.send(`${s.base}/connect/github`);

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { skip } from "../../../../../features/google-identity/tests/support/db.js";
 import { bootUi } from "../harness.js";
 
@@ -45,12 +45,35 @@ describe.skipIf(skip)("the account page, repository and reconnect", () => {
     const html = await page.text();
     expect(html).toContain('action="/v1/oauth/github/start"');
     expect(html).toContain("Reconnect GitHub");
+    expect(html).not.toContain("Set a repository below");
     expect(html).not.toMatch(/<button[^>]*>Sync now/);
     expect(page.headers.get("content-security-policy")).toMatch(/form-action 'self' http:\/\/127\.0\.0\.1:\d+/);
-
     expect(idOf(await s.connect(b))).toBe(id);
     expect(s.store.listVisible({ user: "jon@example.com", tenant: "jon@example.com" })).toHaveLength(1);
     const now = s.store.get("jon@example.com", id);
     expect([now?.status, now?.repo]).toEqual(["active", "acme/handbook"]);
+  });
+  it("asks before disconnecting, on its own step with a way back", async () => {
+    const b = await s.signedIn("lou");
+    const id = idOf(await s.connect(b));
+    const plain = await (await b.send(`${s.base}/accounts/${id}`)).text();
+    expect(plain).not.toContain(`/accounts/${id}/disconnect`);
+    const ask = await (await b.send(`${s.base}/accounts/${id}?confirm=1`)).text();
+    expect(ask).toContain(`action="/accounts/${id}/disconnect"`);
+    expect(ask).toContain("Keep it");
+    expect(ask).not.toContain("<details");
+  });
+  it("says the connection could not be saved when our own store fails, and logs the cause", async () => {
+    const b = await s.signedIn("meg");
+    const create = vi.spyOn(s.store, "create").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const back = await s.connect(b);
+    expect(back).toBe("/?oauth_error=store");
+    expect(log).toHaveBeenCalledWith("oauth callback: could not store the account", expect.objectContaining({ message: "disk full" }));
+    create.mockRestore();
+    log.mockRestore();
+    expect(await (await b.send(`${s.base}${back}`)).text()).toContain("Could not save the connection, try again.");
   });
 });

@@ -4,5 +4,5 @@ One function per screen. Each takes plain data from `ui/model` and returns a `Sh
 
 - `connections.tsx`: the directory and the table of connected accounts, or the one-line empty state.
 - `connect.tsx`: the pre-consent panel and the Continue button, or the reason a provider is not available.
-- `account.tsx`: account header, health strip, Sync now (or Reconnect), repo forms and Disconnect with confirm.
+- `account.tsx`: account header, health strip, Sync now (or Reconnect), repo forms and Disconnect behind a confirm panel (`?confirm=1`).
 - `parts.tsx`: the connected table, the health strip and the repository forms.

@@ -19,6 +19,7 @@ const BAD: Record<string, string> = {
   state: "The sign-in expired or was not started in this browser. Start again.",
   exchange: "The provider would not hand over a token. Try again.",
   zones: "That sharing level is not allowed for this app.",
+  store: "Could not save the connection, try again.",
   failed: "The request failed.",
 };
 
