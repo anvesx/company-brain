@@ -35,12 +35,14 @@ describe("drive oauth account, end to end", () => {
     }
   });
 
-  it("answers 502 with graph-sync code when Drive rejects the issued token", async () => {
+  it("asks to reconnect (409, needs-auth) when Drive rejects the issued token and no refresh grant can replace it", async () => {
     h = await bootDrive({ tokens: ["someone-else"] });
     const { made } = await h.connect("");
     const { id } = (await made.json()) as { id: string };
     const synced = await h.s.call("POST", `/v1/accounts/${id}/sync`, root, {});
-    expect(synced.status).toBe(502);
-    expect(await synced.json()).toEqual({ error: "source sync failed", code: "CONNECTOR_FAILED" });
+    expect(synced.status).toBe(409);
+    expect(await synced.json()).toEqual({ error: "account needs re-authorisation" });
+    expect(h.s.store.get("t1", id)?.status).toBe("needs-auth");
+    expect(h.s.store.health.read("t1", id)).toMatchObject({ failures: 1, lastError: expect.stringContaining("reconnect") });
   });
 });

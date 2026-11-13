@@ -1,3 +1,5 @@
+import type { CursorStore } from "@anvesx/change-cursor";
+import type { Vault } from "@anvesx/connector-vault";
 import type { Registry } from "@anvesx/connectors";
 import type { GraphStore } from "@anvesx/graph-store";
 import type { Store } from "./accounts/store.js";
@@ -24,6 +26,12 @@ export type Deps = {
   oauth?: Record<string, OAuthProvider>;
   /** Where `POST /accounts/:id/sync` writes. Absent: the route answers 501. `githubApiUrl` and `driveRootUrl` point the adapters at another host. */
   sync?: { graph: GraphStore; githubApiUrl?: string; driveRootUrl?: string };
-  /** When set, the per-user token file is rewritten after a refresh or a disconnect. */
-  tokensFile?: string;
+  /** Where every account's token is sealed (AES-GCM, one tenant per transaction). The account rows hold no credential. */
+  vault: Vault;
+  /** Per account: when it last synced (the watermark the poll reads to skip fresh accounts) and which webhook deliveries were already handled. */
+  cursors: CursorStore;
+  /** Queues an account sync now (connect, repo change, webhook). Absent: only Sync now and nothing in the background. */
+  jobs?: { requestSync: (tenant: string, id: string, reason: string, nonce?: string) => Promise<void> };
+  /** Shared secret of the GitHub webhook. Absent: no webhook route. */
+  webhookSecret?: string;
 };

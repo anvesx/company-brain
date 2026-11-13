@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { openStore } from "../../src/accounts/store.js";
-import { key } from "../accounts/fixture.js";
 import { bootSync } from "../sync/fixture.js";
 import { pat, root } from "./fixture.js";
 
@@ -61,7 +60,7 @@ describe("the repo field of a github account", () => {
     const old = new DatabaseSync(path);
     old.exec("CREATE TABLE accounts (id TEXT PRIMARY KEY, tenant, owner, provider, label, kind, access, data_zone, status, secret, seq)");
     old.close();
-    const store = openStore(path, key);
+    const store = openStore(path);
     const made = store.create({
       tenant: "t1",
       owner: "ann",
@@ -70,7 +69,6 @@ describe("the repo field of a github account", () => {
       kind: "pat",
       access: "private",
       dataZone: "private",
-      secret: "s",
       repo: "a/b",
     });
     expect(store.get("t1", made.id)?.repo).toBe("a/b");

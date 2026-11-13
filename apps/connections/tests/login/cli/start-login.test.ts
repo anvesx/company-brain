@@ -6,6 +6,7 @@ import { database, skip } from "../../../../../features/google-identity/tests/su
 import { startOidc } from "../../../../../features/google-identity/tests/support/oidc/provider.js";
 import { start } from "../../../src/cli/start.js";
 import { NOW } from "../../http/fixture.js";
+import { dataEnv } from "../../pg/db.js";
 
 let dir: string;
 let db: Awaited<ReturnType<typeof database>>;
@@ -20,7 +21,7 @@ beforeAll(async () => {
   url.pathname = `/${(await db.pool.query<{ current_database: string }>("SELECT current_database()")).rows[0]?.current_database}`;
   running = await start(
     {
-      CONNECTIONS_KEY: "ab".repeat(32),
+      ...dataEnv(),
       CONNECTIONS_AUTH_SECRET: "s".repeat(32),
       CONNECTIONS_DB_PATH: join(dir, "c.db"),
       CONNECTIONS_GRAPH_PATH: join(dir, "g.db"),

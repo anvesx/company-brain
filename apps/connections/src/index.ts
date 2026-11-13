@@ -1,4 +1,3 @@
-export { parseKey } from "./accounts/rules/crypto.js";
 export { checkZones } from "./accounts/rules/widen.js";
 export { openStore, type Store } from "./accounts/store.js";
 export type { Account, Caller, Kind, Zone } from "./accounts/types.js";
@@ -7,8 +6,10 @@ export { type Running, start } from "./cli/start.js";
 export type { Deps } from "./deps.js";
 export { createApp } from "./http/app.js";
 export { startServer } from "./http/serve.js";
+export { type Jobs, type JobsConfig, startJobs } from "./jobs/queue.js";
 export { type OAuthProvider, oauthProvider } from "./oauth/providers.js";
-export { type RefreshResult, refreshAccount } from "./oauth/state/refresh.js";
+export { type Outcome, syncAccount } from "./sync/account.js";
 export { disconnect } from "./sync/data/disconnect.js";
 export { syncRoute } from "./sync/route.js";
-export { writeTokenFile } from "./tokens/write-token-file.js";
+export { createWithToken, openVault } from "./tokens/open.js";
+export { refreshAccount } from "./tokens/refresh.js";

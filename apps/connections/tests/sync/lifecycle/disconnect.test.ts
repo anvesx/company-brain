@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { closeAccountEdges } from "../../../src/sync/data/disconnect.js";
 import { ann, bob, pat, root } from "../../http/fixture.js";
@@ -46,14 +44,12 @@ describe("DELETE /v1/accounts/:id after a sync", () => {
     expect((await bare.s.call("DELETE", `/v1/accounts/${id}`, root)).status).toBe(204);
     await bare.close();
   });
-  it("rewrites the token file without the deleted account's token", async () => {
-    const file = join((await import("node:os")).tmpdir(), `tok-${process.pid}.json`);
-    h = await bootSync({ tokensFile: file });
+  it("removes the deleted account's sealed token from the vault", async () => {
+    h = await bootSync();
     const id = await make();
+    expect(await h.s.vault.get("t1", id)).toBeDefined();
     await h.s.call("DELETE", `/v1/accounts/${id}`, root);
-    expect(existsSync(file)).toBe(true);
-    expect(readFileSync(file, "utf8")).not.toContain("ghp_secret");
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({});
+    expect(await h.s.vault.get("t1", id)).toBeUndefined();
   });
   it("closes edges at the request clock in milliseconds", async () => {
     let t = 1_800_000_000;

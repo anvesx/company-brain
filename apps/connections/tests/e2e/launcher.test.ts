@@ -1,11 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fixture, startReplay } from "@anvesx/connectors/testing/replay";
 import { createGraphStore } from "@anvesx/graph-store";
+import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import { start } from "../../src/cli/start.js";
 import { mint, NOW } from "../http/fixture.js";
+import { databaseUrl, dataEnv } from "../pg/db.js";
 
 const R = "/repos/acme/handbook";
 const ok = (n: string) => ({ status: 200, body: fixture(n) });
@@ -27,19 +29,18 @@ const env = () => {
   dirs.push(dir);
   return {
     env: {
-      CONNECTIONS_KEY: "ab".repeat(32),
+      ...dataEnv(),
       CONNECTIONS_AUTH_SECRET: "s".repeat(32),
       CONNECTIONS_DB_PATH: join(dir, "c.db"),
       CONNECTIONS_GRAPH_PATH: join(dir, "g.db"),
       CONNECTIONS_ADMINS: "t1:root",
       CONNECTIONS_PORT: "0",
-      CONNECTIONS_TOKENS_FILE: join(dir, "tokens.json"),
     },
   };
 };
 
 describe("launcher wiring", () => {
-  it("writes the token file on start, rewrites it on disconnect, and frees the port on close", async () => {
+  it("keeps the sealed token across a restart, removes it on disconnect, and frees the port on close", async () => {
     const e = env();
     const first = await start(e.env, () => NOW);
     const url = `http://127.0.0.1:${first.port}/v1/accounts`;
@@ -48,13 +49,16 @@ describe("launcher wiring", () => {
     const { id } = (await (await fetch(url, { method: "POST", headers: h, body: JSON.stringify(body) })).json()) as { id: string };
     await first.close();
     await expect(fetch(url)).rejects.toThrow();
-    rmSync(e.env.CONNECTIONS_TOKENS_FILE);
     const again = await start(e.env, () => NOW);
     stops.push(again.close);
-    expect(readFileSync(e.env.CONNECTIONS_TOKENS_FILE, "utf8")).toContain("ghp_tok");
+    const pool = new pg.Pool({ connectionString: databaseUrl() });
+    const sealed = async () => (await pool.query("SELECT sealed FROM connector_tokens WHERE id = $1", [id])).rows;
+    expect(await sealed()).toHaveLength(1);
+    expect(JSON.stringify(await sealed())).not.toContain("ghp_tok");
     const del = await fetch(`http://127.0.0.1:${again.port}/v1/accounts/${id}`, { method: "DELETE", headers: h });
     expect(del.status).toBe(204);
-    expect(JSON.parse(readFileSync(e.env.CONNECTIONS_TOKENS_FILE, "utf8"))).toEqual({});
+    expect(await sealed()).toEqual([]);
+    await pool.end();
   });
   it("syncs into the configured graph through the configured GitHub API", async () => {
     const e = env();

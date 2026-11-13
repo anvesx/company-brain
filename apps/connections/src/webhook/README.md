@@ -1,0 +1,3 @@
+# webhook
+
+`route.ts`: `POST /v1/webhooks/github`. Verifies `X-Hub-Signature-256` (HMAC-SHA256 of the raw body, constant-time compare) and answers 401 on a bad one. A `push` or `issues` event for `owner/repo` queues one sync per active GitHub account that names that repo; `ping` answers 200, other events 202 and nothing queued. `X-GitHub-Delivery` is recorded with `seen` (change-cursor) and is also part of the job key, so a redelivery queues nothing new. Mounted only when `CONNECTIONS_GITHUB_WEBHOOK_SECRET` is set. The webhook is the fast path; the poll in `jobs/` is the fallback when a delivery is missed.

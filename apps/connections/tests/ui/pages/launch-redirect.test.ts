@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { start } from "../../../src/cli/start.js";
 import { NOW } from "../../http/fixture.js";
+import { dataEnv } from "../../pg/db.js";
 
 const dirs: string[] = [];
 const stops: (() => Promise<void>)[] = [];
@@ -15,7 +16,7 @@ const boot = async (opts?: Parameters<typeof start>[2]) => {
   const dir = mkdtempSync(join(tmpdir(), "conn-ui-"));
   dirs.push(dir);
   const env = {
-    CONNECTIONS_KEY: "ab".repeat(32),
+    ...dataEnv(),
     CONNECTIONS_AUTH_SECRET: "s".repeat(32),
     CONNECTIONS_DB_PATH: join(dir, "c.db"),
     CONNECTIONS_GRAPH_PATH: join(dir, "g.db"),

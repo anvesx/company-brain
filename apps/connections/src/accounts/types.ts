@@ -20,5 +20,5 @@ export type Account = {
   lastSyncAt: number | null;
 };
 
-export type NewAccount = Omit<Account, "id" | "status" | "repo" | "lastSyncAt"> & { secret: string; repo?: string | null };
+export type NewAccount = Omit<Account, "id" | "status" | "repo" | "lastSyncAt"> & { repo?: string | null };
 export type Patch = Partial<Pick<Account, "label" | "access" | "dataZone" | "repo">>;
