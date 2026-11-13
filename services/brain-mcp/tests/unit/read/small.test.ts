@@ -6,7 +6,8 @@ import { tempStore } from "../../support/graph.js";
 
 const store = tempStore();
 afterAll(() => store.close());
-const list = (rows: Record<string, unknown>[]) => connectors({ store: toAsync(store), caller: { tenant: "t", user: "u" }, accounts: async () => rows });
+const list = (rows: Record<string, unknown>[]) =>
+  connectors({ store: toAsync(store), caller: { tenant: "t", user: "u" }, accounts: async () => rows, aliases: async () => [] });
 
 describe("brain.connectors", () => {
   it("renders linkedAt for epoch ms, ISO string and Date, and leaves it out for anything else", async () => {

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { GraphViewPage } from "../../../src/index.js";
 import { mountGraphView } from "../../../src/index.js";
 import { another, boot, type Env, personWithDoc } from "../../support/server.js";
-import { edge, KEY, node, openLongStore, write } from "../../support/store.js";
+import { ALLOW, edge, KEY, LIMITS, node, openLongStore, write } from "../../support/store.js";
 
 // Two servers stand in for two Cloud Run instances: one graph file, one identity, one session cookie.
 let env: Env;
@@ -65,7 +65,8 @@ describe("a cursor works on any instance that shares the key", () => {
 });
 
 describe("the key is checked when the view is mounted", () => {
-  const mount = (cursorKey: Uint8Array) => () => mountGraphView(new Hono(), { store, port: env.identity.port, cursorKey });
+  const mount = (cursorKey: Uint8Array) => () =>
+    mountGraphView(new Hono(), { store, port: env.identity.port, cursorKey, recheck: ALLOW, recheckLimits: LIMITS });
   it.each([31, 33, 0])("refuses a %i-byte key with GraphError BAD_INPUT", (bytes) => {
     expect(mount(new Uint8Array(bytes))).toThrow(expect.objectContaining({ name: "GraphError", code: "BAD_INPUT" }));
   });

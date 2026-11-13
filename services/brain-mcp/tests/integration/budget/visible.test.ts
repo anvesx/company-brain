@@ -1,6 +1,7 @@
 import type { AsyncGraphStore, EdgeKind, NodeKind } from "@anvesx/graph-store";
 import { describe, expect, it } from "vitest";
 import { CHUNK, viewer } from "../../../src/access/visible.js";
+import { as } from "../../support/graph.js";
 import { storeFactories } from "../../support/server.js";
 import { counted, seed } from "./count.js";
 
@@ -8,7 +9,10 @@ const T = "org-fan";
 const FAN = 4_000; // documents behind one person and one project
 const docs = Array.from({ length: FAN }, (_, i) => `doc-${i}`);
 const put = (s: AsyncGraphStore, id: string, kind: NodeKind) =>
-  s.upsertNode({ tenant: T, id, kind, source: "test", address: `x://${id}`, title: id, version: "1", props: {} }, 1);
+  s.upsertNode(
+    { tenant: T, id, kind, source: "test", address: `x://${id}`, title: id, version: "1", props: kind === "document" ? { zone: "company" } : {} },
+    1,
+  );
 const link = (s: AsyncGraphStore, from: string, kind: EdgeKind, to: string) => s.addEdge({ tenant: T, from, to, kind, source: "test" }, 1);
 
 /** u-wide can read all FAN documents and they all belong to proj-big. u-none reads nothing; u-one reads only the last. */
@@ -31,19 +35,22 @@ async function fanOut(s: AsyncGraphStore): Promise<void> {
 // mcp-server rule 2 at scale: checking a node with FAN neighbours costs a few batched store calls, not two per neighbour.
 for (const f of storeFactories) {
   describe.skipIf(f.skip !== undefined)(`${f.name}: viewer cost does not grow with fan-out`, () => {
-    it(`a read-nothing viewer checks a person and a project with ${FAN} documents in at most ceil(${FAN}/CHUNK) + 6 calls`, { timeout: 120_000 }, async () => {
+    it(`a read-nothing viewer checks a person and a project with ${FAN} documents in at most 2 * ceil(${FAN}/CHUNK) + 6 calls`, {
+      timeout: 120_000,
+    }, async () => {
       const real = await f.open();
       await fanOut(real);
+      // The shared gate reads each chunk of documents twice (the nodes, then who can read them), hence the factor 2.
       for (const bulk of [false, true]) {
         const { store, calls } = counted(real);
-        const v = await viewer(store, { tenant: T, user: "u-none" }, undefined, bulk);
+        const v = await viewer(as(store, { tenant: T, user: "u-none" }), undefined);
         expect([await v.sees("u-wide"), await v.sees("proj-big")]).toEqual([false, false]);
-        expect(calls.length, `bulk=${bulk}: ${calls.length} calls`).toBeLessThanOrEqual(Math.ceil(FAN / CHUNK) + 6);
+        expect(calls.length, `bulk=${bulk}: ${calls.length} calls`).toBeLessThanOrEqual(Math.ceil(FAN / CHUNK) * 2 + 6);
       }
       // The same batched path still says yes when one document of the FAN is readable.
-      const one = await viewer(real, { tenant: T, user: "u-one" });
-      expect([await one.sees("u-wide"), await one.sees("proj-big"), await one.sees("doc-0")]).toEqual([true, true, false]);
-      const many = await viewer(real, { tenant: T, user: "u-one" }, undefined, true);
+      const one = await viewer(as(real, { tenant: T, user: "u-one" }));
+      expect([await one.sees("u-wide"), await one.sees("proj-big"), await one.sees("doc-0")]).toEqual([false, true, false]); // u-wide is a co-reader of a document u-one does not own (leak 4)
+      const many = await viewer(as(real, { tenant: T, user: "u-one" }), undefined);
       expect(await many.seesMany([{ id: "proj-big" }, { id: "doc-0", kind: "document" }, { id: docs.at(-1)!, kind: "document" }])).toEqual([true, false, true]);
     });
   });

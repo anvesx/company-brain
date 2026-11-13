@@ -4,7 +4,7 @@ import type { GraphStore } from "@anvesx/graph-store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { visibleGraph } from "../../src/index.js";
 import { seedScale, TENANT, USER } from "../support/seed.js";
-import { KEY, openLongStore } from "../support/store.js";
+import { ALLOW, KEY, LIMITS, openLongStore } from "../support/store.js";
 
 // Rule 6: under 300 ms for a user with 10,000 readable documents in a 50,000-edge graph.
 // This folder is excluded from the Stryker run (vitest.stryker.config.ts): instrumented code is
@@ -34,7 +34,7 @@ describe("rule 6: visibleGraph at integration scale", () => {
   });
 
   it("returns the whole visible graph in one page of 20,000, under 300 ms on a warm store", async (ctx) => {
-    const query = { cursorKey: KEY, tenant: TENANT, user: USER, limit: 20_000 };
+    const query = { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: TENANT, user: USER, limit: 20_000 };
     await visibleGraph(store, query); // warm-up: first touch pages the SQLite file into memory
     // Best of three timed runs: the budget is a property of the code, and the minimum is the
     // standard way to read it through scheduler noise on a shared machine (the result is checked
@@ -58,7 +58,7 @@ describe("rule 6: visibleGraph at integration scale", () => {
   });
 
   it("no invisible row leaks: outsiders, unreadable documents, foreign teams and their projects are absent", async () => {
-    const page = await visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER, limit: 20_000 });
+    const page = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: TENANT, user: USER, limit: 20_000 });
     const ends = new Set(page.edges.flatMap((e) => [e.from, e.to]));
     for (const id of ["x0", "x1999", "o0", "team2", "team4", "p50", "p59"]) {
       expect(ends.has(id)).toBe(false);
@@ -67,7 +67,7 @@ describe("rule 6: visibleGraph at integration scale", () => {
   });
 
   it("the default page stops at 5,000 nodes and points at the rest", async () => {
-    const page = await visibleGraph(store, { cursorKey: KEY, tenant: TENANT, user: USER });
+    const page = await visibleGraph(store, { cursorKey: KEY, recheck: ALLOW, recheckLimits: LIMITS, tenant: TENANT, user: USER });
     expect(page.nodes).toHaveLength(5_000);
     expect(page.next).toBeTypeOf("string");
   });

@@ -73,7 +73,7 @@ describe("brain /v1/documents behind identity", () => {
     const b = await whoIs(env, bob.browser.cookie());
     // Amended by the lead: Bob's tenant holds its own readable "d-1", so this cannot pass on empty input.
     seedDocs(env.store, b.tenant, b.user);
-    env.store.upsertNode({ tenant: b.tenant, id: "d-1", kind: "document", source: "drive", address: "bob", title: "Bob's d-1", version: "1", props: {} }, 2);
+    env.store.upsertNode({ ...env.store.node(b.tenant, "d-1")!, title: "Bob's d-1" }, 2);
     expect(await titles(ann)).toEqual(["title of d-1"]);
     expect(await titles(bob)).toEqual(["Bob's d-1"]);
   });

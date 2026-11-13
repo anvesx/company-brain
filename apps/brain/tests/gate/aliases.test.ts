@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { createGraphStore } from "@anvesx/graph-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSync } from "../../src/cli/sync.js";
-import { bootBrain, type Env, signUp, whoIs } from "../identity/boot.js";
+import { bootBrain, type Env, promote, signUp, whoIs } from "../identity/boot.js";
 
 let env: Env | undefined;
 afterEach(async () => {
@@ -30,6 +30,8 @@ async function boot(acls: Record<string, string[]>) {
   for (const [rel, users] of Object.entries(acls)) put(join(dir, "src"), rel, users);
   const sync = { BRAIN_CONNECTOR: "folder", BRAIN_FOLDER_ROOT: join(dir, "src"), BRAIN_TENANT: tenant, BRAIN_GRAPH_PATH: graph };
   await runSync(sync, () => 1000);
+  const files = Object.keys(acls).map((rel) => `folder/${rel}`);
+  promote(store, tenant, files);
   const read = async <T>(path: string) => (await (await fetch(`${env?.base}${path}`, { headers: { cookie: ann.browser.cookie() } })).json()) as T;
   const ids = async () => (await read<{ documents: { id: string }[] }>("/v1/documents")).documents.map((d) => d.id);
   const db = async () => (await env?.identity.auth.$context)?.adapter as Db;
@@ -37,10 +39,10 @@ async function boot(acls: Record<string, string[]>) {
   return { ids, graphIds, user, db, email: ann.email, store, tenant };
 }
 
-type Db = {
-  update(q: { model: string; where: { field: string; value: string }[]; update: object }): Promise<unknown>;
-  create(q: { model: string; data: object }): Promise<unknown>;
-};
+type Db = { update(q: object): Promise<unknown>; create(q: object): Promise<unknown> };
+
+const link = (db: Db, user: string) =>
+  db.create({ model: "account", data: { userId: user, accountId: "ann-gh", providerId: "github", createdAt: new Date(), updatedAt: new Date() } });
 
 describe("ACLs written with source names reach the identity user", () => {
   it("shows a document whose ACL names the user's verified email, and hides one naming another email", async () => {
@@ -57,16 +59,14 @@ describe("ACLs written with source names reach the identity user", () => {
 
   it("shows a document whose ACL names a linked connector account id", async () => {
     const { ids, user, db } = await boot({ "gh.md": ["ann-gh"], "other.md": ["bob-gh"] });
-    const now = new Date();
-    await (await db()).create({ model: "account", data: { userId: user, accountId: "ann-gh", providerId: "github", createdAt: now, updatedAt: now } });
+    await link(await db(), user);
     expect(await ids()).toEqual(["folder/gh.md"]);
   });
 
   it("/v1/graph and /v1/documents agree for a document only an alias can read", async () => {
     const { ids, graphIds, user, db } = await boot({ "gh.md": ["ann-gh"], "other.md": ["bob-gh"] });
     expect(await graphIds()).toEqual([]);
-    const now = new Date();
-    await (await db()).create({ model: "account", data: { userId: user, accountId: "ann-gh", providerId: "github", createdAt: now, updatedAt: now } });
+    await link(await db(), user);
     expect(await graphIds()).toEqual(["folder/gh.md"]);
     expect(await graphIds()).toEqual(await ids());
   });

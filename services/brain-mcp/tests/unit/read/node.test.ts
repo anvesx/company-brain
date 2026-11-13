@@ -6,7 +6,14 @@ import { edge, node, T0, T1, tempStore } from "../../support/graph.js";
 // brain.node over a real store file. Ada reads through team-eng; X is a readable document with edges both ways.
 const store = tempStore();
 const T = "org-n";
-const ctx = { store: toAsync(store), caller: { tenant: T, user: "u-ada" }, accounts: async () => [] };
+const ctx = {
+  store: toAsync(store),
+  caller: { tenant: T, user: "u-ada" },
+  accounts: async () => [],
+  aliases: async () => [],
+  recheck: async () => true,
+  recheckLimits: { perCheckMs: 5_000, totalMs: 60_000, top: 100_000 },
+};
 const peers = async (id: string, asOf?: number) => (await nodeView(ctx, id, asOf)).neighbours.map((e) => `${e.from}>${e.kind}>${e.to}`).sort();
 afterAll(() => store.close());
 

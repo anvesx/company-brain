@@ -1,19 +1,35 @@
+import { createGraphStore, toAsync } from "@anvesx/graph-store";
+import type { Caller as IdentityCaller } from "@anvesx/identity";
+import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Recheck } from "../src/live/recheck.js";
-import { bootBrain, type Env, signUp, whoIs } from "./identity/boot.js";
+import { mountDocuments } from "../src/routes/documents.js";
 
-let env: Env | undefined;
-afterEach(async () => env?.close());
+let close: (() => void) | undefined;
+afterEach(() => close?.());
 
-/** Boots the brain with Ann able to read d1 and d2, and an optional live check. */
+/** Mounts the real routes with Ann able to read d1 and d2, without opening a sandbox-blocked socket. */
 async function boot(recheck?: Recheck) {
-  env = await bootBrain(recheck ? { recheck } : {});
-  const ann = await signUp(env, "Ann");
-  const { tenant, user } = await whoIs(env, ann.browser.cookie());
-  const n = (id: string, kind: "person" | "document") => ({ tenant, id, kind, source: "drive", address: `addr-${id}`, title: id, version: "1", props: {} });
-  for (const x of [n(user, "person"), n("d1", "document"), n("d2", "document")]) env.store.upsertNode(x, 1);
-  for (const d of ["d1", "d2"]) env.store.addEdge({ tenant, from: user, to: d, kind: "can-read", source: "drive" }, 1);
-  return { get: (path: string) => fetch(`${env?.base}${path}`, { headers: { cookie: ann.browser.cookie() } }), user, tenant };
+  const graph = createGraphStore({ path: ":memory:" });
+  close = () => graph.close();
+  const caller: IdentityCaller = { tenant: "t", user: "ann", kind: "session", scopes: [] };
+  const n = (id: string, kind: "person" | "document") => ({
+    tenant,
+    id,
+    kind,
+    source: "drive",
+    address: `addr-${id}`,
+    title: id,
+    version: "1",
+    props: kind === "document" ? { zone: "company" } : {},
+  });
+  const { tenant, user } = caller;
+  for (const x of [n(user, "person"), n("d1", "document"), n("d2", "document")]) graph.upsertNode(x, 1);
+  for (const d of ["d1", "d2"]) graph.addEdge({ tenant, from: user, to: d, kind: "can-read", source: "drive" }, 1);
+  const protect = (handler: (req: Request, who: IdentityCaller) => Promise<Response>) => (req: Request) => handler(req, caller);
+  const app = new Hono();
+  mountDocuments(app, { store: toAsync(graph), protect, aliases: async () => [], ...(recheck && { recheck }) });
+  return { get: (path: string) => app.request(path), user, tenant };
 }
 
 describe("live permission recheck", () => {
@@ -44,9 +60,10 @@ describe("live permission recheck", () => {
     expect((await get("/v1/documents/d1")).status).toBe(404);
   });
 
-  it("changes nothing when no check is configured", async () => {
+  it("fails closed when no check is configured", async () => {
     const { get } = await boot();
     const list = (await (await get("/v1/documents")).json()) as { documents: unknown[] };
-    expect(list.documents).toHaveLength(2);
+    expect(list.documents).toEqual([]);
+    expect((await get("/v1/documents/d1")).status).toBe(404);
   });
 });

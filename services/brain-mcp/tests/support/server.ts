@@ -58,7 +58,7 @@ export async function bootBrain(limits?: { sessions: number; body: number }) {
   const accounts = async (user: string) => db.prepare("SELECT * FROM account WHERE userId = ?").all(user) as Record<string, unknown>[];
   app = new Hono();
   app.route("/", identity.routes);
-  mountBrainMcp(app, { store: toAsync(store), protect: identity.protect, accounts, ...(limits ? { limits } : {}) });
+  mountBrainMcp(app, { store: toAsync(store), protect: identity.protect, accounts, recheck: async () => true, ...(limits ? { limits } : {}) });
   const close = () =>
     new Promise<void>((done) => {
       if ("closeAllConnections" in server) server.closeAllConnections();
