@@ -25,7 +25,8 @@ describe.skipIf(skip)("the app behind Google sign-in", () => {
     const page = await b.send(`${s.base}/`);
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('src="/ui/js/main.js"');
+    expect(html).toContain("bob@example.com");
+    expect(html).toContain("Connected apps");
     expect(html).not.toMatch(/type="password"|type="email"/);
     expect((await b.send(`${s.base}/v1/accounts`)).status).toBe(200);
   });

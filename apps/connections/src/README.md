@@ -4,6 +4,7 @@
 - `index.ts`: public exports.
 - `accounts/`: the account model, the widening rule, encryption and the SQLite store.
 - `http/`: the Hono app, bearer or session auth and `/v1/accounts` routes.
+- `ui/`: the browser pages, server-rendered with the design system (see its README).
 - `login/`: Google-only sign-in for the page (see its README).
 - `tokens/`: the writer for the brain's per-user token file.
 - `catalog/`: `GET/POST /v1/catalog`, the connector list read from the registry (see its README).

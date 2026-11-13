@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { openHealth } from "./health/health.js";
 import { migrate, type Row, SCHEMA, view } from "./rows.js";
 import { open, seal } from "./rules/crypto.js";
 import { registerSecrets } from "./secrets.js";
@@ -60,6 +61,7 @@ export function openStore(path: string, key: Buffer) {
       const r = row(tenant, id);
       return r && open(key, id, r.secret as string);
     },
+    health: openHealth(db),
     close: (): void => db.close(),
   };
   registerSecrets(store, db, key); // the cross-tenant read lives in secrets.ts, off this type

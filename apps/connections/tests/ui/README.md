@@ -1,8 +1,9 @@
 # ui tests
 
-Drive the real app over HTTP: the static page routes, the `start-url` variant and the callback redirect. OAuth uses the replay provider from `tests/oauth`; SQLite is a real temp file.
+Drive the real pages over HTTP with a cookie-jar browser. Sign-in is the real Google-identity app on Postgres 16 with the local OIDC server; Connect uses the local OAuth2 provider from `tests/oauth`; sync reads local GitHub JSON into a real graph file. Page tests skip without `DATABASE_URL` and fail in CI.
 
-- `fixture.ts`: boots the app with the replay provider and the UI redirect on.
-- `routes.test.ts`: page and asset serving, content types, path traversal.
-- `oauth-ui.test.ts`: `start-url` JSON and the redirect back to the page.
+- `harness.ts`: boots all of that on one port and hands out signed-in browsers.
+- `flow.test.ts`: add, consent, callback, repository, sync, disconnect, and the error, syncing and reconnect states.
+- `guard.test.ts`: no session, cross-site posts, unknown providers, a denied sign-in, sign out.
+- `model.test.ts`: counts, times and the state ranking, no server needed.
 - `pages/`: the launcher redirect and `lastSyncAt`.
