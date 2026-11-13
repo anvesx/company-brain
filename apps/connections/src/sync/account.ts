@@ -1,48 +1,11 @@
-import { markNeedsAuth } from "@anvesx/connector-vault";
 import type { SyncReport } from "@anvesx/graph-sync";
-import type { Account } from "../accounts/types.js";
 import type { Deps } from "../deps.js";
-import { refreshAccount, tokenFor } from "../tokens/refresh.js";
+import { tokenFor } from "../tokens/refresh.js";
 import { sourceOf } from "./connector.js";
 import { closeStaleEdges } from "./data/stale.js";
-import { runAccountSync } from "./run.js";
+import { list, needsReconnect, type Outcome } from "./guarded/list.js";
 
-/** How one account sync ended. `failed` is the only outcome worth a retry. */
-export type Outcome =
-  | { kind: "done"; report: SyncReport }
-  | { kind: "bad"; error: string }
-  | { kind: "reauth" }
-  | { kind: "failed"; code: string }
-  | { kind: "missing" };
-
-type Cfg = NonNullable<Deps["sync"]>;
-
-/** A 401 or 403 from the provider: the connectors report both as FORBIDDEN, either on the error or as the cause of a failed sync. */
-const forbidden = (e: unknown): boolean => ((e as { cause?: { code?: string } }).cause ?? (e as { code?: string })).code === "FORBIDDEN";
-
-async function needsReconnect(d: Deps, a: Account): Promise<Outcome> {
-  d.store.setStatus(a.tenant, a.id, "needs-auth");
-  await markNeedsAuth(d.vault.pool, a.tenant, a.id);
-  d.store.health.failed(a.tenant, a.id, "the provider rejected the credential: reconnect this account", d.now() * 1000);
-  return { kind: "reauth" };
-}
-
-/** List with the token; when the provider rejects it, refresh once and list again. A second rejection, or no refresh grant, means reconnect. */
-async function list(d: Deps, cfg: Cfg, a: Account, token: string, repo: string | undefined): Promise<Outcome | SyncReport | { error: string }> {
-  const go = (t: string) => runAccountSync(cfg, a, t, repo, d.now() * 1000, d.catalog);
-  try {
-    return await go(token);
-  } catch (e) {
-    if (!forbidden(e)) throw e;
-  }
-  if ((await refreshAccount(d, a)) !== "refreshed") return needsReconnect(d, a);
-  try {
-    return await go((await d.vault.get(a.tenant, a.id))?.token.accessToken ?? "");
-  } catch (e) {
-    if (!forbidden(e)) throw e;
-    return needsReconnect(d, a);
-  }
-}
+export type { Outcome };
 
 /**
  * The one sync of one account, shared by the Sync now route and the background jobs: token from the vault (refreshed when due),

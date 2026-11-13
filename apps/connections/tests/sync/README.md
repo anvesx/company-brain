@@ -6,4 +6,6 @@
 
 `gate.ts` is a pass-through proxy that can hold requests, so a test can change an account while its sync is mid-flight (`bootSync(extra, routes, true)` routes the adapter through it).
 
+`auth/` covers 401 vs 403 from the source.
+
 `lifecycle/` holds disconnect, narrowing, the narrowing race and refresh.

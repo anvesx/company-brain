@@ -16,6 +16,7 @@ export async function database() {
   const own = new URL(url);
   own.pathname = `/${name}`;
   const pool = new pg.Pool({ connectionString: own.toString(), max: 5 });
+  pool.on("error", () => {}); // DROP ... WITH (FORCE) may reset an idle client while the pool ends
   return {
     pool,
     close: async () => {

@@ -15,6 +15,7 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     const out = await syncAccount(d, cur.tenant, cur.id, typeof body?.repo === "string" ? body.repo : undefined);
     if (out.kind === "done") return c.json(out.report);
     if (out.kind === "bad") return c.json({ error: out.error }, 400);
+    if (out.kind === "denied") return c.json({ error: "the provider denied access to this source" }, 403);
     if (out.kind === "failed") return c.json({ error: "source sync failed", code: out.code }, 502);
     return c.json({ error: "account needs re-authorisation" }, 409);
   });

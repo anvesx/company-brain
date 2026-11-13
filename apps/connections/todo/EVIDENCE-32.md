@@ -56,10 +56,11 @@ Extrapolation is not measured: 1M users was not run. The queue and vault are Pos
 ## What I did NOT cover or did not do
 
 - `features/token-refresh` is not used: the vault's own `refreshOne` plus `httpExchange` does the refresh, gated by `tokenFor` on expiry.
-- `apps/brain` still reads `BRAIN_USER_TOKENS_FILE`; connections no longer writes it (plaintext token files are deleted). The brain's live recheck needs a vault reader. Escalate to the lead.
+- `apps/brain` still reads `BRAIN_USER_TOKENS_FILE`, and nothing writes that file now: apps/connections has no write of it (grep clean) and the plaintext token files are deleted. Until WP-33 rewires apps/brain to read tokens through the vault, the brain's live recheck gets no user tokens. I did not touch apps/brain; that is WP-33.
 - No webhook auto-registration on GitHub; the operator adds the webhook and sets `CONNECTIONS_GITHUB_WEBHOOK_SECRET`. Only GitHub webhooks exist; Drive and others rely on the poll.
-- 401 and 403 are conflated as FORBIDDEN by the connectors, so a 403 rate limit on an account with no refresh grant flips it to needs-auth.
-- Listing is a full list each time, not the provider's incremental feed. The cursor is a last-success watermark that lets the poll skip fresh accounts; it does not narrow the provider query.
+- 401 vs 403 (fixed for GitHub): the published connectors map both to FORBIDDEN and drop the status, so `tokens/probe.ts` asks GitHub `GET /user`. Live token = 403 = account stays active, health says denied, route 403, no retry. Dead token = needs-reconnect. Drive and other providers have no probe and still read any FORBIDDEN as reject.
+- Incremental listing NOT done (not cheap): the connector `list(cursor)` cursor is page position, not a change feed, and GitHub tree listing has no since-parameter in the published connectors. The change-cursor is a last-success watermark that lets the poll skip fresh accounts; it does not narrow the provider query.
+- Teardown flake 57P01 (tests/login/identity.test.ts): reproduced at base c0fa354 (1 of 6 runs exit 1, 2 error lines). Fix: `pool.on("error")` in features/google-identity/tests/support/db.ts, since DROP DATABASE WITH (FORCE) resets idle clients.
 - The dead-letter state is the `connections.sync_dlq` queue plus health text; there is no UI to replay dead letters.
 - pg-boss `depth().queued` is a cached statistic and read 120 after the queue had drained, so the scale test asserts no dead letters instead of final depth.
 - Cron granularity is one minute; poll interval is at most 59 minutes.
