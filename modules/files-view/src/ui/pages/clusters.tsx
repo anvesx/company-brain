@@ -2,18 +2,27 @@ import { Eyebrow, Heading, Paragraph } from "@anvesx/design-system";
 import { Shell } from "../shell.js";
 import type { ClusterNode, Viewer } from "../types.js";
 
+const Row = ({ n }: { n: ClusterNode }) => (
+  <>
+    <span class="type">{n.type}</span>
+    <a href={`/clusters/${encodeURIComponent(n.id)}`}>{n.name}</a>
+    <span class="count">{n.count} files</span>
+    <span class="why">Why: {n.why}</span>
+  </>
+);
+
+/** Groups with sub-groups fold and unfold (native details, no JavaScript); open by default so nothing is hidden at first sight. */
 export const Tree = ({ nodes }: { nodes: ClusterNode[] }) => (
   <ul class="tree">
     {nodes.map((n) => (
       <li>
-        <span class="type">{n.type}</span>
-        <a href={`/clusters/${encodeURIComponent(n.id)}`}>{n.name}</a>
-        <span class="count">
-          {n.count}
-          <span class="sr"> files</span>
-        </span>
-        <span class="why">Why: {n.why}</span>
-        {n.children.length > 0 && <Tree nodes={n.children} />}
+        <Row n={n} />
+        {n.children.length > 0 && (
+          <details open>
+            <summary>{n.children.length} sub-groups</summary>
+            <Tree nodes={n.children} />
+          </details>
+        )}
       </li>
     ))}
   </ul>

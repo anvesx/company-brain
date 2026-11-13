@@ -3,7 +3,7 @@ import { writeSync } from "node:fs";
 /** Straight to stdout: vitest hides console output of passing tests, and these numbers are the evidence. */
 export const out = (s: string): void => void writeSync(1, `${s}\n`);
 export const pct = (xs: number[], q: number): number => xs[Math.min(xs.length - 1, Math.ceil(q * xs.length) - 1)] as number;
-export type Plan = { "Node Type": string; "Relation Name"?: string; "Index Name"?: string; Plans?: Plan[] };
+export type Plan = { "Node Type": string; "Relation Name"?: string; "Index Name"?: string; "Actual Rows"?: number; "Actual Loops"?: number; Plans?: Plan[] };
 export const walk = (p: Plan): Plan[] => [p, ...(p.Plans ?? []).flatMap(walk)];
 
 /** Runs `fn` n times in sequence (after 5 warm-ups) and returns the sorted wall times in ms. */

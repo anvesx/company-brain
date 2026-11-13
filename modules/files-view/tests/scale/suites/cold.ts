@@ -5,7 +5,7 @@ import { type Ctx, LONG } from "../support/world.js";
 const COLD: Record<string, string> = {
   "/clusters": "/clusters",
   "/files": "/files?limit=50",
-  "/clusters/:id (giant 33k)": "/clusters/c200",
+  "/clusters/:id (giant 50k)": "/clusters/c300",
   "/clusters/:id (root)": "/clusters/c3",
 };
 export function coldSuite(get: () => Ctx): void {

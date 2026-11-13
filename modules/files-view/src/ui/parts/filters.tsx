@@ -40,21 +40,24 @@ export const Filters = ({ page, action = "/files" }: { page: FilesPage; action?:
   const q = page.query;
   const active = Object.entries(q).some(([k, v]) => v && !["cursor", "sort", "dir", "limit"].includes(k));
   return (
-    <form class="filters" method="get" action={action} aria-label="Search and filter files">
-      <div class="field q">
-        <label for="q">Search file titles</label>
-        <input id="q" name="q" type="search" value={q.q} maxlength={200} autocomplete="off" />
-      </div>
-      <Select name="source" label="Source" value={q.source} options={page.sources} />
-      <Select name="mime" label="Type" value={q.mime} options={page.mimes} />
-      <Text name="owner" label="Owner" value={q.owner} />
-      <Text name="from" label="Modified from" value={q.from} type="date" />
-      <Text name="to" label="Modified to" value={q.to} type="date" />
-      <Select name="sort" label="Sort by" value={q.sort} options={["modified", "title", "size"]} any={false} />
-      {q.cluster && <input type="hidden" name="cluster" value={q.cluster} />}
-      <div>
-        <Button type="submit">Apply</Button> {active && <Link href={href(action, {}, { sort: q.sort, cluster: q.cluster })}>Clear</Link>}
-      </div>
-    </form>
+    <details class="fbox" open={active}>
+      <summary>{active ? "Filters (active)" : "Filters"}</summary>
+      <form class="filters" method="get" action={action} aria-label="Search and filter files">
+        <div class="field q">
+          <label for="q">Search file titles</label>
+          <input id="q" name="q" type="search" value={q.q} maxlength={200} autocomplete="off" />
+        </div>
+        <Select name="source" label="Source" value={q.source} options={page.sources} />
+        <Select name="mime" label="Type" value={q.mime} options={page.mimes} />
+        <Text name="owner" label="Owner" value={q.owner} />
+        <Text name="from" label="Modified from" value={q.from} type="date" />
+        <Text name="to" label="Modified to" value={q.to} type="date" />
+        <Select name="sort" label="Sort by" value={q.sort} options={["modified", "title", "size"]} any={false} />
+        {q.cluster && <input type="hidden" name="cluster" value={q.cluster} />}
+        <div>
+          <Button type="submit">Apply</Button> {active && <Link href={href(action, {}, { sort: q.sort, cluster: q.cluster })}>Clear</Link>}
+        </div>
+      </form>
+    </details>
   );
 };

@@ -58,8 +58,8 @@ Measured through the real Hono app (100k files, 2,000 clusters, Postgres 16, bob
 | `GET /files` cold (40 distinct viewers)        |                             | 12.5 / 13.1 ms    |
 
 The 300 ms p95 claim holds for cold and warm requests on this world. Not measured: worlds with more than 2,000 clusters
-(the cap falls to its floor of 2 and counts become coarser). Search: ASCII queries use the trigram index; a query with
-non-ASCII characters folds case with ICU and is not indexed, so it scans the viewer's readable candidates.
+(the cap falls to its floor of 2 and counts become coarser). Search: every query is indexed. ASCII queries use the trigram index on the title; queries with non-ASCII characters use a
+pg_trgm GIN index on an ICU lower expression (`fv_title_icu`), so "école" and "Übersicht" are measured at 150k files.
 Tests build the 100k-file world once in `tests/scale/world.test.ts` (one file, because the shared vitest config has no
 globalSetup option and ADR 0007 forbids a package config).
 

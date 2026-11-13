@@ -11,7 +11,7 @@ import { GONE, secure, toNode, toPage, toRow } from "./models.js";
 import { CLUSTER_KEYS, LIST_KEYS, pageSize, parseList, SAFE_ID, strict } from "./params.js";
 
 type Env = { Variables: { gate: CountedGate; who: Who } };
-const TREE_DEPTH = 3;
+const TREE_DEPTH = 3; // roots, children and grandchildren; deeper levels open from the cluster page
 const asJson = (c: Context): boolean => (c.req.header("accept") ?? "").includes("application/json");
 
 /** The Files and Clusters screen as a Hono app: `auth` verifies a bearer token (401 otherwise), `gate` builds each viewer's permission gate. */

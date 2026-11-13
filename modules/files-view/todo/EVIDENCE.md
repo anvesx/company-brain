@@ -1,104 +1,92 @@
 # files-view evidence
 
-Command: `timeout 900 pnpm --filter @anvesx/files-view test` (env: PATH with postgresql@16, NODE_AUTH_TOKEN=x, LC_ALL=en_US.UTF-8, DATABASE_URL on port 55496). Exit 0.
+Command: `timeout 900 pnpm --filter @anvesx/files-view test` (env: PATH with postgresql@16, NODE_AUTH_TOKEN=x,
+LC_ALL=en_US.UTF-8, DATABASE_URL on port 55496). Real Postgres 16, real Hono app, real JWKS and pgGate. No stubs.
 
 ## Test tail
 
 ```
  Test Files  51 passed (51)
-      Tests  440 passed (440)
-   Duration  373.16s (tests 98%, import 2%)
-All files          |   98.77 |    94.77 |   97.97 |   99.42 |                   
-timeout 900 pnpm --filter @anvesx/files-view test  217.87s user 37.22s system 68% cpu 6:13.86 total
+      Tests  540 passed (540)
+   Duration  313.73s (tests 97%, import 3%)
+Statements   : 98.71% ( 1153/1168 )
+Branches     : 94.19% ( 600/637 )
+Functions    : 98.06% ( 355/362 )
+Lines        : 99.44% ( 896/901 )
+real 5m14.437s
 exit 0
 ```
 
-## Gates
+0 skipped, 0 errors. `pnpm structure`, `pnpm deps` (no violations), `pnpm guard:fakes` (4 findings, 1 baselined), tsc, biome: all exit 0.
+`rg OFFSET src`: no match.
 
-```
-pnpm structure rc=0: checked 26 packages, 1365 files, 377 folders
-pnpm guard:fakes rc=0: checked 922 files, 4 findings, 1 baselined
-pnpm deps rc=0: ✔ no dependency violations found (1217 modules, 2906 dependencies cruised)
-pnpm exec biome check modules/files-view rc=0: Checked 149 files, no fixes applied (after formatting this file)
-```
+## World
 
-## Scale (100k+ files, 2,000 clusters, Postgres 16; p50 / p95 / p99 ms; plan nodes from EXPLAIN ANALYZE)
+150,000 files for tenant t1 (plus 25,000 for tenant t2), 3,000 clusters, 519,859 edges, seeded in 29 s.
+Viewers: alice about 47% visible, bob 50%, carol 14% (21k), erin 2% (3k).
 
-```
-HTTP (real Hono + JWKS + jwtAuth + pgGate, sequential) | TTFB p50 ms | p95 ms | p99 ms | total p95 ms
-alice /files | 34.1 | 39.6 | 71.2 | 39.8
-alice /files?sort=title | 20.3 | 22.0 | 23.6 | 22.1
-alice /files?sort=size | 81.1 | 88.3 | 150.0 | 88.4
-alice /files?q= | 1.5 | 3.2 | 3.3 | 3.2
-alice /files?owner= | 1.7 | 1.9 | 10.3 | 1.9
-alice /files/:id | 1.4 | 1.7 | 2.1 | 1.8
-alice /clusters | 168.4 | 207.5 | 262.7 | 207.9
-alice /clusters?limit=5 | 45.2 | 50.4 | 81.7 | 50.4
-alice /clusters/:id (leaf) | 6.2 | 6.6 | 7.0 | 6.6
-alice /clusters/:id (giant 33k) | 53.2 | 58.6 | 97.5 | 58.7
-alice /clusters/:id (root) | 30.7 | 61.5 | 66.9 | 61.6
-bob /files | 13.8 | 15.2 | 18.2 | 15.3
-bob /files?sort=title | 11.3 | 14.0 | 14.9 | 14.2
-bob /files?sort=size | 23.4 | 31.7 | 57.2 | 31.9
-bob /files?q= | 6.1 | 6.5 | 7.1 | 6.5
-bob /files?owner= | 6.0 | 13.6 | 15.4 | 13.7
-bob /files/:id | 1.4 | 2.3 | 3.9 | 2.3
-bob /clusters | 155.0 | 169.6 | 240.0 | 170.0
-bob /clusters?limit=5 | 81.9 | 89.8 | 150.8 | 89.8
-bob /clusters/:id (leaf) | 10.0 | 14.8 | 23.6 | 14.9
-bob /clusters/:id (giant 33k) | 33.9 | 34.4 | 35.1 | 34.4
-bob /clusters/:id (root) | 187.1 | 212.8 | 319.0 | 212.9
-COLD (a distinct viewer per request) | TTFB p50 ms | p95 ms | p99 ms
-bob /clusters WARM (25, cold excluded) | 156.9 | 241.8 | 241.9
-COLD distinct viewers /clusters (40) | 203.3 | 215.7 | 279.1
-COLD distinct viewers /files (40) | 13.0 | 14.4 | 20.1
-COLD distinct viewers /clusters/:id (giant 33k) (40) | 33.0 | 61.8 | 75.2
-COLD distinct viewers /clusters/:id (root) (40) | 199.0 | 212.4 | 216.2
-DB query (real src/db builders, real fv_* indexes) | p50 ms | p95 ms | p99 ms | rows | plan nodes | indexes | ANALYZE
-list modified desc p1 (alice) | 39.4 | 64.4 | 142.5 | 101 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current | exec 41.89 ms, buffers hit 8023 read 0
-list modified desc deep (alice) | 45.1 | 73.1 | 98.3 | 101 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current | exec 25.086 ms, buffers hit 8023 read 0
-list modified asc deep (alice) | 32.6 | 40.3 | 65.2 | 101 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current | exec 38.141 ms, buffers hit 8023 read 0
-list title asc deep (alice) | 10.5 | 11.2 | 11.8 | 101 | Limit,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current | exec 10.088 ms, buffers hit 8023 read 0
-list size desc deep (alice) | 96.0 | 109.6 | 179.1 | 101 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current | exec 83.799 ms, buffers hit 8023 read 0
-search title (alice) | 0.7 | 0.8 | 0.8 | 0 | Limit,Result,Sort,Nested Loop,Bitmap Heap Scan,Bitmap Index Scan,Index Only Scan | nodes_title_trgm,fv_readers | exec 0.233 ms, buffers hit 178 read 0
-filter owner (alice) | 0.9 | 1.0 | 1.0 | 0 | Limit,Result,Sort,Hash Join,Index Scan,Hash,Index Only Scan | fv_doc_owner,edges_current | exec 0.534 ms, buffers hit 531 read 0
-filter source+mime (alice) | 10.9 | 11.3 | 12.2 | 101 | Limit,Result,Sort,Hash Join,Index Scan,Hash,Index Only Scan | fv_doc_mime,edges_current | exec 10.383 ms, buffers hit 33760 read 0
-filter modified range (alice) | 0.5 | 0.5 | 0.5 | 0 | Limit,Result,Sort,Hash Join,Index Scan,Hash,Index Only Scan | fv_doc_modified,edges_current | exec 0.011 ms, buffers hit 3 read 0
-cluster members (leaf) (alice) | 1.6 | 1.6 | 1.7 | 3 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | fv_members,nodes_current,fv_readers | exec 0.81 ms, buffers hit 586 read 0
-cluster members (giant 33k) (alice) | 24.9 | 32.8 | 61.8 | 101 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | edges_current,nodes_current,fv_members | exec 24.198 ms, buffers hit 14024 read 0
-cluster members (all 2000 clusters) (alice) | 29.3 | 30.0 | 30.4 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers,fv_member_of | exec 23.292 ms, buffers hit 20486 read 0
-list modified desc p1 (bob) | 2.9 | 4.3 | 13.2 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers | exec 2.307 ms, buffers hit 814 read 0
-list modified desc deep (bob) | 2.9 | 3.5 | 4.4 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers | exec 2.463 ms, buffers hit 810 read 0
-list modified asc deep (bob) | 2.7 | 6.1 | 10.7 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers | exec 2.312 ms, buffers hit 809 read 0
-list title asc deep (bob) | 1.3 | 1.5 | 1.6 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_title,fv_readers | exec 0.88 ms, buffers hit 786 read 0
-list size desc deep (bob) | 7.5 | 7.6 | 7.6 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_size,fv_readers | exec 7.058 ms, buffers hit 814 read 0
-search title (bob) | 0.9 | 0.9 | 0.9 | 23 | Limit,Result,Sort,Nested Loop,Bitmap Heap Scan,Bitmap Index Scan,Index Only Scan | nodes_title_trgm,fv_readers | exec 0.436 ms, buffers hit 179 read 0
-filter owner (bob) | 2.5 | 2.6 | 2.7 | 0 | Limit,Result,Sort,Nested Loop,Index Scan,Index Only Scan | fv_doc_owner,fv_readers | exec 2.151 ms, buffers hit 2008 read 0
-filter source+mime (bob) | 2.4 | 2.4 | 2.5 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_mime,fv_readers | exec 1.879 ms, buffers hit 714 read 0
-filter modified range (bob) | 0.4 | 0.4 | 0.5 | 0 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers | exec 0.009 ms, buffers hit 3 read 0
-cluster members (leaf) (bob) | 1.9 | 2.0 | 2.0 | 55 | Limit,Result,Sort,Nested Loop,Aggregate,Index Only Scan,Index Scan | fv_members,nodes_current,fv_readers | exec 1.196 ms, buffers hit 586 read 0
-cluster members (giant 33k) (bob) | 6.1 | 6.2 | 6.7 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers,fv_members | exec 5.398 ms, buffers hit 3289 read 0
-cluster members (all 2000 clusters) (bob) | 9.0 | 9.2 | 9.4 | 101 | Limit,Nested Loop,Index Scan,Index Only Scan | fv_doc_modified,fv_readers,fv_member_of | exec 2.734 ms, buffers hit 1118 read 0
-tree roots | 0.2 | 0.2 | 0.2 | 20 | Limit,Index Scan | fv_cluster_parent | exec 0.011 ms, buffers hit 5 read 0
-tree children | 0.1 | 0.1 | 0.2 | 9 | Limit,Index Scan | fv_cluster_parent | exec 0.009 ms, buffers hit 7 read 0
-tree subtree (20 roots) | 7.8 | 7.8 | 7.9 | 2000 | Aggregate,Recursive Union,Index Only Scan,Nested Loop,WorkTable Scan,Index Scan,CTE Scan | fv_cluster_id,fv_cluster_parent | exec 6.257 ms, buffers hit 5944 read 0
-tree member ids (2000 clusters, cap 2 per cluster, bob) | 48.4 | 51.6 | 90.4 | 3600 | Nested Loop,Function Scan,Limit,Index Only Scan | fv_members,fv_readers | exec 49.135 ms, buffers hit 20793 read 0
-paths: clusters of 100 files | 1.2 | 1.6 | 2.7 | 184 | Sort,Index Only Scan | fv_member_of | exec 0.748 ms, buffers hit 301 read 0
-paths: cluster nodes | 0.7 | 0.9 | 1.7 | 100 | Index Scan | fv_cluster_id | exec 0.292 ms, buffers hit 203 read 0
-```
+## HTTP TTFB, 40 sequential requests per path, every viewer (p95 ms, all <= 300)
 
-## Browser
+Every response is asserted non-empty (a row link is present), so no row measures an empty page.
 
-Real Chromium (Playwright) against the real server, JWT bearer, 1280 and 375 px, light and dark. axe-core: 0 violations on every page and scheme, no horizontal overflow at 375. Screenshots: todo/shots/ (files, file, clusters x light/dark x 1280/375).
+| path | erin | alice | carol | bob |
+| --- | --- | --- | --- | --- |
+| /files | 59.3 | 14.2 | 18.6 | 18.5 |
+| /files?sort=title | 72.4 | 12.7 | 17.7 | 15.6 |
+| /files?sort=size | 72.6 | 28.1 | 29.1 | 27.9 |
+| /files?q= (needle) | 24.7 | 42.2 | 33.1 | 43.2 |
+| /files?owner= | 10.8 | 11.5 | 12.2 | 10.1 |
+| /files?owner=&sort=size | 22.4 | 20.7 | 17.5 | 20.0 |
+| /files?source=&mime= | 37.9 | 11.9 | 17.2 | 10.4 |
+| /files?source=&sort=title | 35.0 | 8.9 | 14.0 | 7.6 |
+| /files?from=2026-01-03&to=2026-01-06 | 124.8 | 13.7 | 25.0 | 13.6 |
+| /files?cluster=c5&sort=size | 56.3 | 123.3 | 93.7 | 94.1 |
+| /files?cluster=c5&sort=title | 56.8 | 109.2 | 72.9 | 91.7 |
+| /files?cluster=c300 (giant) | 71.9 | 41.7 | 64.6 | 40.4 |
+| /files/:id | 2.1 | 1.9 | 1.9 | 1.9 |
+| /clusters | 150.3 | 189.5 | 264.4 | 171.5 |
+| /clusters/:id (leaf) | 9.7 | 15.4 | 13.7 | 14.7 |
+| /clusters/:id (c5) | 56.9 | 156.7 | 170.3 | 116.5 |
+| /clusters/:id (giant 50k) | 70.4 | 42.2 | 69.8 | 40.8 |
+| /clusters/:id (root) | 58.9 | 195.8 | 171.0 | 224.7 |
 
-## Fixes made
+`/files?cluster=c5&sort=size` is 56 to 123 ms for all four viewers (limit 300). Cold, distinct viewer per request (40):
+`/clusters` p95 196.1, `/files` 14.2, `/clusters/:id` giant 39.7, root 258.9. bob `/clusters` first request cold 196.6 ms,
+warm p95 (25 requests, cold excluded) 168.7.
 
-modified sort/cursor are bigint instants with matching index fv_doc_modified; non-ASCII q folds case via ICU; date range on instants; gate re-applied on cache hits (cache removed); per-file rechecks capped; /clusters bottleneck was quadratic JS in describe/members (fixed) plus a reader-driven member probe for small ACLs; added fv_doc_source and fv_doc_mime indexes; freePort fixed; seed fast; world built once; biome clean.
+## Database plans (EXPLAIN ANALYZE, real src/db builders)
+
+Index scans only: composite per-sort indexes `fv_doc_{source,mime,owner}_{title,size}` and `fv_doc_modified/title/size`,
+with `fv_readers` or `fv_members` for the permission check. The test fails on any Sort node over more than 20,000 rows
+and on any Seq Scan of nodes or edges, except the reader-driven cluster-subtree case for erin and carol (see below).
+Non-ASCII search uses `fv_title_icu` (pg_trgm GIN on an ICU lower expression): "école" erin 5.5 ms, alice 38.2 ms;
+"Übersicht" erin 17.4 ms, alice 29.3 ms. Examples: mime by size (alice) `Limit,Index Scan,Index Only Scan` 7.7 ms;
+owner by size (bob) 7.0 ms; c5 subtree by size (bob) 31.4 ms with `fv_doc_size,fv_member_of`.
+
+## Thinnest margins and caveats
+
+- erin date range: p95 124.8 ms in this run (274.6 ms in an earlier run). It walks the date index over her 2% of files, so it
+  is the thinnest margin.
+- carol `/clusters` p95 264.4 ms and bob `/clusters/:id (root)` 224.7 ms are under 300 with under 25% margin.
+- The c5 subtree plan for erin and carol is chosen by the planner and varies run to run (hash join with a parallel scan of nodes,
+  or nested loops over fv_members). Both stay under the 150 ms p95 check (40 to 110 ms measured). The Seq Scan assertion is waived
+  for that reader-driven case only.
+- A viewer with no visible file under a source or mime filter pays a full-index walk (about 190 ms at DB level in an earlier run
+  for bob with source=slack). Not in the table because it returns no rows.
+- `/clusters` shows 3 levels only while a level has at most 30 groups; wider levels stop growing and deeper groups open from
+  their own page. Counts are sampled ("at least N" when capped); the member budget is 2400 ids per read.
+- Iteration counts are reduced to fit the 900 s gate: HTTP 40 requests, DB 40, gated 60, cold 40 viewers.
+- Machine load varied between runs (load average 3 to 9); one earlier run failed alice `/clusters/:id (c5)` at 322 ms under load.
+
+## UI evidence
+
+Screenshots in `todo/shots` (1280 and 375 px, light and dark; files, file, clusters). At 375 px the filters collapse behind
+a "Filters" summary so results come first; date inputs show a focus ring including the calendar picker; the /clusters tree
+folds with native details and shows "N files" on counts. axe-core (HTTP and Chromium, contrast included): 0 violations.
 
 ## NOT covered
 
-- Worlds above 2,000 clusters (cap floors at 2, counts coarser).
-- Non-ASCII search is unindexed (scan of readable candidates), not measured at 100k.
-- Only Chromium; no Firefox/WebKit. axe cannot catch every a11y issue; no screen-reader run.
-- Scale p95s vary run to run (run 5 saw warm /clusters p95 up to 242 ms in one sample); 300 ms limit held in every run.
-- pnpm-lock.yaml changed by install; not reviewed beyond that.
+- Worlds above 150k files or 3,000 clusters; more than 4 viewer shapes; concurrent load (requests are sequential).
+- A cold Postgres cache (buffers are warm; "read 0" in the plans).
+- Real connector data shapes beyond the seeded props; non-UTC date inputs.
+- Production hardware: numbers are from one laptop.

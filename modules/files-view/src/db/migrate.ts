@@ -18,14 +18,22 @@ const DOC = "WHERE valid_to IS NULL AND kind = 'document'";
 const CLU = "WHERE valid_to IS NULL AND kind = 'project'";
 const EDGE = (kind: string) => `WHERE kind = '${kind}' AND valid_to IS NULL`;
 
+const KEYS = { modified: `(COALESCE(fv_ts(props, 'modified'), 0))`, title: `(title COLLATE "C")`, size: "fv_num(props, 'size')" }; // the three orders of list.ts KEY
+const FILTERS = { source: "source", mime: "fv_prop(props, 'mime')", owner: "fv_prop(props, 'owner')" };
+/** One index per (filter, order): a filtered page then reads its first rows in order from the index and never sorts the filtered set. */
+const filtered = Object.fromEntries(
+  Object.entries(FILTERS).flatMap(([f, col]) =>
+    Object.entries(KEYS).map(([k, key]) => [`fv_doc_${f}${k === "modified" ? "" : `_${k}`}`, `nodes (tenant, ${col}, ${key}, id) ${DOC}`]),
+  ),
+);
+
 /** Every index the screen's hot queries rely on. Names are part of the contract. */
 export const INDEXES: Record<string, string> = {
-  fv_doc_modified: `nodes (tenant, (COALESCE(fv_ts(props, 'modified'), 0)), id) ${DOC}`,
-  fv_doc_title: `nodes (tenant, (title COLLATE "C"), id) ${DOC}`,
-  fv_doc_size: `nodes (tenant, fv_num(props, 'size'), id) ${DOC}`,
-  fv_doc_source: `nodes (tenant, source, (COALESCE(fv_ts(props, 'modified'), 0)), id) ${DOC}`,
-  fv_doc_mime: `nodes (tenant, fv_prop(props, 'mime'), (COALESCE(fv_ts(props, 'modified'), 0)), id) ${DOC}`,
-  fv_doc_owner: `nodes (tenant, fv_prop(props, 'owner'), id) ${DOC}`,
+  fv_doc_modified: `nodes (tenant, ${KEYS.modified}, id) ${DOC}`,
+  fv_doc_title: `nodes (tenant, ${KEYS.title}, id) ${DOC}`,
+  fv_doc_size: `nodes (tenant, ${KEYS.size}, id) ${DOC}`,
+  ...filtered,
+  fv_title_icu: `nodes USING gin ((lower(title COLLATE "und-x-icu")) gin_trgm_ops) ${DOC}`, // non-ASCII search (list.ts folds case with ICU)
   fv_cluster_parent: `nodes (tenant, fv_prop(props, 'cluster.parent'), id) ${CLU}`,
   fv_cluster_id: `nodes (tenant, id) ${CLU}`,
   fv_member_of: `edges (tenant, from_id) INCLUDE (to_id) ${EDGE("belongs-to")}`,

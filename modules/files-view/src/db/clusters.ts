@@ -25,15 +25,16 @@ export const subtreeSql = (tenant: string, roots: string[]): Q => ({
 });
 
 /**
- * Up to `cap` readable-by-principals member ids per cluster, in id order, as (cid, doc) pairs. One index probe per cluster that stops at
- * `cap` rows (fv_members is ordered by from_id; the viewer's can-read edge is checked in fv_readers), so cost follows `cap`, not cluster size.
+ * Up to `cap` readable-by-principals member rows per root, over every cluster of that root's subtree (`pairs` are (root, cluster) from subtreeSql),
+ * minus the `seen` ids. One index probe per root that stops at `cap` rows (fv_members; the viewer's can-read edge is checked in fv_readers),
+ * so cost follows `cap` and the number of roots, not the size of the subtrees. A document in two clusters of one subtree may repeat.
  */
-export const membersSql = (tenant: string, clusters: string[], principals: string[], cap: number, after = ""): Q => ({
-  sql: `SELECT c.cid, m.doc FROM unnest($2::text[]) AS c(cid) CROSS JOIN LATERAL (
-    SELECT e.from_id AS doc FROM edges e WHERE e.tenant = $1 AND e.to_id = c.cid AND e.kind = 'belongs-to' AND e.valid_to IS NULL AND e.from_id > $5
-      AND EXISTS (SELECT 1 FROM edges r WHERE r.tenant = e.tenant AND r.to_id = e.from_id AND r.kind = 'can-read' AND r.valid_to IS NULL AND r.from_id = ANY($3::text[]))
-    ORDER BY e.from_id LIMIT $4) m`,
-  args: [tenant, clusters, principals, cap, after],
+export const sampleSql = (tenant: string, roots: string[], cids: string[], principals: string[], cap: number, seen: string[] = []): Q => ({
+  sql: `SELECT g.root, m.doc FROM (SELECT root, array_agg(cid) AS cids FROM unnest($2::text[], $3::text[]) AS p(root, cid) GROUP BY root) g CROSS JOIN LATERAL (
+    SELECT e.from_id AS doc FROM edges e WHERE e.tenant = $1 AND e.to_id = ANY(g.cids) AND e.kind = 'belongs-to' AND e.valid_to IS NULL AND e.from_id <> ALL($6::text[])
+      AND EXISTS (SELECT 1 FROM edges r WHERE r.tenant = e.tenant AND r.to_id = e.from_id AND r.kind = 'can-read' AND r.valid_to IS NULL AND r.from_id = ANY($4::text[]))
+    LIMIT $5) m`,
+  args: [tenant, roots, cids, principals, cap, seen],
 });
 
 /** True when the principals hold fewer than `limit` current can-read edges (a bounded count over the principals' outgoing edges): their ACL is small enough to drive from. */
@@ -43,16 +44,23 @@ export const smallAclSql = (tenant: string, principals: string[], limit: number)
 });
 
 /**
- * Same result as membersSql, driven from the viewer's readable documents into their memberships (fv_member_of), so wholly hidden
- * clusters cost nothing. Only for small ACLs: for a large one membersSql's per-cluster probe that stops at `cap` is cheaper.
+ * Same result shape as sampleSql, driven from the viewer's readable documents into their memberships (fv_member_of), so wholly hidden
+ * subtrees cost nothing. Only for small ACLs: for a large one sampleSql's probe that stops at `cap` is cheaper.
  */
-export const membersByReaderSql = (tenant: string, clusters: string[], principals: string[], cap: number, after = ""): Q => ({
-  sql: `SELECT cid, doc FROM (
-    SELECT m.to_id AS cid, m.from_id AS doc, row_number() OVER (PARTITION BY m.to_id ORDER BY m.from_id) AS rn
-    FROM (SELECT DISTINCT to_id AS d FROM edges WHERE tenant = $1 AND kind = 'can-read' AND valid_to IS NULL AND from_id = ANY($3::text[])) r
-    JOIN edges m ON m.tenant = $1 AND m.from_id = r.d AND m.kind = 'belongs-to' AND m.valid_to IS NULL AND m.to_id = ANY($2::text[]) AND m.from_id > $5) x
-    WHERE rn <= $4 ORDER BY cid, doc`,
-  args: [tenant, clusters, principals, cap, after],
+export const sampleByReaderSql = (tenant: string, roots: string[], cids: string[], principals: string[], cap: number, seen: string[] = []): Q => ({
+  sql: `SELECT root, doc FROM (
+    SELECT p.root, m.from_id AS doc, row_number() OVER (PARTITION BY p.root ORDER BY m.from_id) AS rn
+    FROM (SELECT DISTINCT to_id AS d FROM edges WHERE tenant = $1 AND kind = 'can-read' AND valid_to IS NULL AND from_id = ANY($4::text[])) r
+    JOIN edges m ON m.tenant = $1 AND m.from_id = r.d AND m.kind = 'belongs-to' AND m.valid_to IS NULL AND m.from_id <> ALL($6::text[])
+    JOIN unnest($2::text[], $3::text[]) AS p(root, cid) ON p.cid = m.to_id) x
+    WHERE rn <= $5 ORDER BY root, doc`,
+  args: [tenant, roots, cids, principals, cap, seen],
+});
+
+/** True when the clusters hold at least `limit` current member rows (counted up to `limit`): the filter is too wide to read members first. Uses fv_members. */
+export const wideSql = (tenant: string, clusters: string[], limit: number): Q => ({
+  sql: "SELECT count(*) >= $3 AS wide FROM (SELECT 1 FROM edges WHERE tenant = $1 AND kind = 'belongs-to' AND valid_to IS NULL AND to_id = ANY($2::text[]) LIMIT $3) s",
+  args: [tenant, clusters, limit],
 });
 
 /** Children of several parents at once, up to `take` per parent in id order (a lateral keyset read per parent). Uses fv_cluster_parent. */

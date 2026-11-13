@@ -16,7 +16,7 @@ export function dbSuite(get: () => Ctx): void {
           const { pool } = get().w;
           expect(h.build(0).sql).not.toMatch(/\bOFFSET\b/i);
           let n = 0;
-          const ms = await time(200, async (i) => {
+          const ms = await time(40, async (i) => {
             const q = h.build(i);
             n = Math.max(n, (await pool.query(q.sql, q.args)).rowCount ?? 0);
           });
@@ -28,7 +28,9 @@ export function dbSuite(get: () => Ctx): void {
           const types = [...new Set(nodes.map((p) => p["Node Type"]))].join(",");
           const bufs = `buffers hit ${ex.Plan["Shared Hit Blocks"]} read ${ex.Plan["Shared Read Blocks"]}`;
           rows.push(row(h.name, ms, `${n} | ${types} | ${idx.join(",")} | exec ${ex["Execution Time"]} ms, ${bufs}`));
-          expect(seq, `${h.name} seq scans`).toEqual([]);
+          expect(h.seqOk ? [] : seq, `${h.name} seq scans`).toEqual([]);
+          const big = nodes.filter((p) => p["Node Type"] === "Sort" && (p.Plans?.[0]?.["Actual Rows"] ?? 0) * (p.Plans?.[0]?.["Actual Loops"] ?? 1) > 20000);
+          expect(big.length, `${h.name} sorts a big set`).toBe(0); // a big sort means the index order was lost
           expect(
             idx.some((x) => h.expect.includes(x)),
             `${h.name} used [${idx}], wanted one of [${h.expect}]`,

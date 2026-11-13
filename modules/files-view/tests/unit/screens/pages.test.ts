@@ -62,6 +62,8 @@ describe("cluster screens", () => {
     expect(d.querySelectorAll("ul.tree li")).toHaveLength(2);
     expect(d.querySelector("ul.tree ul.tree li a")?.getAttribute("href")).toBe("/clusters/b");
     expect(d.body.textContent).toContain("Why: why a");
+    expect(d.querySelector("ul.tree .count")?.textContent).toBe("3 files");
+    expect(d.querySelectorAll("ul.tree details[open] > summary")).toHaveLength(1); // only a group with sub-groups folds
   });
   it("an empty tree says there are no groups yet", async () => expect(await html(jsx(ClustersScreen, { roots: [] }))).toContain("No groups yet"));
   it("a cluster page shows breadcrumb, why, count, sub-groups and members, or the empty state", async () => {
@@ -71,10 +73,8 @@ describe("cluster screens", () => {
     expect(d.body.textContent).toContain("Why this group exists: why c");
     expect(d.body.textContent).toContain("3 files you can access");
     expect(d.querySelector('ul.tree a[href="/clusters/d"]')).not.toBeNull();
-    expect(d.querySelector("tbody tr")).not.toBeNull();
-    expect(d.querySelector('form[action="/clusters/c"]')).not.toBeNull();
+    expect([d.querySelector("tbody tr"), d.querySelector('form[action="/clusters/c"]')]).not.toContain(null);
     const empty = await html(jsx(ClusterScreen, { detail: { ...detail, node: node("c"), members: page({ rows: [] }) } }));
-    expect(empty).toContain("No files yet");
-    expect(empty).not.toContain("Sub-groups");
+    expect([empty.includes("No files yet"), empty.includes("Sub-groups")]).toEqual([true, false]);
   });
 });
