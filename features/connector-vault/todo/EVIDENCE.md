@@ -7,17 +7,17 @@ Branch wp/14-connector-vault. Package: features/connector-vault. Builder: Claude
 ```
 features/connector-vault/tests/support/pg-temp.sh      # Postgres 16, port 55438, temp dir, LC_ALL=en_US.UTF-8
 export NODE_AUTH_TOKEN=x DATABASE_URL=postgres://postgres@127.0.0.1:55438/postgres LC_ALL=en_US.UTF-8
-pnpm install && pnpm --filter @anvesx/connector-vault test    # 11 files, 51 tests, exit 0
+pnpm install && pnpm --filter @anvesx/connector-vault test    # 14 files, 65 tests, exit 0
 pnpm --filter @anvesx/connector-vault typecheck               # exit 0
 pnpm structure && pnpm guard:fakes                            # exit 0
 cd features/connector-vault && pnpm exec stryker run          # score 83.03, break 80
 ```
 
 ## Results (real output)
-Tests: `Test Files 11 passed (11)`, `Tests 51 passed (51)`.
-Coverage: Statements 98.83, Branches 97.87, Functions 95.34, Lines 100 (threshold 90).
-Mutation: total 83.03 (covered 83.54), no waiver.
-structure: `checked 24 packages, 1185 files, 332 folders`. guard:fakes: `4 findings, 1 baselined`, same count before and after this package (baseline untouched).
+Tests: `Test Files 14 passed (14)`, `Tests 65 passed (65)` (Postgres 16 on port 55440).
+Coverage: Statements 98.96, Branches 97.32, Functions 95.55, Lines 100 (threshold 90).
+Mutation: 83.03 was measured BEFORE the review fixes (commit 73594db); NOT rerun after them.
+structure: `checked 24 packages, 1188 files, 332 folders`. guard:fakes: `4 findings, 1 baselined`, same count before and after this package (baseline untouched).
 
 ## What is covered (all on real Postgres 16, real HTTP token endpoint, no mocks)
 Seal with row id as AAD (moved ciphertext fails); keyring with first-key-seals and BRAIN_AUTH_SECRET separation; RLS as a non-superuser role
@@ -36,3 +36,12 @@ EXPLAIN shows the partial index `connector_tokens_due` on 20k rows.
 - Not run: k6 / 1M-user load; only the 20k-row EXPLAIN. `pnpm --filter @anvesx/brain-app build` not needed.
 - Not done: the `tests/contract/vault-*.test.ts` files named in the checklist do not exist in this branch; the equivalent tests are under features/connector-vault/tests.
 - Tick no VLT item as done until the reviewer reruns the commands.
+
+## Review-fix round (REVIEW-glm.md, findings 1-6, 8-10)
+Each fix has a test that failed against the old source (14 failed / 51 passed) and passes now: GRANT quotes the role as an identifier
+(role with a double quote); migrate rejects superuser or BYPASSRLS roles (UNSAFE_ROLE); put validates id (BAD_ID); decodeKey asserts 32 bytes;
+seal throws KEY_EXHAUSTED at an injectable per-key limit (default 2^32); `audit` callback fires on sweeper transactions only;
+lease-crash tradeoff and RFC 6749 DEAD set documented. Rejected: finding 7 (GCM tag check is constant-time) and 11 (node:crypto is the stable library).
+Not covered: the seal counter is per process, so it resets on restart and is not summed across replicas; a real 2^32 run is not attempted
+(limit injected at 2); the audit event has no caller identity or operation name; the DEAD set is documented but not configurable;
+finding 6 (token in error text) was not changed; Stryker not rerun.

@@ -10,6 +10,9 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * Refresh one connection. The lease means one replica spends a rotating refresh token; the token is read again after the lease is held.
+ * Crash tradeoff: the lease is a database-clock timestamp, not a held lock. A process that dies after taking it leaves the row
+ * unrefreshable until `leaseMs` (default 60s) passes, then any replica retries. There is no watchdog; the delay is bounded and the
+ * token is never spent twice, which we prefer to a faster recovery that could spend a rotating refresh token twice.
  * A provider refusal (AuthError) marks needs-auth. Any other failure is retried with doubling waits, then left active for the next sweep.
  */
 export async function refreshOne(vault: Vault, tenant: string, id: string, exchange: Exchange, o: Options = {}): Promise<Outcome> {

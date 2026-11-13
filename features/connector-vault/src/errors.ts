@@ -1,5 +1,5 @@
 /** Messages here never carry token, key or ciphertext bytes, so logs and traces stay clean. */
-export type VaultCode = "BAD_KEY" | "UNSEALABLE" | "NOT_FOUND" | "COUNT_MISMATCH";
+export type VaultCode = "BAD_KEY" | "UNSEALABLE" | "NOT_FOUND" | "COUNT_MISMATCH" | "BAD_ID" | "UNSAFE_ROLE" | "KEY_EXHAUSTED";
 
 export class VaultError extends Error {
   constructor(

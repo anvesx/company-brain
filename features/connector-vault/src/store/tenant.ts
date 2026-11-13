@@ -4,7 +4,11 @@ import type pg from "pg";
  * One transaction scoped to a tenant. `app.tenant` is transaction-local, so a pooled connection never carries
  * one tenant's scope into the next request. `sweeper` is the one cross-tenant mode (due scan, rotation, count).
  */
-export async function inTenant<T>(pool: pg.Pool, scope: string | "sweeper", fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+export type AuditEvent = { scope: "sweeper"; at: Date };
+
+/** `audit` is called before every `sweeper` transaction; if it throws, nothing runs (fail closed). */
+export async function inTenant<T>(pool: pg.Pool, scope: string | "sweeper", fn: (c: pg.PoolClient) => Promise<T>, audit?: (e: AuditEvent) => void): Promise<T> {
+  if (scope === "sweeper") audit?.({ scope, at: new Date() });
   const c = await pool.connect();
   try {
     await c.query("BEGIN");

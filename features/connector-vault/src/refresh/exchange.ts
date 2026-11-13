@@ -3,7 +3,7 @@ import { AuthError, TransientError } from "../errors.js";
 export type Fresh = { accessToken: string; refreshToken?: string; expiresInSec?: number };
 export type Exchange = (refreshToken: string) => Promise<Fresh>;
 
-/** OAuth error codes that mean the grant itself is dead. Everything else is worth asking again. */
+/** RFC 6749 error codes that mean the grant itself is dead. A provider-specific code (e.g. "token_expired") is not in this set and is retried as transient. */
 const DEAD = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "invalid_token"]);
 
 /** RFC 6749 refresh_token grant over fetch. 400/401 with a dead-grant code is AuthError; 5xx, 429, other 4xx and network errors are TransientError. */

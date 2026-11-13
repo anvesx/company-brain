@@ -7,16 +7,21 @@ export type Due = { tenant: string; id: string; provider: string };
 
 /** Active rows expiring within `windowMs` and not leased, oldest expiry first, keyset-paged (`after` is the last row of the previous page). */
 export const dueRows = (vault: Vault, windowMs: number, limit: number, after?: { expiresAt: Date; id: string }): Promise<(Due & { expiresAt: Date })[]> =>
-  inTenant(vault.pool, "sweeper", async (c) => {
-    const { rows } = await c.query<{ tenant: string; id: string; provider: string; expires_at: Date }>(
-      `SELECT tenant, id, provider, expires_at FROM connector_tokens
+  inTenant(
+    vault.pool,
+    "sweeper",
+    async (c) => {
+      const { rows } = await c.query<{ tenant: string; id: string; provider: string; expires_at: Date }>(
+        `SELECT tenant, id, provider, expires_at FROM connector_tokens
        WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= now() + $1 * interval '1 millisecond'
          AND (lease_until IS NULL OR lease_until < now()) AND (expires_at, id) > ($2::timestamptz, $3)
        ORDER BY expires_at, id LIMIT $4`,
-      [windowMs, after?.expiresAt ?? new Date(0), after?.id ?? "", limit],
-    );
-    return rows.map((r) => ({ tenant: r.tenant, id: r.id, provider: r.provider, expiresAt: r.expires_at }));
-  });
+        [windowMs, after?.expiresAt ?? new Date(0), after?.id ?? "", limit],
+      );
+      return rows.map((r) => ({ tenant: r.tenant, id: r.id, provider: r.provider, expiresAt: r.expires_at }));
+    },
+    vault.audit,
+  );
 
 /** One pass over everything due. `exchangeFor` returns undefined for a provider this process cannot refresh. */
 export async function sweep(

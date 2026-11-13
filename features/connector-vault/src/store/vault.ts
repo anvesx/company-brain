@@ -1,7 +1,8 @@
 import type pg from "pg";
+import { VaultError } from "../errors.js";
 import type { Keyring } from "../seal/keyring.js";
 import { open, seal } from "../seal/seal.js";
-import { inTenant } from "./tenant.js";
+import { type AuditEvent, inTenant } from "./tenant.js";
 
 /** What is sealed: the access token and, when the provider issues one, the refresh token. */
 export type Token = { accessToken: string; refreshToken?: string };
@@ -15,13 +16,20 @@ const COLS = "id, tenant, owner, provider, status, expires_at, sealed";
 type Row = { id: string; tenant: string; owner: string; provider: string; status: Meta["status"]; expires_at: Date | null; sealed: string };
 const meta = (r: Row): Meta => ({ id: r.id, tenant: r.tenant, owner: r.owner, provider: r.provider, status: r.status, expiresAt: r.expires_at });
 
-export function createVault(pool: pg.Pool, ring: Keyring) {
+/** Row ids are bound into the sealed value as AAD, so only a safe, bounded charset is accepted. */
+const ID = /^[A-Za-z0-9_:.-]{1,128}$/;
+
+/** `audit` is called whenever a cross-tenant (sweeper) transaction starts. */
+export function createVault(pool: pg.Pool, ring: Keyring, opts: { audit?: (e: AuditEvent) => void } = {}) {
+  const audit = opts.audit;
   return {
     pool,
     ring,
+    audit,
     /** Insert or replace one connection's token (status back to active, lease cleared). Another tenant's id is refused by the policy. */
     put: (tenant: string, r: NewRow): Promise<void> =>
       inTenant(pool, tenant, async (c) => {
+        if (!ID.test(r.id)) throw new VaultError("BAD_ID", "id must be 1-128 characters of A-Z a-z 0-9 _ : . -");
         await c.query(
           `INSERT INTO connector_tokens (id, tenant, owner, provider, kid, sealed, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT (id) DO UPDATE SET owner=$3, provider=$4, kid=$5, sealed=$6, expires_at=$7, status='active', lease_until=NULL, updated_at=now()`,
@@ -47,8 +55,11 @@ export function createVault(pool: pg.Pool, ring: Keyring) {
       }),
     /** How many of these ids exist, across tenants (the migration count check). */
     countIds: (ids: string[]): Promise<number> =>
-      inTenant(pool, "sweeper", async (c) =>
-        Number((await c.query<{ n: string }>("SELECT count(*) AS n FROM connector_tokens WHERE id = ANY($1)", [ids])).rows[0]?.n),
+      inTenant(
+        pool,
+        "sweeper",
+        async (c) => Number((await c.query<{ n: string }>("SELECT count(*) AS n FROM connector_tokens WHERE id = ANY($1)", [ids])).rows[0]?.n),
+        audit,
       ),
   };
 }

@@ -5,8 +5,14 @@ import type { Keyring } from "./keyring.js";
 const NONCE = 12;
 const TAG = 16;
 
-/** `<kid>.<base64(nonce | tag | ciphertext)>`, AES-256-GCM with the row id as additional data. */
+/**
+ * `<kid>.<base64(nonce | tag | ciphertext)>`, AES-256-GCM with the row id as additional data.
+ * Throws KEY_EXHAUSTED when this key id has sealed `ring.maxSeals` values in this process: rotate to a new key.
+ */
 export function seal(ring: Keyring, id: string, plain: string): string {
+  const used = ring.seals.get(ring.current.kid) ?? 0;
+  if (used >= ring.maxSeals) throw new VaultError("KEY_EXHAUSTED", `key "${ring.current.kid}" reached its seal limit; rotate to a new key`);
+  ring.seals.set(ring.current.kid, used + 1);
   const nonce = randomBytes(NONCE);
   const c = createCipheriv("aes-256-gcm", ring.current.key, nonce);
   c.setAAD(Buffer.from(id));

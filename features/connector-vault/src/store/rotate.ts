@@ -14,27 +14,35 @@ export async function rotate(vault: Vault, batch = 500): Promise<{ rotated: numb
   let rotated = 0;
   let after = "";
   for (;;) {
-    const n = await inTenant(pool, "sweeper", async (c) => {
-      const { rows } = await c.query<Row>("SELECT id, sealed FROM connector_tokens WHERE kid <> $1 AND id > $2 ORDER BY id LIMIT $3 FOR UPDATE SKIP LOCKED", [
-        ring.current.kid,
-        after,
-        batch,
-      ]);
-      for (const r of rows) {
-        await c.query("UPDATE connector_tokens SET kid = $2, sealed = $3, updated_at = now() WHERE id = $1", [
-          r.id,
+    const n = await inTenant(
+      pool,
+      "sweeper",
+      async (c) => {
+        const { rows } = await c.query<Row>("SELECT id, sealed FROM connector_tokens WHERE kid <> $1 AND id > $2 ORDER BY id LIMIT $3 FOR UPDATE SKIP LOCKED", [
           ring.current.kid,
-          seal(ring, r.id, open(ring, r.id, r.sealed)),
+          after,
+          batch,
         ]);
-      }
-      after = rows.at(-1)?.id ?? after;
-      return rows.length;
-    });
+        for (const r of rows) {
+          await c.query("UPDATE connector_tokens SET kid = $2, sealed = $3, updated_at = now() WHERE id = $1", [
+            r.id,
+            ring.current.kid,
+            seal(ring, r.id, open(ring, r.id, r.sealed)),
+          ]);
+        }
+        after = rows.at(-1)?.id ?? after;
+        return rows.length;
+      },
+      vault.audit,
+    );
     rotated += n;
     if (n < batch) break;
   }
-  const remaining = await inTenant(pool, "sweeper", async (c) =>
-    Number((await c.query<{ n: string }>("SELECT count(*) AS n FROM connector_tokens WHERE kid <> $1", [ring.current.kid])).rows[0]?.n),
+  const remaining = await inTenant(
+    pool,
+    "sweeper",
+    async (c) => Number((await c.query<{ n: string }>("SELECT count(*) AS n FROM connector_tokens WHERE kid <> $1", [ring.current.kid])).rows[0]?.n),
+    vault.audit,
   );
   return { rotated, remaining };
 }
