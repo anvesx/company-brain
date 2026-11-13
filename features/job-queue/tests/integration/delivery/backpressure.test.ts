@@ -24,6 +24,15 @@ describe.skipIf(skip)("per-tenant back-pressure", () => {
     expect(await jobs.enqueue("bp", "quiet", {})).toBeTypeOf("string");
   });
 
+  test("enqueueMany accepts only up to the remaining room, so the limit is hard for a batch", async () => {
+    const items = (n: number) => Array.from({ length: n }, (_, i) => ({ data: { i }, key: `k${n}-${i}` }));
+    expect(await jobs.enqueueMany("bp", "bulk", items(10))).toBe(5);
+    await jobs.enqueue("bp", "part", {});
+    await jobs.enqueue("bp", "part", {});
+    expect(await jobs.enqueueMany("bp", "part", items(7))).toBe(3);
+    await expect(jobs.enqueueMany("bp", "bulk", items(3))).rejects.toBeInstanceOf(BackpressureError);
+  });
+
   test("the guard is served by a (name, group_id, state) index, not a scan of the whole job table", async () => {
     const { rows } = await db.pool.query(
       "SELECT indexdef FROM pg_indexes WHERE schemaname = 'pgboss' AND tablename = 'job' AND indexname = 'job_backlog_guard'",

@@ -6,7 +6,7 @@ import { kindsOf } from "../catalog/kinds.js";
 import type { Deps } from "../deps.js";
 import { closeAccountEdges, disconnect } from "../sync/data/disconnect.js";
 import { syncRoute } from "../sync/route.js";
-import { rewriteTokens } from "../tokens/rewrite.js";
+import { createWithToken } from "../tokens/open.js";
 import { type Env, requireCaller } from "./guard/auth.js";
 import { parseNew, parsePatch } from "./guard/validate.js";
 
@@ -27,8 +27,8 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     const liveRecheck = manifest ? hasLiveRecheck(manifest) : false; // no manifest: fail closed
     const zones = checkZones({ credential: a.kind, access: a.access, dataZone: a.dataZone, ownerIsAdmin: d.isAdmin(caller), liveRecheck });
     if (!zones.ok) return c.json({ error: zones.reason }, 403);
-    const made = d.store.create({ ...a, tenant: caller.tenant, owner: caller.user, secret: token });
-    rewriteTokens(d);
+    const made = await createWithToken(d, { ...a, tenant: caller.tenant, owner: caller.user }, { accessToken: token });
+    await d.jobs?.requestSync(made.tenant, made.id, "connect");
     return c.json(made, 201);
   });
   r.patch("/:id", async (c) => {
@@ -47,15 +47,15 @@ export function accountsRoutes(d: Deps): Hono<Env> {
     // Edges written at the wider zone must not outlive it; the next sync rewrites them at the new zone.
     if (d.sync && narrows(cur.dataZone, next.dataZone)) closeAccountEdges(d.sync.graph, cur, d.now() * 1000);
     const changed = d.store.update(cur.tenant, cur.id, p.value);
-    rewriteTokens(d);
+    if (p.value.repo) await d.jobs?.requestSync(cur.tenant, cur.id, "repo-changed");
     return c.json(changed);
   });
-  r.delete("/:id", (c) => {
+  r.delete("/:id", async (c) => {
     const caller = c.get("caller");
     const cur = d.store.listVisible(caller).find((a) => a.id === c.req.param("id"));
     if (!cur) return c.json({ error: "not found" }, 404);
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can disconnect this account" }, 403);
-    disconnect(d, cur);
+    await disconnect(d, cur);
     return c.body(null, 204);
   });
   syncRoute(r, d);

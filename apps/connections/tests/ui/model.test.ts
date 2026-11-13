@@ -3,7 +3,7 @@ import { count, when } from "../../src/ui/model/format.js";
 import { stateOf } from "../../src/ui/model/state.js";
 
 const NOW = Date.UTC(2026, 10, 13, 12, 0);
-const ok = { failures: 0, lastError: null, syncing: false };
+const ok = { failures: 0, lastError: null, lastRunAt: 5, syncing: false };
 
 describe("exact counts and times", () => {
   it("groups thousands and says how long ago in whole units", () => {
@@ -19,7 +19,7 @@ describe("exact counts and times", () => {
 describe("one state per account, worst first", () => {
   const a = { status: "active" as const, lastSyncAt: 1 };
   it("ranks reconnect over syncing over error over never over healthy", () => {
-    const bad = { failures: 2, lastError: "boom", syncing: true };
+    const bad = { failures: 2, lastError: "boom", lastRunAt: 5, syncing: true };
     expect(stateOf({ ...a, status: "needs-auth" }, bad).label).toBe("Needs reconnect");
     expect(stateOf(a, bad).label).toBe("Syncing");
     expect(stateOf(a, { ...bad, syncing: false })).toMatchObject({ label: "Error", reason: "boom" });

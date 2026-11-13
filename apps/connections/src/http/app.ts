@@ -8,6 +8,7 @@ import { oauthRoutes } from "../oauth/routes.js";
 import { assets } from "../ui/assets.js";
 import { oauthRedirect } from "../ui/oauth-redirect.js";
 import { uiRoutes } from "../ui/routes.js";
+import { webhookRoutes } from "../webhook/route.js";
 import { accountsRoutes } from "./accounts-routes.js";
 
 export type { Deps };
@@ -27,6 +28,7 @@ export function createApp(given: AppDeps, opts: AppOptions = {}): Hono {
   if (login) app.route("/", loginRoutes(login, d));
   app.route("/v1/accounts", accountsRoutes(d));
   app.route("/v1/catalog", catalogRoutes(d));
+  if (d.webhookSecret) app.route("/v1/webhooks", webhookRoutes(d, d.webhookSecret));
   app.route("/v1/oauth", oauthRedirect(oauthRoutes(d), opts.uiRedirect));
   if (login) app.route("/", assets()).route("/", uiRoutes(d, app, login));
   else app.all("/", (c) => c.json({ error: "not found" }, 404));

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/cli/config.js";
 
 const ok = {
-  CONNECTIONS_KEY: "ab".repeat(32),
+  CONNECTIONS_DATABASE_URL: "postgres://x@127.0.0.1:1/y",
+  CONNECTOR_VAULT_KEYS: `k1:${"ab".repeat(32)}`,
   CONNECTIONS_AUTH_SECRET: "s".repeat(32),
   CONNECTIONS_DB_PATH: "/tmp/c.db",
   CONNECTIONS_GRAPH_PATH: "/tmp/g.db",
@@ -11,21 +12,38 @@ const ok = {
 const bad = (patch: Record<string, string | undefined>) => () => parseConfig({ ...ok, ...patch });
 
 describe("parseConfig", () => {
-  it("reads key, secret, paths and the admin list", () => {
+  it("reads secret, paths, the admin list and the data settings with their defaults", () => {
     const c = parseConfig(ok);
-    expect(c.key.equals(Buffer.from("ab".repeat(32), "hex"))).toBe(true);
     expect(c).toMatchObject({ secret: "s".repeat(32), dbPath: "/tmp/c.db", graphPath: "/tmp/g.db", port: 8788 });
     expect([...c.admins].sort()).toEqual(["t1:root", "t2:boss"]);
-    expect(c.tokensFile).toBeUndefined();
+    expect(c.data).toMatchObject({ cursorPath: "/tmp/c.db.cursors", jobs: { pollMinutes: 15, tenantConcurrency: 2, maxBacklogPerTenant: 500 } });
+    expect(c.data.webhookSecret).toBeUndefined();
   });
-  it("accepts an empty admin list, a port and a tokens file", () => {
-    const c = parseConfig({ ...ok, CONNECTIONS_ADMINS: undefined, CONNECTIONS_PORT: "0", CONNECTIONS_TOKENS_FILE: "/tmp/t.json" });
-    expect(c).toMatchObject({ port: 0, tokensFile: "/tmp/t.json" });
-    expect(c.admins.size).toBe(0);
+  it("accepts an empty admin list and a port", () => {
+    const c = parseConfig({ ...ok, CONNECTIONS_ADMINS: undefined, CONNECTIONS_PORT: "0" });
+    expect([c.port, c.admins.size]).toEqual([0, 0]);
   });
-  it("refuses a missing or malformed key", () => {
-    expect(bad({ CONNECTIONS_KEY: undefined })).toThrow(/CONNECTIONS_KEY/);
-    expect(bad({ CONNECTIONS_KEY: "abc" })).toThrow(/CONNECTIONS_KEY/);
+  it("refuses a missing database url and a missing or malformed vault key", () => {
+    expect(bad({ CONNECTIONS_DATABASE_URL: undefined })).toThrow(/CONNECTIONS_DATABASE_URL/);
+    expect(bad({ CONNECTOR_VAULT_KEYS: undefined })).toThrow(/CONNECTOR_VAULT_KEYS/);
+    expect(bad({ CONNECTOR_VAULT_KEYS: "abc" })).toThrow(/CONNECTOR_VAULT_KEYS/);
+  });
+  it("reads the webhook secret and the job limits, and refuses weak or out-of-range ones", () => {
+    const env = {
+      CONNECTIONS_GITHUB_WEBHOOK_SECRET: "w".repeat(16),
+      CONNECTIONS_POLL_MINUTES: "5",
+      CONNECTIONS_TENANT_CONCURRENCY: "4",
+      CONNECTIONS_MAX_BACKLOG_PER_TENANT: "10",
+      CONNECTIONS_CURSOR_PATH: "/tmp/cur.db",
+    };
+    const c = parseConfig({ ...ok, ...env });
+    expect(c.data).toMatchObject({ webhookSecret: "w".repeat(16), cursorPath: "/tmp/cur.db" });
+    expect(c.data.jobs).toMatchObject({ pollMinutes: 5, tenantConcurrency: 4, maxBacklogPerTenant: 10 });
+    expect(bad({ CONNECTIONS_GITHUB_WEBHOOK_SECRET: "short" })).toThrow(/WEBHOOK_SECRET/);
+    expect(bad({ CONNECTIONS_POLL_MINUTES: "60" })).toThrow(/POLL_MINUTES/);
+    expect(bad({ CONNECTIONS_POLL_MINUTES: "0" })).toThrow(/POLL_MINUTES/);
+    expect(bad({ CONNECTIONS_TENANT_CONCURRENCY: "x" })).toThrow(/TENANT_CONCURRENCY/);
+    expect(bad({ CONNECTIONS_MAX_BACKLOG_PER_TENANT: "-1" })).toThrow(/MAX_BACKLOG/);
   });
   it("refuses a missing or short auth secret", () => {
     expect(bad({ CONNECTIONS_AUTH_SECRET: undefined })).toThrow(/CONNECTIONS_AUTH_SECRET/);
@@ -57,6 +75,6 @@ describe("parseConfig", () => {
     expect(bad({ CONNECTIONS_PORT: "x", GITHUB_CLIENT_ID: "g" })).toThrow(/CONNECTIONS_PORT must be[^;]*; GITHUB_CLIENT_ID and/);
   });
   it("reports every problem at once", () => {
-    expect(() => parseConfig({})).toThrow(/CONNECTIONS_KEY.*CONNECTIONS_AUTH_SECRET.*CONNECTIONS_DB_PATH.*CONNECTIONS_GRAPH_PATH/s);
+    expect(() => parseConfig({})).toThrow(/CONNECTIONS_AUTH_SECRET.*CONNECTIONS_DB_PATH.*CONNECTIONS_GRAPH_PATH.*CONNECTIONS_DATABASE_URL/s);
   });
 });

@@ -6,7 +6,6 @@ import { checkZones } from "../accounts/rules/widen.js";
 import type { Deps } from "../deps.js";
 import { type Env, requireCaller } from "../http/guard/auth.js";
 import { parseStart } from "../http/guard/validate.js";
-import { rewriteTokens } from "../tokens/rewrite.js";
 import { authorizeURL, exchange, saveAccount } from "./flow.js";
 import { appOf, manifestFor, providerFor } from "./providers.js";
 import { BIND_TTL, bindCookie, bindingHolds, bindValue, isSecure } from "./state/binding.js";
@@ -61,8 +60,8 @@ export function oauthRoutes(d: Deps): Hono<Env> {
       return c.json({ error: "token exchange failed" }, 502);
     }
     try {
-      const saved = saveAccount(d, pend, p, tokens);
-      rewriteTokens(d);
+      const saved = await saveAccount(d, pend, p, tokens);
+      await d.jobs?.requestSync(saved.account.tenant, saved.account.id, "connect");
       return c.json(saved.account, saved.created ? 201 : 200);
     } catch (e) {
       console.error("oauth callback: could not store the account", e); // the provider answered; our own store failed, which is not a token problem

@@ -42,17 +42,16 @@ describe("PATCH and DELETE /v1/accounts/:id", () => {
       dataZone: "private",
       tenant: "t1",
       owner: "root",
-      secret: "tok",
     });
     const r = await s.call("PATCH", `/v1/accounts/${orphan.id}`, root, { access: "company" });
     expect(r.status).toBe(403);
     expect(s.store.get("t1", orphan.id)?.access).toBe("private");
     expect((await s.call("PATCH", `/v1/accounts/${orphan.id}`, root, { label: "renamed" })).status).toBe(200);
   });
-  it("deletes the account and its credential for the owner", async () => {
+  it("deletes the account and its vaulted credential for the owner", async () => {
     const id = await make(ann);
     expect((await s.call("DELETE", `/v1/accounts/${id}`, ann)).status).toBe(204);
-    expect(s.store.credential("t1", id)).toBeUndefined();
+    expect(await s.vault.get("t1", id)).toBeUndefined();
     expect((await s.call("DELETE", `/v1/accounts/${id}`, ann)).status).toBe(404);
   });
 });

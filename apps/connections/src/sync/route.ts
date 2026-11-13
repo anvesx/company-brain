@@ -1,14 +1,9 @@
 import type { Hono } from "hono";
 import type { Deps } from "../deps.js";
 import type { Env } from "../http/guard/auth.js";
-import { providerFor } from "../oauth/providers.js";
-import { refreshAccount } from "../oauth/state/refresh.js";
-import { accessTokenOf } from "../tokens/access-token.js";
-import { rewriteTokens } from "../tokens/rewrite.js";
-import { closeStaleEdges } from "./data/stale.js";
-import { runAccountSync } from "./run.js";
+import { syncAccount } from "./account.js";
 
-/** Adds `POST /:id/sync` to the accounts router. Owner only; an oauth account is refreshed first. */
+/** Adds `POST /:id/sync` (Sync now) to the accounts router. Owner only. The background jobs run the same `syncAccount`. */
 export function syncRoute(r: Hono<Env>, d: Deps): void {
   r.post("/:id/sync", async (c) => {
     const caller = c.get("caller");
@@ -17,31 +12,12 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     if (!cur) return c.json({ error: "not found" }, 404);
     if (cur.owner !== caller.user) return c.json({ error: "only the owner can sync this account" }, 403);
     const body = (await c.req.json().catch(() => undefined)) as { repo?: unknown } | undefined;
-    const repo = typeof body?.repo === "string" ? body.repo : (cur.repo ?? undefined);
-    if (cur.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
-    const manifest = d.catalog.get(cur.provider, cur.tenant);
-    const idp = manifest && providerFor(d.oauth, manifest);
-    if (cur.kind === "oauth" && idp && (await refreshAccount(d.store, idp, cur.tenant, cur.id)) !== "unsupported") {
-      rewriteTokens(d);
-      if (d.store.get(cur.tenant, cur.id)?.status !== "active") return c.json({ error: "account needs re-authorisation" }, 409);
-    }
-    const token = accessTokenOf(cur.kind, d.store.credential(cur.tenant, cur.id) ?? "");
-    if (token === undefined) return c.json({ error: "account has no usable credential" }, 409);
-    const h = d.store.health;
-    h.begin(cur.id);
-    try {
-      const r = await runAccountSync(d.sync, cur, token, repo, d.now() * 1000, d.catalog);
-      if ("error" in r) return c.json(r, 400); // a bad or missing repo is the caller's input, not a failure of the connector
-      d.store.setLastSync(cur.tenant, cur.id, d.now() * 1000);
-      h.ok(cur.tenant, cur.id);
-      return c.json(r);
-    } catch (e) {
-      const code = (e as { code?: string }).code ?? "UNKNOWN";
-      h.failed(cur.tenant, cur.id, `source sync failed (${code})`);
-      return c.json({ error: "source sync failed", code }, 502);
-    } finally {
-      h.end(cur.id);
-      closeStaleEdges(d, cur); // a PATCH or DELETE that landed mid-sync must not be undone by the sync's writes
-    }
+    const out = await syncAccount(d, cur.tenant, cur.id, typeof body?.repo === "string" ? body.repo : undefined);
+    if (out.kind === "done") return c.json(out.report);
+    if (out.kind === "bad") return c.json({ error: out.error }, 400);
+    if (out.kind === "denied") return c.json({ error: "the provider denied access to this source" }, 403);
+    if (out.kind === "superseded") return c.json({ error: "another sync of this account is running" }, 409);
+    if (out.kind === "failed") return c.json({ error: "source sync failed", code: out.code }, 502);
+    return c.json({ error: "account needs re-authorisation" }, 409);
   });
 }

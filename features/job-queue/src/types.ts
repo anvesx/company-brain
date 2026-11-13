@@ -41,6 +41,7 @@ export interface JobQueue {
    * at least once: a handler that dies before its ack runs again, so handlers must be idempotent.
    */
   enqueue(queue: string, tenant: string, data: object, options?: EnqueueOptions): Promise<string | null>;
+  /** Queues at most the tenant's remaining backlog room and returns how many were accepted; the rest (items.length minus the result) were refused. Throws BackpressureError when there is no room at all. */
   enqueueMany(queue: string, tenant: string, items: Array<{ data: object; key?: string }>): Promise<number>;
   work<T extends object>(queue: string, handler: Handler<T>, options?: WorkOptions): Promise<void>;
   schedule(queue: string, cron: string, data?: object): Promise<void>;

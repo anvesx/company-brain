@@ -103,9 +103,15 @@ importers:
 
   apps/connections:
     dependencies:
+      '@anvesx/change-cursor':
+        specifier: workspace:*
+        version: link:../../features/change-cursor
       '@anvesx/connector-kit':
         specifier: workspace:*
         version: link:../../features/connector-kit
+      '@anvesx/connector-vault':
+        specifier: workspace:*
+        version: link:../../features/connector-vault
       '@anvesx/connectors':
         specifier: 0.1.0
         version: 0.1.0(@anvesx/connector-kit@features+connector-kit)(@anvesx/core-types@features+core-types)
@@ -121,6 +127,9 @@ importers:
       '@anvesx/graph-sync':
         specifier: workspace:*
         version: link:../../services/graph-sync
+      '@anvesx/job-queue':
+        specifier: workspace:*
+        version: link:../../features/job-queue
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.16)
