@@ -14,6 +14,7 @@ decision is amended. ADRs live in theme folders, and each folder holds at most f
 | [0008](product/0008-identity-on-better-auth.md) | Identity on one auth library that also serves MCP OAuth | accepted, 6 Nov 2026 | [product](product) |
 | [0009](product/0009-connector-oauth-on-better-auth.md) | Connector sign-in and token refresh on better-auth account linking | accepted, 6 Nov 2026 | [product](product) |
 | [0010](tooling/0010-deploy-cloud-run-postgres.md) | Deploy on Cloud Run with Cloud SQL Postgres; AWS second | proposed, 6 Nov 2026 | [tooling](tooling) |
+| [0013](product/0013-job-queue-on-pg-boss.md) | Durable job queue on pg-boss behind a port | accepted, 13 Nov 2026 | [product](product) |
 
 ## Folders
 

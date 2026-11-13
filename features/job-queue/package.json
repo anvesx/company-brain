@@ -1,0 +1,35 @@
+{
+  "name": "@anvesx/job-queue",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --no-file-parallelism --coverage --coverage.include=src/**/*.ts"
+  },
+  "dependencies": {
+    "pg-boss": "12.38.2"
+  },
+  "devDependencies": {
+    "pg": "8.23.1",
+    "@types/pg": "8.23.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anvesx/company-brain.git",
+    "directory": "features/job-queue"
+  },
+  "license": "MIT",
+  "private": true
+}
