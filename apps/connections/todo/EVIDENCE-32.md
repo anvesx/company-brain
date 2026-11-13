@@ -16,16 +16,15 @@ Branch `wp/32-auto-sync` from c0fa354, app `apps/connections`. Environment: Post
 
 ```
 pnpm test -- --coverage            exit 0
- Test Files  53 passed (53)
-      Tests  268 passed (268)
-   Duration  12.31s
-Statements   : 96.97% ( 1282/1322 )
-Branches     : 90.04% ( 814/904 )
-Functions    : 95.48% ( 317/332 )
-Lines        : 99.23% ( 1036/1044 )
+ Test Files  57 passed (57)
+      Tests  277 passed (277)
+Statements   : 96.93% ( 1328/1370 )
+Branches     : 90.26% ( 844/935 )
+Functions    : 95.23% ( 320/336 )
+Lines        : 99.07% ( 1071/1081 )
 
 npx tsc --noEmit                   exit 0
-npx biome check apps/connections   Checked 184 files in 98ms. No fixes applied.      (repo root)
+npx biome check apps/connections   Checked 219 files in 39ms (src and tests). No fixes applied.      (repo root)
 pnpm structure                     checked 26 packages, 1264 files, 352 folders      (repo root, exit 0)
 pnpm guard:fakes                   checked 869 files, 4 findings, 1 baselined        (repo root)
 pnpm deps                          no dependency violations found (1249 modules, 2998 dependencies cruised)
@@ -46,10 +45,10 @@ Needs-reconnect and failure states are shown in `tests/e2e/drive-oauth.test.ts` 
 ## Scale note (tests/auto-sync/scale.test.ts, measured on this laptop, load average about 4)
 
 ```
-SCALE accounts=120 tenants=12 concurrency=2/tenant queued_peak=120 drained=120 total_ms=5956 p50_ms=3456 p95_ms=5905
+SCALE accounts=120 tenants=12 concurrency=2/tenant first_tick_accepted=48 first_tick_refused=72 accepted_total=120 drained=120 total_ms=3923 p50_ms=1969 p95_ms=2985
 ```
 
-120 accounts over 12 tenants, one `tick()` queues all 120 (peak queue depth 120), all drained with no dead letters in about 6 s; a second tick queues 0 (cursors fresh).
+120 accounts over 12 tenants, the backlog limit is 4 per tenant (below the 10 accounts each), so the first `tick()` accepts 48 and refuses 72 (the limit is hard inside one batch), later ticks pick up the rest, all 120 are queued exactly once and drained with no dead letters in about 4 s.
 Latency is time from tick to the account's health `lastRunAt` seen by a 50 ms poll, against a local replay GitHub, so it measures the queue and the vault and SQLite writes, not GitHub.
 Extrapolation is not measured: 1M users was not run. The queue and vault are Postgres; the account store, graph and cursor store are SQLite files, so one process is the limit of this build.
 
@@ -62,7 +61,7 @@ Extrapolation is not measured: 1M users was not run. The queue and vault are Pos
 - Incremental listing NOT done (not cheap): the connector `list(cursor)` cursor is page position, not a change feed, and GitHub tree listing has no since-parameter in the published connectors. The change-cursor is a last-success watermark that lets the poll skip fresh accounts; it does not narrow the provider query.
 - Teardown flake 57P01 (tests/login/identity.test.ts): reproduced at base c0fa354 (1 of 6 runs exit 1, 2 error lines). Fix: `pool.on("error")` in features/google-identity/tests/support/db.ts, since DROP DATABASE WITH (FORCE) resets idle clients.
 - The dead-letter state is the `connections.sync_dlq` queue plus health text; there is no UI to replay dead letters.
-- pg-boss `depth().queued` is a cached statistic and read 120 after the queue had drained, so the scale test asserts no dead letters instead of final depth.
+- pg-boss `depth().queued` is a cached statistic, so the scale test no longer reports a queue peak; it asserts the accepted and refused counts from `tick()` and no dead letters.
 - Cron granularity is one minute; poll interval is at most 59 minutes.
 - Old accounts that had a `secret` column are marked needs-auth on first open (users reconnect); no automatic migration of old encrypted secrets into the vault.
 - Not run: mutation tests (Stryker), a real GitHub or Google, real webhooks over the internet, multi-replica run (two replicas share keys by design, one process tested).

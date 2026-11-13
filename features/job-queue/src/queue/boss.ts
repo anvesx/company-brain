@@ -26,9 +26,8 @@ export async function createJobQueue(options: Options): Promise<JobQueue> {
   boss.on("error", (error) => console.error("job-queue", error));
   await boss.start();
   if (options.maxBacklogPerTenant !== undefined) await ensureBacklogIndex(boss.getDb() as Sql, schema);
-  const guard = async (queue: string, tenant: string) => {
-    if (options.maxBacklogPerTenant !== undefined) await guardBacklog(boss.getDb() as Sql, schema, queue, tenant, options.maxBacklogPerTenant);
-  };
+  const guard = async (queue: string, tenant: string): Promise<number> =>
+    options.maxBacklogPerTenant === undefined ? Infinity : guardBacklog(boss.getDb() as Sql, schema, queue, tenant, options.maxBacklogPerTenant);
   const toRow = (queue: string, tenant: string, { data, key }: Item) => ({
     data,
     group: { id: tenant },
@@ -45,14 +44,14 @@ export async function createJobQueue(options: Options): Promise<JobQueue> {
       return boss.send(queue, data, { group, ...(id === undefined ? {} : { id }), ...(o.delaySeconds === undefined ? {} : { startAfter: o.delaySeconds }) });
     },
     async enqueueMany(queue: string, tenant: string, items: Item[]) {
-      await guard(queue, tenant);
+      const room = await guard(queue, tenant);
       const keys = new Set<string>();
       const unique = items.filter((item) => item.key === undefined || (!keys.has(item.key) && keys.add(item.key)));
       return (
         (
           await boss.insert(
             queue,
-            unique.map((item) => toRow(queue, tenant, item)),
+            unique.slice(0, room).map((item) => toRow(queue, tenant, item)),
             { returnId: true },
           )
         )?.length ?? 0

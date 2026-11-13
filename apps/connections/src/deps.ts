@@ -31,7 +31,7 @@ export type Deps = {
   /** Per account: when it last synced (the watermark the poll reads to skip fresh accounts) and which webhook deliveries were already handled. */
   cursors: CursorStore;
   /** Queues an account sync now (connect, repo change, webhook). Absent: only Sync now and nothing in the background. */
-  jobs?: { requestSync: (tenant: string, id: string, reason: string, nonce?: string) => Promise<void> };
+  jobs?: { requestSync: (tenant: string, id: string, reason: string, nonce?: string) => Promise<boolean> };
   /** Shared secret of the GitHub webhook. Absent: no webhook route. */
   webhookSecret?: string;
 };

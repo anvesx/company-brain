@@ -28,15 +28,14 @@ describe.skipIf(skip)("the poll tick", () => {
     const c = await seed(h.deps, { tenant: "p2" });
     h.deps.cursors.setCursor("p2", sourceOf(c), new Date(h.deps.now() * 1000).toISOString());
     expect(await tick(h.deps, q, 900)).toEqual({ queued: 2, skipped: 1 });
-    expect(await tick(h.deps, q, 900)).toEqual({ queued: 0, skipped: 1 }); // same bucket: same keys
+    expect(await tick(h.deps, q, 900)).toEqual({ queued: 0, skipped: 3 }); // same bucket: same keys, so nothing new is queued
     h.clock.t += 900;
-    expect(await tick(h.deps, q, 900)).toEqual({ queued: 3, skipped: 0 }); // next bucket, every cursor now stale
+    expect(await tick(h.deps, q, 900)).toEqual({ queued: 2, skipped: 1 }); // next bucket, every cursor stale, but p1 already has 2 of its 3 slots taken: only 1 fits
   });
   it("counts a tenant over its backlog limit as skipped and still queues the others", async () => {
     h.clock.t += 900;
     for (let i = 0; i < 3; i++) await seed(h.deps, { tenant: "p1" });
     const out = await tick(h.deps, q, 900);
-    expect(out.skipped).toBeGreaterThanOrEqual(5);
-    expect(out.queued).toBe(1);
+    expect(out).toEqual({ queued: 1, skipped: 5 }); // each tenant is held to its limit of 3 waiting, even inside one batch
   });
 });

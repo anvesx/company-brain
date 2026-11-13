@@ -6,9 +6,11 @@ import { boot, seed } from "../http/fixture.js";
 
 const SECRET = "hook-secret";
 const asked: string[] = [];
+let hold = false;
 let s: Awaited<ReturnType<typeof boot>>;
 beforeAll(async () => {
-  if (!skip) s = await boot({ webhookSecret: SECRET, jobs: { requestSync: async (t, id, why, nonce) => void asked.push(`${t}:${id}:${why}:${nonce}`) } });
+  if (!skip)
+    s = await boot({ webhookSecret: SECRET, jobs: { requestSync: async (t, id, why, nonce) => (hold ? false : !!asked.push(`${t}:${id}:${why}:${nonce}`)) } });
 });
 afterAll(() => s?.close());
 
@@ -47,6 +49,25 @@ describe.skipIf(skip)("POST /v1/webhooks/github", () => {
     expect(await (await hook("push", repo, { delivery: "d1" })).json()).toEqual({ queued: 0 });
     expect(asked).toHaveLength(2);
     expect(await (await hook("issues", repo, { delivery: "d2" })).json()).toEqual({ queued: 2 });
+  });
+  it("answers 400 for a signed body that is not JSON and 413 over 1 MB, before parsing", async () => {
+    const send = (body: string) =>
+      fetch(`${s.base}/v1/webhooks/github`, {
+        method: "POST",
+        body,
+        headers: { "x-github-event": "push", "x-github-delivery": "j1", "x-hub-signature-256": sign(body) },
+      });
+    expect((await send("{not json")).status).toBe(400);
+    expect((await send(JSON.stringify({ pad: "x".repeat(1_000_001) }))).status).toBe(413);
+  });
+  it("does not record a delivery the queue refused, so the redelivery queues it", async () => {
+    const a = await seed(s, { tenant: "t3", repo: "acme/full" });
+    hold = true;
+    const full = { repository: { full_name: "acme/full" } };
+    expect(await (await hook("push", full, { delivery: "bp1" })).json()).toEqual({ queued: 0 });
+    hold = false;
+    expect(await (await hook("push", full, { delivery: "bp1" })).json()).toEqual({ queued: 1 });
+    expect(asked).toContain(`t3:${a.id}:webhook:bp1`);
   });
   it("answers ping 200, ignores other events with 202 and rejects a payload without delivery or repository with 400", async () => {
     expect(await (await hook("ping", {})).json()).toEqual({ ok: true });

@@ -17,7 +17,7 @@ describe.skipIf(skip)("requestSync", () => {
   it("runs the sync and ignores a repeat with the same nonce", async () => {
     const jobs = await startJobs(h.deps, cfg(10));
     const a = await seed(h.deps, { repo: "acme/handbook" });
-    await jobs.requestSync("t1", a.id, "webhook", "d1");
+    expect(await jobs.requestSync("t1", a.id, "webhook", "d1")).toBe(true);
     await jobs.requestSync("t1", a.id, "webhook", "d1");
     for (let i = 0; i < 100 && !h.deps.store.health.read("t1", a.id).lastRunAt; i++) await wait(100);
     expect(h.deps.store.health.read("t1", a.id).lastRunAt).not.toBeNull();
@@ -27,7 +27,7 @@ describe.skipIf(skip)("requestSync", () => {
   it("drops the request without throwing when the tenant backlog is full", async () => {
     const jobs = await startJobs(h.deps, cfg(0));
     const a = await seed(h.deps, { repo: "acme/handbook" });
-    await expect(jobs.requestSync("t1", a.id, "webhook", "d2")).resolves.toBeUndefined();
+    await expect(jobs.requestSync("t1", a.id, "webhook", "d2")).resolves.toBe(false);
     await wait(1500);
     expect(h.deps.store.health.read("t1", a.id).lastRunAt).toBeNull();
     await jobs.stop();

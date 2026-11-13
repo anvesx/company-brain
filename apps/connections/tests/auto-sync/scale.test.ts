@@ -14,12 +14,13 @@ import { routes } from "../sync/fixture.js";
 
 const TENANTS = 12;
 const PER = 10;
+const ROOM = 4; // below PER, so the first tick must refuse part of every tenant
 const N = TENANTS * PER;
 let close: () => Promise<void> = async () => {};
 afterAll(() => close());
 
 describe.skipIf(skip)("scale", () => {
-  it(`drains ${N} accounts over ${TENANTS} tenants through the queue and reports queue depth and p95`, async () => {
+  it(`drains ${N} accounts over ${TENANTS} tenants under a backlog limit of ${ROOM} per tenant, and reports p95`, async () => {
     const gh = await startReplay(routes);
     const t = tempStore();
     const dir = mkdtempSync(join(tmpdir(), "conn-scale-"));
@@ -39,7 +40,7 @@ describe.skipIf(skip)("scale", () => {
       databaseUrl: databaseUrl(),
       pollMinutes: 15,
       tenantConcurrency: 2,
-      maxBacklogPerTenant: 100,
+      maxBacklogPerTenant: ROOM,
       schema: `scale_${Date.now()}`,
     });
     close = async () => {
@@ -55,20 +56,22 @@ describe.skipIf(skip)("scale", () => {
       ids.push({ tenant: `tenant-${i % TENANTS}`, id: (await seed(deps, { tenant: `tenant-${i % TENANTS}`, repo: "acme/handbook" })).id });
 
     const start = Date.now();
-    const out = await jobs.tick();
-    expect(out).toEqual({ queued: N, skipped: 0 });
-    const peak = (await jobs.queue.depth("connections.sync")).queued;
+    const first = await jobs.tick();
+    expect(first).toEqual({ queued: TENANTS * ROOM, skipped: N - TENANTS * ROOM }); // the limit is hard: a batch is cut to the room left
+    let accepted = first.queued;
     const done = new Map<string, number>();
     while (done.size < N && Date.now() - start < 120_000) {
+      if (Date.now() % 500 < 60) accepted += (await jobs.tick()).queued; // later ticks pick up what the first one refused
       for (const a of ids) if (!done.has(a.id) && t.store.health.read(a.tenant, a.id).lastRunAt) done.set(a.id, Date.now() - start);
       await new Promise((r) => setTimeout(r, 50));
     }
     const ms = [...done.values()].sort((a, b) => a - b);
     const p95 = ms[Math.ceil(ms.length * 0.95) - 1] ?? 0;
     console.log(
-      `SCALE accounts=${N} tenants=${TENANTS} concurrency=2/tenant queued_peak=${peak} drained=${done.size} total_ms=${ms.at(-1)} p50_ms=${ms[Math.floor(ms.length / 2)]} p95_ms=${p95}`,
+      `SCALE accounts=${N} tenants=${TENANTS} concurrency=2/tenant first_tick_accepted=${first.queued} first_tick_refused=${first.skipped} accepted_total=${accepted} drained=${done.size} total_ms=${ms.at(-1)} p50_ms=${ms[Math.floor(ms.length / 2)]} p95_ms=${p95}`,
     );
     expect(done.size).toBe(N);
+    expect(accepted).toBe(N); // every account was queued exactly once across the ticks
     expect(await jobs.queue.deadLetters("connections.sync")).toEqual([]);
     expect(p95).toBeLessThan(60_000);
     expect((await jobs.tick()).queued).toBe(0); // all fresh now: the cursor skips them

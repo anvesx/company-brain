@@ -1,4 +1,3 @@
-import type { SyncReport } from "@anvesx/graph-sync";
 import type { Deps } from "../deps.js";
 import { tokenFor } from "../tokens/refresh.js";
 import { sourceOf } from "./connector.js";
@@ -29,6 +28,7 @@ export async function syncAccount(d: Deps, tenant: string, id: string, repoArg?:
     return { kind: "done", report: r };
   } catch (e) {
     const code = (e as { code?: string }).code ?? "UNKNOWN";
+    if (code === "SUPERSEDED") return { kind: "superseded" }; // a newer sync of this account took over; it records the outcome
     h.failed(tenant, id, `source sync failed (${code})`, d.now() * 1000);
     return { kind: "failed", code };
   } finally {

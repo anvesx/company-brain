@@ -29,12 +29,14 @@ export async function startJobs(d: Deps, c: JobsConfig) {
   await queue.work(POLL_QUEUE, async () => void (await tick(d, queue, c.pollMinutes * 60)), { concurrency: 1 });
   return {
     queue,
-    /** Queue one sync now (connect, repo change, webhook). `nonce` makes a repeated webhook delivery a no-op. A full backlog drops it: the next poll covers it. */
-    async requestSync(tenant: string, id: string, reason: string, nonce: string = String(Date.now())): Promise<void> {
+    /** Queue one sync now (connect, repo change, webhook). `nonce` makes a repeated webhook delivery a no-op. Returns false when a full backlog dropped it (the next poll covers it). */
+    async requestSync(tenant: string, id: string, reason: string, nonce: string = String(Date.now())): Promise<boolean> {
       try {
         await queue.enqueue(SYNC_QUEUE, tenant, { id, reason }, { key: `${reason}:${id}:${nonce}` });
+        return true;
       } catch (e) {
         if (!(e instanceof BackpressureError)) throw e;
+        return false;
       }
     },
     /** One polling pass now: what the schedule runs. */

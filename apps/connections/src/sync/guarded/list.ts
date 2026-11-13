@@ -12,6 +12,7 @@ export type Outcome =
   | { kind: "bad"; error: string }
   | { kind: "reauth" }
   | { kind: "denied" }
+  | { kind: "superseded" }
   | { kind: "failed"; code: string }
   | { kind: "missing" };
 

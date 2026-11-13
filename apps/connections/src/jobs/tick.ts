@@ -22,7 +22,9 @@ export async function tick(d: Deps, queue: JobQueue, bucketSeconds: number): Pro
   for (const [tenant, accounts] of byTenant) {
     const items = accounts.map((a) => ({ data: { id: a.id, reason: "poll" }, key: `poll:${a.id}:${bucket}` }));
     try {
-      queued += await queue.enqueueMany(SYNC_QUEUE, tenant, items);
+      const accepted = await queue.enqueueMany(SYNC_QUEUE, tenant, items); // only up to the tenant's remaining room
+      queued += accepted;
+      skipped += items.length - accepted;
     } catch (e) {
       if (!(e instanceof BackpressureError)) throw e;
       skipped += items.length;

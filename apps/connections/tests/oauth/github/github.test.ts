@@ -37,7 +37,7 @@ describe("github oauth against the replay provider", () => {
   });
   it("queues a sync of the new account right after the callback", async () => {
     const asked: string[] = [];
-    const w = await harness({}, undefined, { jobs: { requestSync: async (_t, id, why) => void asked.push(`${why}:${id}`) } });
+    const w = await harness({}, undefined, { jobs: { requestSync: async (_t, id, why) => !!asked.push(`${why}:${id}`) } });
     const { id } = (await (await (await w.signIn(ann, "github")).callback()).json()) as { id: string };
     expect(asked).toEqual([`connect:${id}`]);
     await w.close();
