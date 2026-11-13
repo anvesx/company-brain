@@ -31,10 +31,7 @@ export function syncRoute(r: Hono<Env>, d: Deps): void {
     h.begin(cur.id);
     try {
       const r = await runAccountSync(d.sync, cur, token, repo, d.now() * 1000, d.catalog);
-      if ("error" in r) {
-        h.failed(cur.tenant, cur.id, r.error);
-        return c.json(r, 400);
-      }
+      if ("error" in r) return c.json(r, 400); // a bad or missing repo is the caller's input, not a failure of the connector
       d.store.setLastSync(cur.tenant, cur.id, d.now() * 1000);
       h.ok(cur.tenant, cur.id);
       return c.json(r);

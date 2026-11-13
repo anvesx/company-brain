@@ -29,18 +29,27 @@ describe.skipIf(skip)("who may see and change the pages", () => {
   it("sends unknown and unavailable providers and accounts back with the reason", async () => {
     const b = await s.signedIn("dee");
     const unknown = await b.send(`${s.base}/connect/nope`);
-    expect(unknown.headers.get("location")).toContain("not+in+the+catalog");
+    expect(unknown.headers.get("location")).toBe("/?error=not-found");
     const noClient = await b.send(`${s.base}/connect/slack`);
-    expect((noClient.headers.get("location") ?? "").replaceAll("+", " ")).toMatch(/error=.*(No OAuth client|pasted credential)/);
+    expect(noClient.headers.get("location")).toBe("/?error=unavailable");
     const missing = await b.send(`${s.base}/accounts/none`);
-    expect(missing.headers.get("location")).toContain("account+was+not+found");
+    expect(missing.headers.get("location")).toBe("/?error=not-found");
   });
   it("shows the provider's refusal on Connections", async () => {
     const b = await s.signedIn("eve");
     const back = await s.connect(b);
-    expect(back).toContain("oauth_error=");
+    expect(back).toBe("/?oauth_error=denied");
     const html = await (await b.send(`${s.base}${back}`)).text();
-    expect(html).toContain("The provider did not connect");
+    expect(html).toContain("The provider did not grant access.");
+  });
+  it("never repeats text from the query, and serves a favicon", async () => {
+    const b = await s.signedIn("gus");
+    for (const q of ["error=%3Cb%3Eboom%3C/b%3E", "oauth_error=constructor", "error=__proto__", "notice=toString"]) {
+      const html = await (await b.send(`${s.base}/?${q}`)).text();
+      expect(html).not.toMatch(/boom|constructor|__proto__|toString/);
+    }
+    expect(await b.send(`${s.base}/?error=bogus`).then((r) => r.text())).toContain("The request failed.");
+    expect((await b.send(`${s.base}/favicon.ico`)).status).toBe(204);
   });
   it("signs out: the session cookie stops working", async () => {
     const b = await s.signedIn("fay");

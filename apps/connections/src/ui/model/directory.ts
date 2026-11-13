@@ -1,14 +1,15 @@
 import type { Manifest } from "@anvesx/connectors";
+import { categoryOf, readsOf } from "../../catalog/describe.js";
 import type { Deps } from "../../deps.js";
 import { providerFor } from "../../oauth/providers.js";
 
-export type Entry = { id: string; name: string; reason?: string; scopes: string[]; origin: string };
+export type Entry = { id: string; name: string; reason?: string; reads: string[]; origin: string };
 export type Group = { title: string; entries: Entry[] };
 
 const entry = (m: Manifest, origin: string, reason?: string): Entry => ({
   id: m.id,
   name: m.name,
-  scopes: m.auth.kind === "oauth2" ? m.auth.scopes : [],
+  reads: readsOf(m),
   origin,
   ...(reason && { reason }),
 });
@@ -25,13 +26,14 @@ const originOf = (d: Deps, m: Manifest): string => {
   return p ? new URL(p.authorizeURL).origin : "";
 };
 
-/** The caller's tenant catalog in two groups: what can be connected now, and what cannot with the reason. */
+/** The caller's tenant catalog grouped by category (as `GET /v1/catalog` names it), each entry either connectable or with the reason it is not. */
 export function directory(d: Deps, tenant: string): Group[] {
-  const all = d.catalog.list(tenant).map((l) => entry(l.manifest, originOf(d, l.manifest), whyNot(d, l.manifest)));
-  return [
-    { title: "Connect with the provider's own sign-in", entries: all.filter((e) => !e.reason) },
-    { title: "Not available", entries: all.filter((e) => e.reason) },
-  ].filter((g) => g.entries.length > 0);
+  const groups = new Map<string, Entry[]>();
+  for (const l of d.catalog.list(tenant)) {
+    const title = categoryOf(l.manifest, l.tenant !== undefined);
+    groups.set(title, [...(groups.get(title) ?? []), entry(l.manifest, originOf(d, l.manifest), whyNot(d, l.manifest))]);
+  }
+  return [...groups].map(([title, entries]) => ({ title, entries })).sort((a, b) => a.title.localeCompare(b.title));
 }
 
 /** One entry for the add page, by manifest id. */

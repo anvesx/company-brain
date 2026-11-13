@@ -24,8 +24,15 @@ pnpm --filter @anvesx/connections-app typecheck
 
 ## Run it
 
+Workspace packages (`@anvesx/design-system`, `@anvesx/google-identity`, the graph packages) are consumed from their `dist/`, so they must be built before the app. Build the app together with everything it depends on, never the app alone:
+
 ```sh
-pnpm --filter @anvesx/connections-app build
+pnpm --filter '@anvesx/connections-app...' build   # the trailing ... adds its dependencies, in dependency order
+```
+
+The same applies to `@anvesx/brain-app`: `pnpm --filter '@anvesx/brain-app...' build`. A bare `pnpm --filter <pkg> build` on a fresh clone fails because the dependencies have no `dist/` yet.
+
+```sh
 CONNECTIONS_KEY=$(openssl rand -hex 32) CONNECTIONS_AUTH_SECRET=$(openssl rand -hex 32) \
   CONNECTIONS_DB_PATH=./connections.db CONNECTIONS_GRAPH_PATH=./graph.db \
   CONNECTIONS_ADMINS=acme:root node apps/connections/dist/bin.js
@@ -35,7 +42,7 @@ It listens on 127.0.0.1:8788, prints the address, and exits 1 with every bad set
 
 ## Pages
 
-Behind Google sign-in the app serves server-rendered pages at `/`: the Connections directory and table, the add-connector consent page (`/connect/:provider`, one button that does a full-page redirect to the provider's own sign-in) and the account page (`/accounts/:id`: health, Sync now, repository, Disconnect). There is no field for a token or password. Each page action calls the matching `/v1` route. See [src/ui](src/ui/README.md). Sync is manual: nothing runs it on a schedule yet.
+Behind Google sign-in the app serves server-rendered pages at `/`: the Connections directory and table, the add-connector consent page (`/connect/:provider`, one button that does a full-page redirect to the provider's own sign-in) and the account page (`/accounts/:id`: health, Sync now, repository, Disconnect). There is no field for a token or password. Each page action calls the matching `/v1` route. The directory is grouped by the `category` that `GET /v1/catalog` returns; the consent page shows what each app reads in plain sentences, not raw scopes. A needs-reconnect account offers Reconnect (a full-page hop to `/v1/oauth/:provider/start`), and signing in again as the same identity renews that account instead of adding a second one. Sync is disabled until a GitHub account has a repository, and Clear repository empties it. Error notes come from a fixed table of codes, never from query text. See [src/ui](src/ui/README.md). Sync is manual: nothing runs it on a schedule yet.
 
 ## Sync
 

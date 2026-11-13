@@ -7,7 +7,7 @@ import { connected, findRow } from "./model/rows.js";
 import { AccountPage } from "./pages/account.js";
 import { ConnectPage } from "./pages/connect.js";
 import { ConnectionsPage } from "./pages/connections.js";
-import { noteOf } from "./shell/notes.js";
+import { codeOf, noteOf } from "./shell/notes.js";
 
 /** Server-rendered pages. Each action posts a form, calls the same `/v1` route an API client would, and redirects back with a note. */
 export function uiRoutes(d: Deps, api: Hono, login: Login): Hono<PageEnv> {
@@ -23,8 +23,8 @@ export function uiRoutes(d: Deps, api: Hono, login: Login): Hono<PageEnv> {
       },
       ...(body && { body: JSON.stringify(body) }),
     });
-  const act = async (c: Context, res: Response, back: string, ok: string, okPath = back) =>
-    res.ok ? go(c, okPath, "notice", ok) : go(c, back, "error", ((await res.json().catch(() => ({}))) as { error?: string }).error ?? "The request failed.");
+  const act = (c: Context, res: Response, back: string, ok: string, okPath = back) =>
+    res.ok ? go(c, okPath, "notice", ok) : go(c, back, "error", codeOf(res.status));
   const mine = (c: Context) => ({ caller: c.get("caller"), q: c.req.query() });
 
   r.get("/", (c) => {
@@ -36,15 +36,16 @@ export function uiRoutes(d: Deps, api: Hono, login: Login): Hono<PageEnv> {
     const { caller } = mine(c);
     const id = c.req.param("provider");
     const entry = entryFor(d, id, caller.tenant);
-    if (!entry || entry.reason) return go(c, "/", "error", entry?.reason ?? "That provider is not in the catalog.");
+    if (!entry || entry.reason) return go(c, "/", "error", entry ? "unavailable" : "not-found");
     c.header("content-security-policy", policy(entry.origin));
     return c.html(ConnectPage({ email: caller.user, entry, startUrl: `/v1/oauth/${encodeURIComponent(id)}/start` }));
   });
   r.get("/accounts/:id", (c) => {
     const { caller, q } = mine(c);
     const row = findRow(d, caller, c.req.param("id"));
-    if (!row) return go(c, "/", "error", "That account was not found.");
+    if (!row) return go(c, "/", "error", "not-found");
     const needsRepo = d.catalog.get(row.account.provider, row.account.tenant)?.needsRepo === true;
+    c.header("content-security-policy", policy(entryFor(d, row.account.provider, caller.tenant)?.origin)); // Reconnect is a form that hops to the provider
     return c.html(AccountPage({ email: caller.user, row, now: d.now() * 1000, needsRepo, note: noteOf(q) }));
   });
   r.post("/accounts/:id/sync", async (c) => {
@@ -53,8 +54,8 @@ export function uiRoutes(d: Deps, api: Hono, login: Login): Hono<PageEnv> {
   });
   r.post("/accounts/:id/repo", async (c) => {
     const id = c.req.param("id");
-    const { repo } = await c.req.parseBody();
-    return act(c, await call(c, "PATCH", `/v1/accounts/${id}`, { repo: String(repo ?? "") }), `/accounts/${id}`, "saved");
+    const repo = String((await c.req.parseBody()).repo ?? "").trim() || null; // an empty value clears it
+    return act(c, await call(c, "PATCH", `/v1/accounts/${id}`, { repo }), `/accounts/${id}`, repo ? "saved" : "cleared");
   });
   r.post("/accounts/:id/disconnect", async (c) => {
     const id = c.req.param("id");

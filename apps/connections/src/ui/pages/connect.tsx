@@ -13,12 +13,10 @@ export const ConnectPage = ({ email, entry, startUrl }: Props) => (
       You will sign in on {entry.name}'s own page at <code>{entry.origin}</code>. Company Brain never sees your password.
     </Paragraph>
     <Heading level={2}>What it reads</Heading>
-    {entry.scopes.length > 0 ? (
+    {entry.reads.length > 0 ? (
       <ul class="scopes">
-        {entry.scopes.map((s) => (
-          <li>
-            <code>{s}</code>
-          </li>
+        {entry.reads.map((t) => (
+          <li>{t}</li>
         ))}
       </ul>
     ) : (

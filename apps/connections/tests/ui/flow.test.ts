@@ -22,18 +22,24 @@ describe.skipIf(skip)("add, connect, sync, disconnect in a browser", () => {
     expect(home).toContain("No app is connected yet.");
     expect(home).toContain('href="/connect/github"');
     expect(home).toContain("Not available");
+    expect(home).toMatch(/<h2[^>]*>Code <span class="count">1<\/span>/);
+    expect(home).toMatch(/<h2[^>]*>Documents/);
+    expect(home).toContain('class="btn btn-2 go"');
 
     const connect = await b.send(`${s.base}/connect/github`);
     const page = await connect.text();
     expect(page).toContain("Continue to GitHub");
     expect(page).toContain('action="/v1/oauth/github/start"');
+    expect(page).toContain("Your GitHub repositories, including private ones.");
+    expect(page).not.toMatch(/<code>repo<\/code>/);
     expect(connect.headers.get("content-security-policy")).toMatch(/form-action 'self' http:\/\/127\.0\.0\.1:\d+/);
 
     const back = await s.connect(b);
     expect(back).toMatch(/^\/\?connected=/);
     const list = await (await b.send(`${s.base}${back}`)).text();
     expect(list).toContain("Connected. Open the account");
-    expect(list).toContain("Not yet synced");
+    expect(list.match(/Not yet synced/g)).toHaveLength(1); // the status; the Last sync cell says Never
+    expect(list).toContain("Never");
     const id = /href="\/accounts\/([^"]+)"/.exec(list)?.[1] ?? "";
 
     const acct = await (await b.send(`${s.base}/accounts/${id}`)).text();
@@ -54,11 +60,12 @@ describe.skipIf(skip)("add, connect, sync, disconnect in a browser", () => {
     expect(gone.headers.get("location")).toBe("/?notice=disconnected");
     expect(s.store.listVisible({ user: "ann@example.com", tenant: "ann@example.com" })).toEqual([]);
   });
-  it("shows an error and counts the failure when a sync cannot run", async () => {
+  it("shows an error and counts the failure when the source fails", async () => {
     const b = await s.signedIn("bea");
     const id = /connected=([^&]+)/.exec(await s.connect(b))?.[1] ?? "";
+    await b.send(`${s.base}/accounts/${id}/repo`, form(s.base, { repo: "acme/missing" }));
     const res = await b.send(`${s.base}/accounts/${id}/sync`, form(s.base));
-    expect(res.headers.get("location")).toContain("error=");
+    expect(res.headers.get("location")).toBe(`/accounts/${id}?error=source`);
     const html = await (await b.send(`${s.base}/accounts/${id}`)).text();
     expect(html).toContain("Error");
     expect(html).toMatch(/Failures in a row<\/dt><dd class="big">1</);

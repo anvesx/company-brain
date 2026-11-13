@@ -6,13 +6,15 @@ import { cookieAllowed, type Session } from "../http/guard/auth.js";
 
 const STYLE_HASH = `'sha256-${createHash("sha256").update(styles).digest("base64")}'`;
 const FONTS = "https://fonts.googleapis.com";
+const GSTATIC = "https://fonts.gstatic.com";
 
 /** The page policy: own origin only, the design-system style block by hash, its web fonts, and forms that may hop to one provider. */
 export const policy = (providerOrigin = ""): string =>
   [
     "default-src 'self'",
     `style-src 'self' ${STYLE_HASH} ${FONTS}`,
-    "font-src https://fonts.gstatic.com",
+    `connect-src 'self' ${FONTS} ${GSTATIC}`, // the design-system head preconnects to both font hosts
+    `font-src ${GSTATIC}`,
     "frame-ancestors 'none'",
     "base-uri 'none'",
     `form-action 'self' ${providerOrigin}`.trim(),

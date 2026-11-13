@@ -25,6 +25,13 @@ export function openStore(path: string, key: Buffer) {
       const r = row(tenant, id);
       return r && view(r);
     },
+    /** The caller's own oauth account for this app and label, so signing in again renews it instead of adding a twin. */
+    findOauth(tenant: string, owner: string, provider: string, label: string): Account | undefined {
+      const r = db
+        .prepare("SELECT * FROM accounts WHERE tenant = ? AND owner = ? AND provider = ? AND label = ? AND kind = 'oauth' ORDER BY seq")
+        .get(tenant, owner, provider, label);
+      return r && view(r as Row);
+    },
     listVisible: (c: Caller): Account[] =>
       db
         .prepare("SELECT * FROM accounts WHERE tenant = ? AND (owner = ? OR access = 'company') ORDER BY seq")
