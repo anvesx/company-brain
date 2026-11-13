@@ -25,7 +25,7 @@ export function createApp(given: AppDeps, opts: AppOptions = {}): Hono {
   const app = new Hono();
   app.use("/", async (c, next) => {
     if (!login) return c.json({ error: "not found" }, 404);
-    return (await login.session(c.req.raw.headers)) ? next() : c.redirect("/sign-in", 302);
+    return (await login.session.caller(c.req.raw.headers)) ? next() : c.redirect("/sign-in", 302);
   });
   if (login) app.route("/", loginRoutes(login, d));
   app.route("/", uiRoutes());

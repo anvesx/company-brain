@@ -14,6 +14,6 @@ There is no password, email-and-password or passkey input, route, plugin or depe
 
 The old `features/identity` package still holds email and password code for `apps/brain` and the MCP services. Passkeys are removed from it, and `apps/connections` signs in with this package only.
 
-An app can pass `page` (`{ html, styleSrc, fontSrc }`) to serve its own sign-in page, for example one built with the design system. This package does not depend on the design system (a feature may not); the app renders the page and its policy sources are added to the content security policy.
+An app can pass `page` (`{ html(notice?), styleSrc, fontSrc }`; `notice` is fixed text for `?error=email_not_verified` or `state_mismatch`, otherwise undefined) to serve its own sign-in page, for example one built with the design system. This package does not depend on the design system (a feature may not); the app renders the page and its policy sources are added to the content security policy.
 
 Tests need Postgres 16: `DATABASE_URL=... pnpm --filter @anvesx/google-identity test` (`tests/support/pg-temp.sh` starts a throwaway one).

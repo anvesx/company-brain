@@ -22,7 +22,7 @@ const schema = z
   });
 
 /** A sign-in page the app renders itself (for example with the design system), and the extra style and font sources its policy needs. */
-export type SignInPage = { html: string; styleSrc?: string[]; fontSrc?: string[] };
+export type SignInPage = { html: (notice?: string) => string; styleSrc?: string[]; fontSrc?: string[] };
 
 export type IdentityInput = z.input<typeof schema> & { pool: Pool; page?: SignInPage };
 export type IdentityConfig = z.output<typeof schema> & { pool: Pool; page?: SignInPage };

@@ -3,7 +3,7 @@ import type { Env } from "../http/guard/auth.js";
 
 /**
  * Two additions for a browser around the bearer-only OAuth routes:
- * `GET /:provider/start-url` answers `{url}` where `start` would redirect, because a page cannot send a header on a navigation, and passes on the `oauth_bind` cookie `start` set;
+ * `GET /:provider/start-url` answers `{url}` where `start` would redirect, because a page cannot send a header on a navigation, and passes on the `oauth_bind` cookie `start` set, and the browser's `Sec-Fetch-Site` so the cross-site check still applies;
  * with `redirect` set, `callback` sends the browser back to the page instead of answering json.
  */
 export function oauthUi(oauth: Hono<Env>, redirect?: string): Hono<Env> {
@@ -11,9 +11,10 @@ export function oauthUi(oauth: Hono<Env>, redirect?: string): Hono<Env> {
   r.get("/:provider/start-url", async (c) => {
     const auth = c.req.header("authorization");
     const cookie = c.req.header("cookie");
+    const site = c.req.header("sec-fetch-site");
     const search = new URL(c.req.url).search;
     const res = await oauth.request(`/${c.req.param("provider")}/start${search}`, {
-      headers: { ...(auth && { authorization: auth }), ...(cookie && { cookie }) },
+      headers: { ...(auth && { authorization: auth }), ...(cookie && { cookie }), ...(site && { "sec-fetch-site": site }) },
     });
     const url = res.headers.get("location");
     if (res.status !== 302 || !url) return new Response(res.body, res);

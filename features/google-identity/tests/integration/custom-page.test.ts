@@ -7,7 +7,7 @@ beforeAll(async () => {
   if (!skip)
     app = await startApp({
       page: {
-        html: "<!doctype html><title>Mine</title><button>Continue with Google</button>",
+        html: (n) => `<!doctype html><title>Mine</title><button>Continue with Google</button>${n ?? ""}`,
         styleSrc: ["'sha256-abc'"],
         fontSrc: ["https://fonts.gstatic.com"],
       },
@@ -23,5 +23,13 @@ describe.skipIf(skip)("an app-supplied sign-in page", () => {
     expect(csp).toContain("style-src 'self' 'sha256-abc'");
     expect(csp).toContain("font-src https://fonts.gstatic.com");
     expect(csp).toContain("default-src 'none'");
+  });
+  test("is given a fixed notice for known ?error= codes only, never the raw value", async () => {
+    const known = await (await fetch(`${app.local}/sign-in?error=email_not_verified`)).text();
+    expect(known).toContain("Google has not verified that email address");
+    const hostile = await (await fetch(`${app.local}/sign-in?error=%3Cscript%3Ealert(1)%3C/script%3E`)).text();
+    expect(hostile).not.toContain("script");
+    expect(hostile).not.toContain("alert");
+    expect(await (await fetch(`${app.local}/sign-in?error=constructor`)).text()).not.toContain("function");
   });
 });
