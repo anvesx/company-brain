@@ -37,7 +37,7 @@ export const buildApp = (auth: ReturnType<typeof buildAuth>, { baseUrl, issuer }
     const start = new Request(`${baseUrl}/api/auth/sign-in/social`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: new URL(baseUrl).origin, "x-forwarded-for": c.req.header("x-forwarded-for") ?? "" },
-      body: JSON.stringify({ provider: "google", callbackURL: "/", errorCallbackURL: "/sign-in" }),
+      body: JSON.stringify({ provider: "google", callbackURL: `${baseUrl}/`, errorCallbackURL: `${baseUrl}/sign-in` }),
     });
     const res = await auth.handler(start);
     const { url } = (await res.json().catch(() => ({}))) as { url?: string };
