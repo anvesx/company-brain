@@ -1,0 +1,11 @@
+export { AuthError, TransientError, VaultError } from "./errors.js";
+export { importRecords, type Report } from "./migrate/migrate.js";
+export { type Exchange, type Fresh, httpExchange } from "./refresh/exchange.js";
+export { markNeedsAuth, releaseLease, takeLease } from "./refresh/lease.js";
+export { type Options, type Outcome, refreshOne } from "./refresh/refresh.js";
+export { type Due, dueRows, sweep } from "./refresh/sweep.js";
+export { type Keyring, loadKeyring } from "./seal/keyring.js";
+export { open, seal } from "./seal/seal.js";
+export { rotate } from "./store/rotate.js";
+export { migrate } from "./store/schema.js";
+export { createVault, type Meta, type NewRow, type Stored, type Token, type Vault } from "./store/vault.js";
