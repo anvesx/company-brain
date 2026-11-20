@@ -60,7 +60,7 @@ The first twelve rows use your wording, unchanged. Built means working code exis
 | Exact messages are kept, not summarised | proposed | Slack and chat text is stored word for word, with author, thread, time and edit history. Slack's terms bar a lasting third-party copy, so Slack stays live-query until legal review says otherwise. |
 | Index files that will never be deleted | partly | Pointers stay for every file the source keeps. The version and content hash show when a file changed.<sup>[41](#ref41)</sup><sup>[42](#ref42)</sup> |
 | Back up files that will be deleted | proposed | A watcher copies a file when a delete webhook or the nightly sweep sees it going. The copy keeps the old access list. |
-| People leave the company | proposed | A leaver event moves their work files to a manager and keeps what policy says to keep. It erases personal data and writes a receipt.<sup>[12](#ref12)</sup><sup>[13](#ref13)</sup><sup>[14](#ref14)</sup><sup>[15](#ref15)</sup> |
+| People leave the company | proposed | The identity provider, a directory poll or an admin button reports the leaver. A poll finds people the apps never announce, and Glean also relies on scheduled identity crawls with lag between them.<sup>[43](#ref43)</sup><sup>[44](#ref44)</sup><sup>[45](#ref45)</sup> Deactivating an account does not end live sessions, so tokens need their own revoke.<sup>[46](#ref46)</sup> The leaver's work files go to a manager, policy keeps what it must keep, and personal data is erased with a receipt.<sup>[12](#ref12)</sup><sup>[13](#ref13)</sup><sup>[14](#ref14)</sup><sup>[15](#ref15)</sup> |
 | Delete everything about a person on request | proposed | Erasure follows the pointer, the vectors, the cache and the backup. A governance module exists, but erasure is on the not-built list. |
 | A laptop folder joins the brain | proposed | A small app reads a folder the user picks and sends pointers. The files stay on the laptop unless the user opts in. |
 
@@ -94,6 +94,17 @@ The first twelve rows use your wording, unchanged. Built means working code exis
 4. The agent receives chunks with citations
 5. The audit log records who asked what
 
+### A new file appears
+
+1. The app sends a webhook, or the poller or the nightly sweep finds the file
+2. The brain drops duplicate and older events, then compares the content hash<sup>[41](#ref41)</sup><sup>[42](#ref42)</sup>
+3. It reads the body live and extracts the text
+4. It cuts the text by headings and gives each piece a stable id, so an unchanged piece is never embedded twice
+5. Proposed: a cheap step shortlists categories, then a model picks several. The strictest category sets the permission<sup>[47](#ref47)</sup><sup>[48](#ref48)</sup>
+6. Proposed: secrets and personal data are masked before embedding
+7. The pieces go into a keyword index and a vector index, each with the file's access list
+8. The brain keeps the pointer, hash and access list, and drops the body
+
 ### A document changes
 
 1. A webhook arrives, or the cursor finds the change
@@ -104,11 +115,12 @@ The first twelve rows use your wording, unchanged. Built means working code exis
 
 ### A person leaves
 
-1. The identity provider sends a leaver event
-2. The person's access is cut at once
-3. Their files go to the manager
-4. Policy keeps work files and erases personal data
-5. A receipt goes to the audit log
+1. Proposed: the identity provider, a directory poll or an admin button reports the departure
+2. The person's access is cut within the poll interval
+3. Between polls, a live recheck on each question should block them (code exists, not yet wired in)
+4. Their files go to the manager
+5. Policy keeps work files and erases personal data
+6. A receipt goes to the audit log
 
 ### A new project starts
 
@@ -127,9 +139,23 @@ The first twelve rows use your wording, unchanged. Built means working code exis
 5. A person or agent asks a question through MCP, signed in as themselves.
 6. The index narrows the candidates with the access list. The live app then confirms the top results.<sup>[39](#ref39)</sup>
 7. The agent gets ranked chunks with citations. The document stays at the source.
-8. Proposed: nightly jobs check for drift and fade out old facts.<sup>[43](#ref43)</sup>
+8. Proposed: nightly jobs check for drift and fade out old facts.<sup>[49](#ref49)</sup>
 9. Messages, backups and laptop folders feed the same index through the same permission gate.
 10. When a file is deleted or a person leaves, the brain keeps, hands over or erases by policy.
+
+### Techniques for fast insert and fast search
+
+| Technique | Why it is fast | Status |
+|---|---|---|
+| Compare hash and version first | Unchanged files cost nothing. Work follows the change, not the corpus.<sup>[41](#ref41)</sup><sup>[42](#ref42)</sup> | partly |
+| Stable chunk ids | An edited file re-embeds only the pieces that changed. | proposed |
+| Update the vector index in place | A rebuild stops search for hours. In place, SPFresh needs 1% of the memory and under 10% of the cores. IP-DiskANN handles each delete on the spot.<sup>[39](#ref39)</sup><sup>[50](#ref50)</sup><sup>[51](#ref51)</sup> | proposed |
+| Filter by access list inside the search | A tight filter does not wreck recall, and no result is dropped late.<sup>[40](#ref40)</sup><sup>[39](#ref39)</sup> | partly |
+| Keyword and vector search, fused | Names and error codes match by words, ideas by meaning. Rank fusion plus a reranker beat keyword search alone. In one deployed facility system, dropping the reranker cut recall by 32.8%.<sup>[52](#ref52)</sup> | partly |
+| Shortlist categories, then pick | A cheap filter step cut classification compute by 98% for a 2% relative loss. It also lets categories change with no retraining.<sup>[47](#ref47)</sup><sup>[48](#ref48)</sup> | proposed |
+| Narrow by category before reading vectors | A question searches a few hundred ids, not millions of chunks. No paper here measures this. It is our proposal. | proposed |
+
+_Built and proposed status come from the done table in section 8. Speeds are the papers' own results on their own data. We have measured none of them._
 
 ## 6. The design on one page
 
@@ -156,7 +182,6 @@ The numbered boxes in the diagram:
 17. Device token handed to the agent only
 18. Health and job state
 
-
 _Each box lists the first six components of its stage. The full design has 152 components and 461 edges._
 
 ## 7. The full drill-down
@@ -174,19 +199,19 @@ Package counts in docs/progress.md date from 6 Nov. Architecture decision record
 | Feature | Packages and the repo that holds them | Status |
 |---|---|---|
 | Connect to apps | company-brain: connector-kit, connector-vault, google-identity, token-refresh, connections app. anvesx/connectors: @anvesx/connectors 0.1.0. anvesx/rag: connector-runtime. | Code exists for admin and employee connections. connector-runtime's mutation test run is not green, so it is not among the 26 counted units. Rebuild checklist: connector-vault 0 of 36. The connections app is marked to delete. |
-| Catch changes | company-brain: change-cursor, job-queue. | Code exists. Rebuild checklist: job-queue 0 of 37. |
+| Catch changes | company-brain: change-cursor, job-queue. | Code exists. Rebuild checklist: job-queue 0 of 37. Leaver detection and directory sync (SCIM) are not built. |
 | Pointer index | company-brain: graph-store, graph-sync, migrations. anvesx/rag: pointer-registry, index-service, chunker. | Code exists. Rebuild checklist: migrations 0 of 36. The brain app in rag keeps its registry in memory (board issue 50). |
 | Permissions and zones | company-brain: visibility, zone-policy, source-trust. anvesx/rag: acl-filter, audit-chain, audit-service. | Code exists. Rebuild checklist: visibility gate 0 of 53, audit log 0 of 27. |
-| Search and answer | company-brain: query-router. anvesx/rag: hybrid-search, query-service, retrieval, embedder. rank: only on the unmerged rank-move branch of rag. | hybrid-search scores 73.81 on mutation testing. The break line is 80. Rebuild checklist: search 0 of 34. Citations on every answer are not built. |
+| Search and answer | company-brain: query-router. anvesx/rag: hybrid-search, query-service, retrieval, embedder. rank: only on the unmerged rank-move branch of rag. | hybrid-search scores 73.81 on mutation testing. The break line is 80. Rebuild checklist: search 0 of 34. Citations on every answer are not built. The live recheck in apps/brain/src/live/recheck.ts exists, but brain serve does not call it. |
 | Agent interface | company-brain: brain-mcp. anvesx/rag: mcp-search-tool, mcp-service. | Code exists. mcp-service's mutation test run is not green. |
 | Views | company-brain: files-view, graph-view, design-system, brain app. | Code exists. files-view was merged after it failed independent verification twice. Rebuild checklist: files view UI 0 of 32. |
 | Not built | validity and supersession, memory distillation, erasure and tenant keys, evaluation harness, capture daemon, action agent, review queue, consolidation | None of the six listed capabilities is counted. |
+| Proposed index upgrades | LLM categories and an artifact catalog, masking before embedding, in-place vector updates, quantised vectors with rescoring | Described in docs/brain/model.json (ix_cat, ix_pii, ix_vec). No code found for them. |
 | Not in this build at all | exact message vault, archive and backup vault, leaver pipeline, laptop folder agent | Proposed on this page. Needs a decision on Slack's terms first. |
 
 ## 9. Research citations
 
 The small numbers in the text point to this list. A package with no source here is our own proposal. The first group holds the sources that are literally about a company brain. The other groups are papers and posts behind specific design choices.
-
 ### Company brain sources
 
 | Source | Date | What we took from it |
@@ -198,7 +223,7 @@ The small numbers in the text point to this list. A package with no source here 
 | <a id="ref5"></a>**5.** [Supermemory Company Brain](https://github.com/supermemoryai/company-brain)<br>Supermemory | 2026 | Closest product with the same name. A Slack agent with a live graph. Open source, Apache 2.0. |
 | <a id="ref31"></a>**31.** [Meta organizational agents](https://infoq.com/news/2026/09/meta-organizational-agents)<br>InfoQ | Sep 2026 | Secondary report on the Meta post. |
 | <a id="ref34"></a>**34.** [How Meta used AI to map tribal knowledge](https://engineering.fb.com/2026/04/06/developer-tools/how-meta-used-ai-to-map-tribal-knowledge-in-large-scale-data-pipelines/)<br>Meta Engineering | 6 Apr 2026 | Agents wrote context files for data pipelines. Code scope only. |
-| <a id="ref43"></a>**43.** [gbrain project page](https://github.com/garrytan/gbrain)<br>Garry Tan | 2026 | Dream cycle, time decay and drift checks. Source for the upkeep jobs. |
+| <a id="ref49"></a>**49.** [gbrain project page](https://github.com/garrytan/gbrain)<br>Garry Tan | 2026 | Dream cycle, time decay and drift checks. Source for the upkeep jobs. |
 
 ### SECI and knowledge transfer
 
@@ -254,6 +279,10 @@ The small numbers in the text point to this list. A package with no source here 
 | <a id="ref40"></a>**40.** [ACORN](https://arxiv.org/abs/2403.04871)<br>Patel, Kraft et al., Stanford | 2024 | Search walks only nodes that pass the filter. |
 | <a id="ref41"></a>**41.** [Large-scale incremental processing (Percolator)](https://www.usenix.org/legacy/event/osdi10/tech/full_papers/Peng.pdf)<br>Peng and Dabek, Google | 2010 | Index work scales with the change, not with the corpus. |
 | <a id="ref42"></a>**42.** [DBLog: change-data capture with watermarks](https://arxiv.org/abs/2010.12597)<br>Andreakis and Papapanagiotou, Netflix | 2020 | Mixes log events with chunked table reads. Can pause and resume. |
+| <a id="ref43"></a>**43.** [Glean key terms: identity crawl and identity freshness](https://docs.glean.com/connectors/key-terms)<br>Glean documentation | 2026 | Departed people are removed when the identity crawl (users, groups, memberships) next runs. Freshness depends on crawl cadence, not on the account being disabled. |
+| <a id="ref44"></a>**44.** [Glean: Windchill connector](https://docs.glean.com/connectors/native/windchill/)<br>Glean documentation | 2026 | When a source has no feed for deletions or lost access, they show up only after the next full crawl. |
+| <a id="ref45"></a>**45.** [Glean: select people connector](https://docs.glean.com/get-started/setup/sync-people-data)<br>Glean documentation | 2026 | A CSV directory needs a re-upload before a departure counts. Login-token attributes change only at re-login. |
+| <a id="ref46"></a>**46.** [SCIM Deprovisioning: The Part Every SaaS Gets Wrong](https://ssojet.com/blog/scim-deprovisioning-saas-guide)<br>SSOJet (vendor blog) | 2026 | Okta and Entra usually deactivate by setting active to false, not by sending a delete. Deactivating does not end live sessions or tokens. Vendor claim, not independent. |
 
 ### Agent memory and graphs
 
@@ -264,6 +293,16 @@ The small numbers in the text point to this list. A package with no source here 
 | <a id="ref36"></a>**36.** [Zep: a temporal knowledge graph for agent memory](https://arxiv.org/abs/2501.13956)<br>Rasmussen et al., Zep AI | 2025 | Four timestamps per edge. A contradiction closes the old edge, so it can answer what was believed on a date. |
 | <a id="ref37"></a>**37.** [Mem0: scalable long-term memory](https://arxiv.org/abs/2504.19413)<br>Chhikara et al. | 2025 | An LLM picks add, update, delete or no-op for each new fact. |
 | <a id="ref38"></a>**38.** [From Local to Global: GraphRAG](https://arxiv.org/abs/2404.16130)<br>Edge et al. | 2024 | Community summaries answer theme questions. It rebuilds the whole graph. |
+
+### Filing a new file: categories, indexing and fast updates
+
+| Source | Date | What we took from it |
+|---|---|---|
+| <a id="ref47"></a>**47.** [Can Large Language Models Serve as Effective Classifiers for Hierarchical Multi-Label Classification of Scientific Documents at Industrial Scale?](https://arxiv.org/abs/2412.05137)<br>Tabatabaei et al. (SSRN) | 6 Dec 2024 | Files a document under many labels with no retraining. Dense retrieval first narrows thousands of labels to a short list, then an LLM picks. Written for taxonomies that change. |
+| <a id="ref48"></a>**48.** [Flexible Job Classification with Zero-Shot Learning](https://arxiv.org/abs/2209.12678)<br>Thom Lake | 30 Aug 2022 | A cheap filter step, then a costly re-rank step, cut compute by 98% for a 2% relative loss in accuracy. New categories need no retraining. |
+| <a id="ref50"></a>**50.** [SPFresh: Incremental In-Place Update for Billion-Scale Vector Search](https://arxiv.org/abs/2410.14452)<br>Xu et al., Microsoft Research | 18 Oct 2024 | Updates vectors in place by splitting partitions and moving only the vectors at the boundary. Needs 1% of the memory and under 10% of the cores that a global rebuild needs, at a 1% daily update rate on a billion vectors. |
+| <a id="ref51"></a>**51.** [In-Place Updates of a Graph Index for Streaming Approximate Nearest Neighbor Search](https://arxiv.org/abs/2502.13826)<br>Xu and Dobson Manohar | 19 Feb 2025 | Handles each insert and delete in place, with no batch clean-up. Recall stays stable over long update runs, and speed beats the batch method and Hierarchical Navigable Small World (HNSW) graphs. |
+| <a id="ref52"></a>**52.** [A corrective agentic hybrid RAG and an operations-grounded evaluation for a scientific facility](https://arxiv.org/abs/2607.24663)<br>Sainju et al. | 27 Jul 2026 | A deployed system that fuses dense, keyword and graph search by reciprocal-rank fusion. Removing its cross-encoder reranker cut strict answer recall by 32.8%. A 50-question test set, one facility. |
 
 _Still to fetch: Colrows, Falconer, Foundation Capital on context graphs. The audit of exact sources is in `docs/brain/research/exact/README.md`._
 
