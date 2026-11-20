@@ -1,7 +1,5 @@
 63%
 
-> Source: this page is the [DevX Brain artifact](https://claude.ai/artifact/WZQCzHZ47E2XPs9UH7j55Z?sk=XEcuQR72uONWUNz3RPY_lA), 20 Nov 2026. The full drill-down is there.
-
 # Devx Brain: one place every agent asks before it starts.
 
 Devx Brain remembers where everything in the company lives and who may see it. It can also keep exact messages, deleted files and laptop folders. This page shows what is built, what is proposed and what is open.
@@ -137,7 +135,7 @@ The first twelve rows use your wording, unchanged. Built means working code exis
 
 Each box is one stage of the design in `docs/brain/model.json`. Solid black boxes are in that design. Dashed blue boxes are the four proposed parts, and they are not built. The numbers match the list under the diagram. 
 
-The diagram is on the [artifact page](https://claude.ai/artifact/WZQCzHZ47E2XPs9UH7j55Z?sk=XEcuQR72uONWUNz3RPY_lA). Its numbered boxes:
+The numbered boxes in the diagram:
 
 1. Change events and delta cursors
 2. AI chat and activity records from laptops
@@ -163,7 +161,7 @@ _Each box lists the first six components of its stage. The full design has 152 c
 
 ## 7. The full drill-down
 
-Every stage, group and component has its own page with a spec card. Open it from the artifact page: [Open the drill-down](https://claude.ai/artifact/WZQCzHZ47E2XPs9UH7j55Z?sk=XEcuQR72uONWUNz3RPY_lA)
+Every stage, group and component has its own page with a spec card.
 
 _The drill-down has 14 stages, 28 groups, 152 components and 461 edges._
 
